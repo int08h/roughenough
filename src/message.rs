@@ -1,65 +1,12 @@
-extern crate byteorder;
-
 use std::io::Write;
 use byteorder::{LittleEndian, WriteBytesExt};
 
-#[derive(Debug)]
-pub enum RtError {
-    TagNotStrictlyIncreasing(RtTag),
-    EncodingFailure(std::io::Error),
-}
-
-impl From<std::io::Error> for RtError {
-    fn from(err: std::io::Error) -> Self {
-        RtError::EncodingFailure(err)
-    }
-}
-
-#[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub enum RtTag {
-    CERT,
-    DELE,
-    INDX,
-    MAXT,
-    MIDP,
-    MINT,
-    NONC,
-    PAD,
-    PATH,
-    PUBK,
-    RADI,
-    ROOT,
-    SIG,
-    SREP,
-}
-
-static PAD_VALUE: [u8; 4] = [b'P', b'A', b'D', 0x00];
-static SIG_VALUE: [u8; 4] = [b'S', b'I', b'G', 0xff];
-
-impl RtTag {
-    pub fn wire_value(&self) -> &'static [u8] {
-        match *self {
-            RtTag::CERT => "CERT".as_bytes(),
-            RtTag::DELE => "DELE".as_bytes(),
-            RtTag::INDX => "INDX".as_bytes(),
-            RtTag::MAXT => "MAXT".as_bytes(),
-            RtTag::MIDP => "MIDP".as_bytes(),
-            RtTag::MINT => "MINT".as_bytes(),
-            RtTag::NONC => "NONC".as_bytes(),
-            RtTag::PAD =>  PAD_VALUE.as_ref(),
-            RtTag::PATH => "PATH".as_bytes(),
-            RtTag::PUBK => "PUBK".as_bytes(),
-            RtTag::RADI => "RADI".as_bytes(),
-            RtTag::ROOT => "ROOT".as_bytes(),
-            RtTag::SIG => SIG_VALUE.as_ref(),
-            RtTag::SREP => "SREP".as_bytes(),
-        }
-    }
-}
+use tag::Tag;
+use error::Error;
 
 #[derive(Debug)]
 pub struct RtMessage<'a> {
-    tags: Vec<RtTag>,
+    tags: Vec<Tag>,
     values: Vec<&'a [u8]>,
 }
 
@@ -71,10 +18,10 @@ impl<'a> RtMessage<'a> {
         }
     }
 
-    pub fn add_field(&mut self, tag: RtTag, value: &'a [u8]) -> Result<(), RtError> {
+    pub fn add_field(&mut self, tag: Tag, value: &'a [u8]) -> Result<(), Error> {
         if let Some(last_tag) = self.tags.last() {
             if tag <= *last_tag {
-                return Err(RtError::TagNotStrictlyIncreasing(tag));
+                return Err(Error::TagNotStrictlyIncreasing(tag));
             }
         }
 
@@ -88,7 +35,7 @@ impl<'a> RtMessage<'a> {
         self.tags.len() as u32
     }
 
-    pub fn encode(&self) -> Result<Vec<u8>, RtError> {
+    pub fn encode(&self) -> Result<Vec<u8>, Error> {
         let num_tags = self.tags.len();
         let mut out = Vec::with_capacity(self.encoded_size());
 
@@ -121,7 +68,7 @@ impl<'a> RtMessage<'a> {
         Ok(out)
     }
 
-    fn encoded_size(&self) -> usize {
+    pub fn encoded_size(&self) -> usize {
         let num_tags = self.tags.len();
         let tags_size = 4 * num_tags;
         let offsets_size = if num_tags < 2 { 0 } else { 4 * (num_tags - 1) };
@@ -131,21 +78,12 @@ impl<'a> RtMessage<'a> {
     }
 }
 
-#[cfg(not(test))]
-fn main() {
-    let mut msg = RtMessage::new(3);
-
-    msg.add_field(RtTag::CERT, "abcd".as_bytes()).unwrap();
-    msg.add_field(RtTag::NONC, "1234".as_bytes()).unwrap();
-
-    println!("msg {:?}", msg.encode());
-}
-
 #[cfg(test)]
 mod test {
     use std::io::{Cursor, Read};
     use byteorder::{LittleEndian, ReadBytesExt};
-    use super::*;
+    use message::*;
+    use tag::Tag;
 
     #[test]
     fn empty_message_size() {
@@ -159,7 +97,7 @@ mod test {
     #[test]
     fn single_field_message_size() {
         let mut msg = RtMessage::new(1);
-        msg.add_field(RtTag::NONC, "1234".as_bytes()).unwrap();
+        msg.add_field(Tag::NONC, "1234".as_bytes()).unwrap();
 
         assert_eq!(msg.num_fields(), 1);
         // Single tag message is 4 (num_tags) + 4 (NONC) + 4 (value)
@@ -169,8 +107,8 @@ mod test {
     #[test]
     fn two_field_message_size() {
         let mut msg = RtMessage::new(2);
-        msg.add_field(RtTag::NONC, "1234".as_bytes()).unwrap();
-        msg.add_field(RtTag::PAD, "abcd".as_bytes()).unwrap();
+        msg.add_field(Tag::NONC, "1234".as_bytes()).unwrap();
+        msg.add_field(Tag::PAD, "abcd".as_bytes()).unwrap();
 
         assert_eq!(msg.num_fields(), 2);
 		// Two tag message
@@ -194,7 +132,7 @@ mod test {
         let value = vec![b'a'; 64];
         let mut msg = RtMessage::new(1);
 
-        msg.add_field(RtTag::CERT, &value).unwrap();
+        msg.add_field(Tag::CERT, &value).unwrap();
 
         let mut encoded = Cursor::new(msg.encode().unwrap());
 
@@ -204,7 +142,7 @@ mod test {
         // CERT tag
         let mut cert = [0u8; 4];
         encoded.read_exact(&mut cert).unwrap();
-        assert_eq!(cert, RtTag::CERT.wire_value());
+        assert_eq!(cert, Tag::CERT.wire_value());
 
         // CERT value
         let mut read_val = vec![0u8; 64];
@@ -221,10 +159,8 @@ mod test {
         let maxt_value = vec![b'z'; 32];
 
         let mut msg = RtMessage::new(2);
-        msg.add_field(RtTag::DELE, &dele_value).unwrap();
-        msg.add_field(RtTag::MAXT, &maxt_value).unwrap();
-
-        let foo = msg.encode().unwrap();
+        msg.add_field(Tag::DELE, &dele_value).unwrap();
+        msg.add_field(Tag::MAXT, &maxt_value).unwrap();
 
         let mut encoded = Cursor::new(msg.encode().unwrap());
 		// Wire encoding
@@ -243,12 +179,12 @@ mod test {
         // DELE tag
         let mut dele = [0u8; 4];
         encoded.read_exact(&mut dele).unwrap();
-        assert_eq!(dele, RtTag::DELE.wire_value());
+        assert_eq!(dele, Tag::DELE.wire_value());
         
         // MAXT tag
         let mut maxt = [0u8; 4];
         encoded.read_exact(&mut maxt).unwrap();
-        assert_eq!(maxt, RtTag::MAXT.wire_value());
+        assert_eq!(maxt, Tag::MAXT.wire_value());
 
         // DELE value
         let mut read_dele_val = vec![0u8; 24];
@@ -264,5 +200,3 @@ mod test {
         assert_eq!(encoded.position() as usize, msg.encoded_size());
     }
 }
-
-
