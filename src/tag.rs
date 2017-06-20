@@ -1,25 +1,32 @@
+
+/// An unsigned 32-bit value (key) that maps to a byte-string (value).
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Tag {
-    CERT,
-    DELE,
-    INDX,
-    MAXT,
-    MIDP,
-    MINT,
-    NONC,
-    PAD,
-    PATH,
-    PUBK,
-    RADI,
-    ROOT,
-    SIG,
+    // Enforcement of the "tags in strictly increasing order" rule is done using the
+    // little-endian encoding of the ASCII tag value; e.g. 'SIG\x00' is 0x00474953 and
+    // 'NONC' is 0x434e4f4e. The tags are listed here is reverse lexical order which 
+    // matches the little-endian comparison order.
     SREP,
+    SIG,
+    ROOT,
+    RADI,
+    PUBK,
+    PATH,
+    PAD,
+    NONC,
+    MINT,
+    MIDP,
+    MAXT,
+    INDX,
+    DELE,
+    CERT,
 }
 
 static PAD_VALUE: [u8; 4] = [b'P', b'A', b'D', 0x00];
 static SIG_VALUE: [u8; 4] = [b'S', b'I', b'G', 0xff];
 
 impl Tag {
+    /// Translates a tag into its on-the-wire representation
     pub fn wire_value(&self) -> &'static [u8] {
         match *self {
             Tag::CERT => "CERT".as_bytes(),
@@ -29,7 +36,7 @@ impl Tag {
             Tag::MIDP => "MIDP".as_bytes(),
             Tag::MINT => "MINT".as_bytes(),
             Tag::NONC => "NONC".as_bytes(),
-            Tag::PAD =>  PAD_VALUE.as_ref(),
+            Tag::PAD => PAD_VALUE.as_ref(),
             Tag::PATH => "PATH".as_bytes(),
             Tag::PUBK => "PUBK".as_bytes(),
             Tag::RADI => "RADI".as_bytes(),

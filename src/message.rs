@@ -1,9 +1,13 @@
+
 use std::io::Write;
 use byteorder::{LittleEndian, WriteBytesExt};
 
 use tag::Tag;
 use error::Error;
 
+/// 
+/// A Roughtime protocol message; a map of u32 tags to arbitrary byte-strings.
+///
 #[derive(Debug)]
 pub struct RtMessage<'a> {
     tags: Vec<Tag>,
@@ -11,13 +15,29 @@ pub struct RtMessage<'a> {
 }
 
 impl<'a> RtMessage<'a> {
+    
+    /// Construct a new RtMessage
+    ///
+    /// ## Arguments
+    ///
+    /// * `num_fields` - Reserve space for this many fields.
+    ///
     pub fn new(num_fields: u8) -> Self {
         RtMessage {
             tags: Vec::with_capacity(num_fields as usize),
-            values: Vec::with_capacity(num_fields as usize)
+            values: Vec::with_capacity(num_fields as usize),
         }
     }
 
+    /// Add a field to this `RtMessage`
+    ///
+    /// ## Arguments
+    ///
+    /// * `tag` - The [`Tag`](enum.Tag.html) to add. Tags must be added in **strictly increasing order**,
+    /// violating this will result in a [`Error::TagNotStrictlyIncreasing`](enum.Error.html).
+    ///
+    /// * `value` - Value for the tag.
+    ///
     pub fn add_field(&mut self, tag: Tag, value: &'a [u8]) -> Result<(), Error> {
         if let Some(last_tag) = self.tags.last() {
             if tag <= *last_tag {
@@ -31,10 +51,12 @@ impl<'a> RtMessage<'a> {
         Ok(())
     }
 
+    /// Returns the number of tag/value pairs in the message
     pub fn num_fields(&self) -> u32 {
         self.tags.len() as u32
     }
 
+    /// Encode this message into its on-the-wire representation.
     pub fn encode(&self) -> Result<Vec<u8>, Error> {
         let num_tags = self.tags.len();
         let mut out = Vec::with_capacity(self.encoded_size());
@@ -52,7 +74,7 @@ impl<'a> RtMessage<'a> {
             }
         }
 
-        // write tags 
+        // write tags
         for tag in &self.tags {
             out.write_all(tag.wire_value())?;
         }
@@ -68,6 +90,7 @@ impl<'a> RtMessage<'a> {
         Ok(out)
     }
 
+    /// Returns the length in bytes of this message's on-the-wire representation.
     pub fn encoded_size(&self) -> usize {
         let num_tags = self.tags.len();
         let tags_size = 4 * num_tags;
@@ -111,11 +134,11 @@ mod test {
         msg.add_field(Tag::PAD, "abcd".as_bytes()).unwrap();
 
         assert_eq!(msg.num_fields(), 2);
-		// Two tag message
-		//   4 num_tags
-		//   8 (NONC, PAD) tags
-		//   4 PAD offset
-		//   8 values
+        // Two tag message
+        //   4 num_tags
+        //   8 (NONC, PAD) tags
+        //   4 PAD offset
+        //   8 values
         assert_eq!(msg.encoded_size(), 24);
     }
 
@@ -163,24 +186,25 @@ mod test {
         msg.add_field(Tag::MAXT, &maxt_value).unwrap();
 
         let mut encoded = Cursor::new(msg.encode().unwrap());
-		// Wire encoding
-		//   4 num_tags
-		//   8 (DELE, MAXT) tags
-		//   4 MAXT offset
-		//  24 DELE value
-		//  32 MAXT value
+        // Wire encoding
+        //   4 num_tags
+        //   8 (DELE, MAXT) tags
+        //   4 MAXT offset
+        //  24 DELE value
+        //  32 MAXT value
 
         // num tags
         assert_eq!(encoded.read_u32::<LittleEndian>().unwrap(), 2);
 
         // Offset past DELE value to start of MAXT value
-        assert_eq!(encoded.read_u32::<LittleEndian>().unwrap(), dele_value.len() as u32);
+        assert_eq!(encoded.read_u32::<LittleEndian>().unwrap(),
+                   dele_value.len() as u32);
 
         // DELE tag
         let mut dele = [0u8; 4];
         encoded.read_exact(&mut dele).unwrap();
         assert_eq!(dele, Tag::DELE.wire_value());
-        
+
         // MAXT tag
         let mut maxt = [0u8; 4];
         encoded.read_exact(&mut maxt).unwrap();
@@ -190,7 +214,7 @@ mod test {
         let mut read_dele_val = vec![0u8; 24];
         encoded.read_exact(&mut read_dele_val).unwrap();
         assert_eq!(dele_value, read_dele_val);
-        
+
         // MAXT value
         let mut read_maxt_val = vec![0u8; 32];
         encoded.read_exact(&mut read_maxt_val).unwrap();
