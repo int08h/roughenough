@@ -4,26 +4,13 @@
 pub enum Tag {
     // Enforcement of the "tags in strictly increasing order" rule is done using the
     // little-endian encoding of the ASCII tag value; e.g. 'SIG\x00' is 0x00474953 and
-    // 'NONC' is 0x434e4f4e. The tags are listed here is reverse lexical order which 
-    // matches the little-endian comparison order.
-    SREP,
-    SIG,
-    ROOT,
-    RADI,
-    PUBK,
-    PATH,
-    PAD,
-    NONC,
-    MINT,
-    MIDP,
-    MAXT,
-    INDX,
-    DELE,
-    CERT,
+    // 'NONC' is 0x434e4f4e. 
+
+    SIG, NONC, DELE, PATH, RADI, PUBK, MIDP, SREP, MINT, ROOT, CERT, MAXT, INDX, PAD
 }
 
-static PAD_VALUE: [u8; 4] = [b'P', b'A', b'D', 0x00];
-static SIG_VALUE: [u8; 4] = [b'S', b'I', b'G', 0xff];
+static PAD_VALUE: [u8; 4] = [b'P', b'A', b'D', 0xff];
+static SIG_VALUE: [u8; 4] = [b'S', b'I', b'G', 0x00];
 
 impl Tag {
     /// Translates a tag into its on-the-wire representation

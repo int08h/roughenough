@@ -26,20 +26,6 @@ const CHARS: &'static [u8] = b"0123456789abcdef";
 
 impl ToHex for [u8] {
     /// Turn a vector of `u8` bytes into a hexadecimal string.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// #![feature(rustc_private)]
-    ///
-    /// extern crate serialize;
-    /// use serialize::hex::ToHex;
-    ///
-    /// fn main () {
-    ///     let str = [52,32].to_hex();
-    ///     println!("{}", str);
-    /// }
-    /// ```
     fn to_hex(&self) -> String {
         let mut v = Vec::with_capacity(self.len() * 2);
         for &byte in self {
@@ -96,25 +82,6 @@ impl FromHex for str {
     /// You can use the `String::from_utf8` function to turn a
     /// `Vec<u8>` into a string with characters corresponding to those values.
     ///
-    /// # Examples
-    ///
-    /// This converts a string literal to hexadecimal and back.
-    ///
-    /// ```
-    /// #![feature(rustc_private)]
-    ///
-    /// extern crate serialize;
-    /// use serialize::hex::{FromHex, ToHex};
-    ///
-    /// fn main () {
-    ///     let hello_str = "Hello, World".as_bytes().to_hex();
-    ///     println!("{}", hello_str);
-    ///     let bytes = hello_str.from_hex().unwrap();
-    ///     println!("{:?}", bytes);
-    ///     let result_str = String::from_utf8(bytes).unwrap();
-    ///     println!("{}", result_str);
-    /// }
-    /// ```
     fn from_hex(&self) -> Result<Vec<u8>, FromHexError> {
         // This may be an overestimate if there is any whitespace
         let mut b = Vec::with_capacity(self.len() / 2);
@@ -149,84 +116,6 @@ impl FromHex for str {
             0 => Ok(b.into_iter().collect()),
             _ => Err(InvalidHexLength),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    extern crate test;
-    use self::test::Bencher;
-    use hex::{FromHex, ToHex};
-
-    #[test]
-    pub fn test_to_hex() {
-        assert_eq!("foobar".as_bytes().to_hex(), "666f6f626172");
-    }
-
-    #[test]
-    pub fn test_from_hex_okay() {
-        assert_eq!("666f6f626172".from_hex().unwrap(),
-                b"foobar");
-        assert_eq!("666F6F626172".from_hex().unwrap(),
-                b"foobar");
-    }
-
-    #[test]
-    pub fn test_from_hex_odd_len() {
-        assert!("666".from_hex().is_err());
-        assert!("66 6".from_hex().is_err());
-    }
-
-    #[test]
-    pub fn test_from_hex_invalid_char() {
-        assert!("66y6".from_hex().is_err());
-    }
-
-    #[test]
-    pub fn test_from_hex_ignores_whitespace() {
-        assert_eq!("666f 6f6\r\n26172 ".from_hex().unwrap(),
-                b"foobar");
-    }
-
-    #[test]
-    pub fn test_to_hex_all_bytes() {
-        for i in 0..256 {
-            assert_eq!([i as u8].to_hex(), format!("{:02x}", i as usize));
-        }
-    }
-
-    #[test]
-    pub fn test_from_hex_all_bytes() {
-        for i in 0..256 {
-            let ii: &[u8] = &[i as u8];
-            assert_eq!(format!("{:02x}", i as usize).from_hex()
-                                                .unwrap(),
-                    ii);
-            assert_eq!(format!("{:02X}", i as usize).from_hex()
-                                                .unwrap(),
-                    ii);
-        }
-    }
-
-    #[bench]
-    pub fn bench_to_hex(b: &mut Bencher) {
-        let s = "イロハニホヘト チリヌルヲ ワカヨタレソ ツネナラム \
-                ウヰノオクヤマ ケフコエテ アサキユメミシ ヱヒモセスン";
-        b.iter(|| {
-            s.as_bytes().to_hex();
-        });
-        b.bytes = s.len() as u64;
-    }
-
-    #[bench]
-    pub fn bench_from_hex(b: &mut Bencher) {
-        let s = "イロハニホヘト チリヌルヲ ワカヨタレソ ツネナラム \
-                ウヰノオクヤマ ケフコエテ アサキユメミシ ヱヒモセスン";
-        let sb = s.as_bytes().to_hex();
-        b.iter(|| {
-            sb.from_hex().unwrap();
-        });
-        b.bytes = sb.len() as u64;
     }
 }
 

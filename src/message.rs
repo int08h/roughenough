@@ -9,12 +9,12 @@ use error::Error;
 /// A Roughtime protocol message; a map of u32 tags to arbitrary byte-strings.
 ///
 #[derive(Debug)]
-pub struct RtMessage<'a> {
+pub struct RtMessage {
     tags: Vec<Tag>,
-    values: Vec<&'a [u8]>,
+    values: Vec<Vec<u8>>,
 }
 
-impl<'a> RtMessage<'a> {
+impl RtMessage {
     
     /// Construct a new RtMessage
     ///
@@ -38,7 +38,7 @@ impl<'a> RtMessage<'a> {
     ///
     /// * `value` - Value for the tag.
     ///
-    pub fn add_field(&mut self, tag: Tag, value: &'a [u8]) -> Result<(), Error> {
+    pub fn add_field(&mut self, tag: Tag, value: &[u8]) -> Result<(), Error> {
         if let Some(last_tag) = self.tags.last() {
             if tag <= *last_tag {
                 return Err(Error::TagNotStrictlyIncreasing(tag));
@@ -46,7 +46,7 @@ impl<'a> RtMessage<'a> {
         }
 
         self.tags.push(tag);
-        self.values.push(value);
+        self.values.push(value.to_vec());
 
         Ok(())
     }
@@ -95,7 +95,7 @@ impl<'a> RtMessage<'a> {
         let num_tags = self.tags.len();
         let tags_size = 4 * num_tags;
         let offsets_size = if num_tags < 2 { 0 } else { 4 * (num_tags - 1) };
-        let values_size: usize = self.values.iter().map(|&v| v.len()).sum();
+        let values_size: usize = self.values.iter().map(|ref v| v.len()).sum();
 
         4 + tags_size + offsets_size + values_size
     }

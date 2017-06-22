@@ -45,7 +45,7 @@ pub use message::RtMessage;
     pub const SIGNED_RESPONSE_CONTEXT: &str = "RoughTime v1 response signature\x00";
 
     /// Value prepended to leaves prior to hashing
-    pub const TREE_LEAF_TWEAK: u8 = 0x00;
+    pub const TREE_LEAF_TWEAK: &[u8] = &[0x00];
 
     /// Value prepended to nodes prior to hashing
-    pub const TREE_NODE_TWEAK: u8 = 0x01;
+    pub const TREE_NODE_TWEAK: &[u8] = &[0x01];
