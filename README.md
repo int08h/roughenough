@@ -19,7 +19,7 @@ created by Adam Langley and Robert Obryk.
 Use `cargo` to compile:
 
 ```bash
-$ cargo run
+$ cargo test
 ```
 
 ## Implementation Status
@@ -27,7 +27,7 @@ $ cargo run
 Work-in-progress.
 
 * Protocol - incomplete
-* Server - not started
+* Server - incomplete
   
 ## Contributors
 * Stuart Stock, original author and current maintainer (stuart {at} int08h.com)
