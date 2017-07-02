@@ -8,8 +8,7 @@ pub enum Error {
     /// The associated tag was added to an `RtMessage` in non-increasing order.
     TagNotStrictlyIncreasing(Tag),
 
-    /// Encoding failed. The associated `std::io::Error` should provide
-    /// more information.
+    /// Encoding failed. The associated `std::io::Error` should provide more information.
     EncodingFailure(std::io::Error),
 }
 

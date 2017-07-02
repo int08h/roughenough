@@ -55,7 +55,7 @@ fn make_dele_bytes(ephemeral_key: &Ed25519KeyPair) -> Result<Vec<u8>, Error> {
 fn make_cert(long_term_key: &Ed25519KeyPair, ephemeral_key: &Ed25519KeyPair) -> RtMessage {
     // Make DELE and sign it with long-term key
     let dele_bytes = make_dele_bytes(&ephemeral_key).unwrap();
-    let dele_sig = {
+    let dele_signature = {
         let mut sha_ctx = digest::Context::new(&digest::SHA512);
         sha_ctx.update(CERTIFICATE_CONTEXT.as_bytes());
         sha_ctx.update(&dele_bytes);
@@ -66,7 +66,7 @@ fn make_cert(long_term_key: &Ed25519KeyPair, ephemeral_key: &Ed25519KeyPair) -> 
 
     // Create CERT
     let mut cert_msg = RtMessage::new(2);
-    cert_msg.add_field(Tag::SIG, dele_sig.as_ref()).unwrap();
+    cert_msg.add_field(Tag::SIG, dele_signature.as_ref()).unwrap();
     cert_msg.add_field(Tag::DELE, &dele_bytes).unwrap();
 
     cert_msg
@@ -95,7 +95,13 @@ fn make_response(ephemeral_key: &Ed25519KeyPair, cert_bytes: &[u8], request: &[u
     radi.write_u32::<LittleEndian>(1000000).unwrap();
 
     // current epoch time in microseconds
-    let now = (time::get_time().sec as u64) * 1000;
+    let now = {
+        let tv = time::get_time();
+        let secs = (tv.sec as u64) * 1000000;
+        let nsecs = (tv.nsec as u64) / 1000;
+
+        secs + nsecs
+    };
     midp.write_u64::<LittleEndian>(now).unwrap();
 
     // Signed response SREP
@@ -115,7 +121,7 @@ fn make_response(ephemeral_key: &Ed25519KeyPair, cert_bytes: &[u8], request: &[u
     };
 
     // signature on SREP
-    let signature = {
+    let srep_signature = {
         let mut sha_ctx = digest::Context::new(&digest::SHA512);
         sha_ctx.update(SIGNED_RESPONSE_CONTEXT.as_bytes());
         sha_ctx.update(&srep_bytes);
@@ -125,7 +131,7 @@ fn make_response(ephemeral_key: &Ed25519KeyPair, cert_bytes: &[u8], request: &[u
     };
 
     let mut response = RtMessage::new(5);
-    response.add_field(Tag::SIG, signature.as_ref()).unwrap();
+    response.add_field(Tag::SIG, srep_signature.as_ref()).unwrap();
     response.add_field(Tag::PATH, &path).unwrap();
     response.add_field(Tag::SREP, &srep_bytes).unwrap();
     response.add_field(Tag::CERT, cert_bytes).unwrap();
