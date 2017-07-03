@@ -1,10 +1,12 @@
 
 /// An unsigned 32-bit value (key) that maps to a byte-string (value).
-#[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, PartialEq, PartialOrd)]
 pub enum Tag {
     // Enforcement of the "tags in strictly increasing order" rule is done using the
     // little-endian encoding of the ASCII tag value; e.g. 'SIG\x00' is 0x00474953 and
-    // 'NONC' is 0x434e4f4e.
+    // 'NONC' is 0x434e4f4e. 
+    //
+    // Tags are written here in ascending order
     SIG,
     NONC,
     DELE,

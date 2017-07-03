@@ -10,12 +10,11 @@ extern crate time;
 extern crate untrusted;
 
 use std::io;
-
 use std::net::UdpSocket;
 use std::time::Duration;
 
 use roughenough::{RtMessage, Tag, Error};
-use roughenough::{CERTIFICATE_CONTEXT, SIGNED_RESPONSE_CONTEXT, TREE_LEAF_TWEAK};
+use roughenough::{CERTIFICATE_CONTEXT, MIN_REQUEST_LENGTH, SIGNED_RESPONSE_CONTEXT, TREE_LEAF_TWEAK};
 use roughenough::hex::*;
 use roughenough::sign::Signer;
 
@@ -23,6 +22,8 @@ use ring::{digest, rand};
 use ring::rand::SecureRandom;
 
 use byteorder::{LittleEndian, WriteBytesExt};
+
+const SERVER_VERSION: &'static str = "0.1";
 
 fn get_long_term_key() -> Signer {
     // TODO: read from config
@@ -43,8 +44,7 @@ fn make_dele_bytes(ephemeral_key: &Signer) -> Result<Vec<u8>, Error> {
     let max = [0xff; 8];
 
     let mut dele_msg = RtMessage::new(3);
-    dele_msg
-        .add_field(Tag::PUBK, ephemeral_key.public_key_bytes())?;
+    dele_msg.add_field(Tag::PUBK, ephemeral_key.public_key_bytes())?;
     dele_msg.add_field(Tag::MINT, &zeros)?;
     dele_msg.add_field(Tag::MAXT, &max)?;
 
@@ -131,7 +131,7 @@ fn make_response(ephemeral_key: &mut Signer, cert_bytes: &[u8], nonce: &[u8]) ->
 }
 
 fn nonce_from_request(buf: &[u8], num_bytes: usize) -> Result<&[u8], Error> {
-    if num_bytes < 1024 {
+    if num_bytes < MIN_REQUEST_LENGTH as usize {
         return Err(Error::RequestTooShort);
     }
 
@@ -151,13 +151,13 @@ fn nonce_from_request(buf: &[u8], num_bytes: usize) -> Result<&[u8], Error> {
 }
 
 fn main() {
+    println!("Roughenough server v{} starting", SERVER_VERSION);
+
     let mut lt_key = get_long_term_key();
     let mut ephemeral_key = make_ephemeral_key();
 
-    println!("Long-term public key: {}",
-             lt_key.public_key_bytes().to_hex());
-    println!("Ephemeral public key: {}",
-             ephemeral_key.public_key_bytes().to_hex());
+    println!("Long-term public key: {}", lt_key.public_key_bytes().to_hex());
+    println!("Ephemeral public key: {}", ephemeral_key.public_key_bytes().to_hex());
 
     let cert_msg = make_cert(&mut lt_key, &ephemeral_key);
     let cert_bytes = cert_msg.encode().unwrap();

@@ -1,6 +1,9 @@
 //!
 //! Ed25519 signing and verification
 //!
+//! `Ring` does not provide a multi-step (init-update-finish) interface
+//! for Ed25519 signatures. `Verifier` and `Signer` attempt to provide this 
+//! missing multi-step api.
 
 extern crate ring;
 extern crate untrusted;
@@ -10,6 +13,8 @@ use self::ring::signature::Ed25519KeyPair;
 
 use self::untrusted::Input;
 
+/// A multi-step (init-update-finish) interface for verifying an 
+/// Ed25519 signature
 #[derive(Debug)]
 pub struct Verifier<'a> {
     pubkey: Input<'a>,
@@ -40,6 +45,8 @@ impl<'a> Verifier<'a> {
     }
 }
 
+/// A multi-step (init-update-finish) interface for creating an 
+/// Ed25519 signature
 pub struct Signer {
     key_pair: Ed25519KeyPair,
     buf: Vec<u8>,
