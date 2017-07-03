@@ -70,22 +70,6 @@ impl Signer {
     }
 }
 
-pub fn sign_ed25519(seed: &[u8], message: &[u8]) -> Result<Vec<u8>, ring::error::Unspecified> {
-    let key_pair = Ed25519KeyPair::from_seed_unchecked(Input::from(&seed))?;
-    Ok(key_pair.sign(message).as_ref().to_vec())
-}
-
-pub fn verify_ed25519(pubkey: &[u8], message: &[u8], signature: &[u8]) -> bool {
-    let pk = Input::from(pubkey);
-    let msg = Input::from(message);
-    let sig = Input::from(signature);
-
-    match signature::verify(&signature::ED25519, pk, msg, sig) {
-        Ok(_) => true,
-        _ => false,
-    }
-}
-
 #[cfg(test)]
 mod test {
     use hex::*;
@@ -169,8 +153,7 @@ mod test {
         signer.update(&message);
         let signature = signer.sign();
 
-        let key_pair = Ed25519KeyPair::from_seed_unchecked(Input::from(&seed)).unwrap();
-        let mut v = Verifier::new(key_pair.public_key_bytes());
+        let mut v = Verifier::new(signer.public_key_bytes());
         v.update(&message);
         let result = v.verify(&signature);
 
