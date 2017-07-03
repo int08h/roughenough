@@ -1,5 +1,5 @@
 //!
-//! An implementation of the [Roughtime](https://roughtime.googlesource.com/roughtime) 
+//! An implementation of the [Roughtime](https://roughtime.googlesource.com/roughtime)
 //! secure time synchronization protocol.
 //!
 
@@ -8,9 +8,9 @@ extern crate byteorder;
 mod error;
 mod tag;
 mod message;
-mod sign;
 
 pub mod hex;
+pub mod sign;
 
 pub use error::Error;
 pub use tag::Tag;

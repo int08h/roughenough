@@ -5,7 +5,7 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use tag::Tag;
 use error::Error;
 
-/// 
+///
 /// A Roughtime protocol message; a map of u32 tags to arbitrary byte-strings.
 ///
 #[derive(Debug)]
@@ -15,7 +15,6 @@ pub struct RtMessage {
 }
 
 impl RtMessage {
-    
     /// Construct a new RtMessage
     ///
     /// ## Arguments
@@ -33,8 +32,9 @@ impl RtMessage {
     ///
     /// ## Arguments
     ///
-    /// * `tag` - The [`Tag`](enum.Tag.html) to add. Tags must be added in **strictly increasing order**,
-    /// violating this will result in a [`Error::TagNotStrictlyIncreasing`](enum.Error.html).
+    /// * `tag` - The [`Tag`](enum.Tag.html) to add. Tags must be added in **strictly 
+    ///   increasing order**, violating this will result in a 
+    ///   [`Error::TagNotStrictlyIncreasing`](enum.Error.html).
     ///
     /// * `value` - Value for the tag.
     ///

@@ -33,9 +33,7 @@ impl ToHex for [u8] {
             v.push(CHARS[(byte & 0xf) as usize]);
         }
 
-        unsafe {
-            String::from_utf8_unchecked(v)
-        }
+        unsafe { String::from_utf8_unchecked(v) }
     }
 }
 
@@ -58,8 +56,9 @@ pub enum FromHexError {
 impl fmt::Display for FromHexError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            InvalidHexCharacter(ch, idx) =>
-                write!(f, "Invalid character '{}' at position {}", ch, idx),
+            InvalidHexCharacter(ch, idx) => {
+                write!(f, "Invalid character '{}' at position {}", ch, idx)
+            }
             InvalidHexLength => write!(f, "Invalid input length"),
         }
     }
@@ -95,13 +94,13 @@ impl FromHex for str {
                 b'A'...b'F' => buf |= byte - b'A' + 10,
                 b'a'...b'f' => buf |= byte - b'a' + 10,
                 b'0'...b'9' => buf |= byte - b'0',
-                b' '|b'\r'|b'\n'|b'\t' => {
+                b' ' | b'\r' | b'\n' | b'\t' => {
                     buf >>= 4;
-                    continue
+                    continue;
                 }
                 _ => {
                     let ch = self[idx..].chars().next().unwrap();
-                    return Err(InvalidHexCharacter(ch, idx))
+                    return Err(InvalidHexCharacter(ch, idx));
                 }
             }
 
@@ -118,4 +117,3 @@ impl FromHex for str {
         }
     }
 }
-

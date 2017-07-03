@@ -10,6 +10,12 @@ pub enum Error {
 
     /// Encoding failed. The associated `std::io::Error` should provide more information.
     EncodingFailure(std::io::Error),
+
+    /// Request was less than 1024 bytes
+    RequestTooShort,
+
+    /// Otherwise invalid request
+    InvalidRequest,
 }
 
 impl From<std::io::Error> for Error {

@@ -4,9 +4,21 @@
 pub enum Tag {
     // Enforcement of the "tags in strictly increasing order" rule is done using the
     // little-endian encoding of the ASCII tag value; e.g. 'SIG\x00' is 0x00474953 and
-    // 'NONC' is 0x434e4f4e. 
-
-    SIG, NONC, DELE, PATH, RADI, PUBK, MIDP, SREP, MINT, ROOT, CERT, MAXT, INDX, PAD
+    // 'NONC' is 0x434e4f4e.
+    SIG,
+    NONC,
+    DELE,
+    PATH,
+    RADI,
+    PUBK,
+    MIDP,
+    SREP,
+    MINT,
+    ROOT,
+    CERT,
+    MAXT,
+    INDX,
+    PAD,
 }
 
 static PAD_VALUE: [u8; 4] = [b'P', b'A', b'D', 0xff];
