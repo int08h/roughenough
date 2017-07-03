@@ -16,18 +16,18 @@ created by Adam Langley and Robert Obryk.
 
 ## Building
 
-Use `cargo` to compile:
+Use `cargo` to compile and run the server binary:
 
 ```bash
-$ cargo test
+$ cargo run --bin server
 ```
 
 ## Implementation Status
 
 Work-in-progress.
 
-* Protocol - incomplete
-* Server - incomplete
+* Protocol - as complete as it's probably going to get
+* Server - fragile, fixed long-term-key, but working
   
 ## Contributors
 * Stuart Stock, original author and current maintainer (stuart {at} int08h.com)
