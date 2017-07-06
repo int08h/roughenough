@@ -7,8 +7,9 @@ It is a **work in progress**. Current status:
 * Server is functionally complete: it parses requests and generates valid Roughtime responses.
 * Still TODO:
   * Run-time configuration (udp port, listening interface, etc)
-  * Reading the long-term key 
-  * Better operational ergonomics like logging
+  * Loading the long-term key 
+  * Better operational ergonomics
+
 
 ## About the Roughtime Protocol
 [Roughtime](https://roughtime.googlesource.com/roughtime) is a protocol that aims to achieve rough 
@@ -29,6 +30,12 @@ Use `cargo` to compile and run the server binary:
 ```bash
 $ cargo run --bin server
 ```
+
+## Limitations
+
+Roughenough does not implement the response fault-injection Roughtime ecosystem feature. 
+On-line delegated key rotation is also not implemented; the server must be restarted to 
+generate a new delegated key.
   
 ## Contributors
 * Stuart Stock, original author and current maintainer (stuart {at} int08h.com)
