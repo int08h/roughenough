@@ -16,6 +16,10 @@
 //! An implementation of the [Roughtime](https://roughtime.googlesource.com/roughtime)
 //! secure time synchronization protocol.
 //!
+//! This documentation is for working with Roughtime protocol details. Docs for the
+//! **server** [are here](../server/index.html).
+//!
+
 extern crate byteorder;
 
 mod error;
