@@ -9,9 +9,9 @@ extern crate roughenough;
 extern crate time;
 extern crate untrusted;
 extern crate fern;
+extern crate ctrlc;
 #[macro_use]
 extern crate log;
-extern crate ctrlc;
 
 use std::io;
 use std::net::UdpSocket;
@@ -157,16 +157,15 @@ fn nonce_from_request(buf: &[u8], num_bytes: usize) -> Result<&[u8], Error> {
 }
 
 fn init_logging() {
-	fern::Dispatch::new()
-		.format(|out, message, record| {
-			out.finish(format_args!("{} [{}] {}",
-				time::now().asctime(),
-				record.level(),
-				message))
+    fern::Dispatch::new()
+        .format(|out, message, record| {
+            out.finish(
+                format_args!("{} [{}] {}", time::now().asctime(), record.level(), message)
+            )
         })
-		.level(log::LogLevelFilter::Info)
-		.chain(std::io::stdout())
-		.apply()
+        .level(log::LogLevelFilter::Info)
+        .chain(std::io::stdout())
+        .apply()
         .unwrap();
 }
 
@@ -203,9 +202,8 @@ fn main() {
     let keep_running = Arc::new(AtomicBool::new(true));
     let kr = keep_running.clone();
 
-    ctrlc::set_handler(move || {
-        kr.store(false, Ordering::Release);
-    }).expect("failed setting Ctrl-C handler");
+    ctrlc::set_handler(move || { kr.store(false, Ordering::Release); })
+        .expect("failed setting Ctrl-C handler");
 
     loop {
         if !keep_running.load(Ordering::Acquire) {
@@ -229,13 +227,13 @@ fn main() {
                     info!("invalid request ({} bytes) from {}", num_bytes, src_addr);
                     bad_requests += 1;
                 }
-            },
-            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => { 
+            }
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                 loops += 1;
                 if loops % 600 == 0 {
                     info!("responses {}, invalid requests {}", responses, bad_requests);
                 }
-            },
+            }
             Err(ref e) => error!("Error {:?}: {:?}", e.kind(), e),
         }
     }
