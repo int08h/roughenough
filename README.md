@@ -3,7 +3,7 @@
 synchronization server implemented in Rust.
 
 The server is functionally complete: it parses client requests and generates valid Roughtime responses.
-Rough-edges remain, particularly in error-handling. See 
+Rough edges remain, particularly in error-handling. See 
 [Limitations](#limitations) below. Contributions welcome.
 
 ## Links
