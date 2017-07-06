@@ -54,7 +54,7 @@ Roughtime features not implemented:
 * On-line key rotation. The server must be restarted to generate a new delegated key. 
 * Ecosystem-style response fault injection.
 * Multi-request Merkle tree is not built. Each request gets its own response with 
-  ROOT empty and INDX zero.
+  `PATH` empty and `INDX` zero.
 
 Error-handling is not robust. There are many `unwrap()`'s and `expect()`'s in the request handling path.
 
