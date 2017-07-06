@@ -65,6 +65,8 @@ comprehensibility by newbie Rustaceans. Blazing async ninja speed is not a goal.
 Per-request heap allocations could be reduced: a few `Vec`'s could be replaced by 
 lifetime scoped slices.
 
+Constants aren't consistently used. A few hard-coded magic numbers remain.
+
 ## About the Roughtime Protocol
 [Roughtime](https://roughtime.googlesource.com/roughtime) is a protocol that aims to achieve rough 
 time synchronisation in a secure way that doesn't depend on any particular time server, and in such
