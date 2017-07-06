@@ -1,14 +1,14 @@
 # Roughenough
-**Roughenough** is a [Roughtime](https://roughtime.googlesource.com/roughtime) secure time 
-synchronization server implementation in Rust.
+**Roughenough** is a Rust [Roughtime](https://roughtime.googlesource.com/roughtime) secure time 
+synchronization server.
 
 It is a **work in progress**. Current status:
 
 * Server is functionally complete: it parses requests and generates valid Roughtime responses.
 * Still TODO:
-** Run-time configuration (udp port, listening interface, etc)
-** Reading the long-term key 
-** Better operational ergonomics like logging
+  * Run-time configuration (udp port, listening interface, etc)
+  * Reading the long-term key 
+  * Better operational ergonomics like logging
 
 ## About the Roughtime Protocol
 [Roughtime](https://roughtime.googlesource.com/roughtime) is a protocol that aims to achieve rough 
