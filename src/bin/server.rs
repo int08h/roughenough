@@ -1,6 +1,28 @@
 //!
 //! Roughtime server
 //!
+//! # Configuration
+//! The `roughenough` server is configured via a config file:
+//!
+//! ```yaml
+//! interface: 127.0.0.1
+//! port: 8686
+//! seed: f61075c988feb9cb700a4a6a3291bfbc9cab11b9c9eca8c802468eb38a43d7d3
+//! ```
+//!
+//! Where:
+//!
+//!   * **interface** - IP address or interface name for listening to client requests
+//!   * **port** - UDP port to listen to requests
+//!   * **seed** - A 32-byte hexadecimal value used as the seed to generate the 
+//!                server's long-term key pair. **This is a secret value**, treat it
+//!                with care.
+//!
+//! # Running the Server
+//!
+//! ```bash
+//! $ cargo run --release --bin server /path/to/config.file
+//! ```
 
 extern crate byteorder;
 extern crate core;
@@ -10,14 +32,21 @@ extern crate time;
 extern crate untrusted;
 extern crate fern;
 extern crate ctrlc;
+extern crate yaml_rust;
 #[macro_use]
 extern crate log;
 
+use std::env;
 use std::io;
+use std::process;
+use std::fs::File;
+use std::io::Read;
 use std::net::UdpSocket;
 use std::time::Duration;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+use byteorder::{LittleEndian, WriteBytesExt};
 
 use roughenough::{RtMessage, Tag, Error};
 use roughenough::{CERTIFICATE_CONTEXT, MIN_REQUEST_LENGTH, SIGNED_RESPONSE_CONTEXT, TREE_LEAF_TWEAK};
@@ -27,17 +56,11 @@ use roughenough::sign::Signer;
 use ring::{digest, rand};
 use ring::rand::SecureRandom;
 
-use byteorder::{LittleEndian, WriteBytesExt};
+use yaml_rust::YamlLoader;
 
 const SERVER_VERSION: &'static str = "0.1";
 
-fn get_long_term_key() -> Signer {
-    // TODO: read from config
-    let seed = [b'x'; 32];
-    Signer::new(&seed)
-}
-
-fn make_ephemeral_key() -> Signer {
+fn create_ephemeral_key() -> Signer {
     let rng = rand::SystemRandom::new();
     let mut seed = [0u8; 32];
     rng.fill(&mut seed).unwrap();
@@ -136,6 +159,7 @@ fn make_response(ephemeral_key: &mut Signer, cert_bytes: &[u8], nonce: &[u8]) ->
     response
 }
 
+// extract the client's nonce from its request
 fn nonce_from_request(buf: &[u8], num_bytes: usize) -> Result<&[u8], Error> {
     if num_bytes < MIN_REQUEST_LENGTH as usize {
         return Err(Error::RequestTooShort);
@@ -169,33 +193,68 @@ fn init_logging() {
         .unwrap();
 }
 
+fn load_config(config_file: &str) -> (String, u16, Vec<u8>) {
+    let mut infile = File::open(config_file)
+        .expect("failed to open config file");
+
+    let mut contents = String::new();
+    infile.read_to_string(&mut contents)
+        .expect("could not read config file");
+
+    let cfg = YamlLoader::load_from_str(&contents)
+        .expect("could not parse config file");
+
+    if cfg.len() != 1 {
+        panic!("empty or malformed config file");
+    }
+
+    let mut port: u16 = 0;
+    let mut iface: String = "unknown".to_string();
+    let mut seed: String = "".to_string();
+
+    for (key, value) in cfg[0].as_hash().unwrap() {
+        match key.as_str().unwrap() {
+            "port" => port = value.as_i64().unwrap() as u16,
+            "interface" => iface = value.as_str().unwrap().to_string(),
+            "seed" => seed = value.as_str().unwrap().to_string(),
+            _ => warn!("ignoring unknown config key '{}'", key.as_str().unwrap())
+        }
+    }
+
+    let binseed = seed.from_hex()
+        .expect("seed value invalid; 'seed' should be 32 byte hex value");
+
+    (iface, port, binseed)
+}
+
 fn main() {
     init_logging();
 
-    // TODO: configure
-    let server = "127.0.01";
-    let port = "8686";
-
     info!("Roughenough server v{} starting", SERVER_VERSION);
 
-    let mut lt_key = get_long_term_key();
-    let mut ephemeral_key = make_ephemeral_key();
+    let mut args = env::args();
+    if args.len() != 2 {
+        error!("Usage: server /path/to/config.file");
+        process::exit(1);
+    }
+
+    let (iface, port, seed) = load_config(&args.nth(1).unwrap());
+
+    let mut lt_key = Signer::new(&seed);
+    let mut ephemeral_key = create_ephemeral_key();
+    let cert_bytes = make_cert(&mut lt_key, &ephemeral_key).encode().unwrap();
 
     info!("Long-term public key: {}", lt_key.public_key_bytes().to_hex());
     info!("Ephemeral public key: {}", ephemeral_key.public_key_bytes().to_hex());
+    info!("Server listening on {}:{}", iface, port);
 
-    let cert_msg = make_cert(&mut lt_key, &ephemeral_key);
-    let cert_bytes = cert_msg.encode().unwrap();
-
-    let socket = UdpSocket::bind(format!("{}:{}", server, port)).expect("failed to bind to socket");
+    let socket = UdpSocket::bind(format!("{}:{}", iface, port)).expect("failed to bind to socket");
     socket
         .set_read_timeout(Some(Duration::from_millis(100)))
         .expect("could not set read timeout");
 
-    info!("operating on port {}", port);
-
     let mut buf = [0u8; 65536];
-    let mut loops = 0u64;
+    let mut loop_count = 0u64;
     let mut responses = 0u64;
     let mut bad_requests = 0u64;
 
@@ -229,8 +288,8 @@ fn main() {
                 }
             }
             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                loops += 1;
-                if loops % 600 == 0 {
+                loop_count += 1;
+                if loop_count % 600 == 0 {
                     info!("responses {}, invalid requests {}", responses, bad_requests);
                 }
             }
