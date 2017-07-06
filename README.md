@@ -56,7 +56,8 @@ Roughtime features not implemented:
 * Multi-request Merkle tree is not built. Each request gets its own response with 
   `PATH` empty and `INDX` zero.
 
-Error-handling is not robust. There are many `unwrap()`'s and `expect()`'s in the request handling path.
+Error-handling is not robust. There are `unwrap()`'s and `expect()`'s in the request 
+handling path.
 
 The server is a dead simple single-threaded `recv_from` loop. `mio` and `tokio` are 
 intentionally avoided to keep the implementation straightforward and maximize 
