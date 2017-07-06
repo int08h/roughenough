@@ -8,10 +8,16 @@ extern crate ring;
 extern crate roughenough;
 extern crate time;
 extern crate untrusted;
+extern crate fern;
+#[macro_use]
+extern crate log;
+extern crate ctrlc;
 
 use std::io;
 use std::net::UdpSocket;
 use std::time::Duration;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use roughenough::{RtMessage, Tag, Error};
 use roughenough::{CERTIFICATE_CONTEXT, MIN_REQUEST_LENGTH, SIGNED_RESPONSE_CONTEXT, TREE_LEAF_TWEAK};
@@ -150,48 +156,89 @@ fn nonce_from_request(buf: &[u8], num_bytes: usize) -> Result<&[u8], Error> {
     }
 }
 
+fn init_logging() {
+	fern::Dispatch::new()
+		.format(|out, message, record| {
+			out.finish(format_args!("{} [{}] {}",
+				time::now().asctime(),
+				record.level(),
+				message))
+        })
+		.level(log::LogLevelFilter::Info)
+		.chain(std::io::stdout())
+		.apply()
+        .unwrap();
+}
+
 fn main() {
-    println!("Roughenough server v{} starting", SERVER_VERSION);
+    init_logging();
+
+    // TODO: configure
+    let server = "127.0.01";
+    let port = "8686";
+
+    info!("Roughenough server v{} starting", SERVER_VERSION);
 
     let mut lt_key = get_long_term_key();
     let mut ephemeral_key = make_ephemeral_key();
 
-    println!("Long-term public key: {}", lt_key.public_key_bytes().to_hex());
-    println!("Ephemeral public key: {}", ephemeral_key.public_key_bytes().to_hex());
+    info!("Long-term public key: {}", lt_key.public_key_bytes().to_hex());
+    info!("Ephemeral public key: {}", ephemeral_key.public_key_bytes().to_hex());
 
     let cert_msg = make_cert(&mut lt_key, &ephemeral_key);
     let cert_bytes = cert_msg.encode().unwrap();
 
-    let socket = UdpSocket::bind("127.0.0.1:8686").expect("failed to bind to socket");
+    let socket = UdpSocket::bind(format!("{}:{}", server, port)).expect("failed to bind to socket");
     socket
-        .set_read_timeout(Some(Duration::from_secs(1)))
+        .set_read_timeout(Some(Duration::from_millis(100)))
         .expect("could not set read timeout");
+
+    info!("operating on port {}", port);
 
     let mut buf = [0u8; 65536];
     let mut loops = 0u64;
+    let mut responses = 0u64;
+    let mut bad_requests = 0u64;
+
+    let keep_running = Arc::new(AtomicBool::new(true));
+    let kr = keep_running.clone();
+
+    ctrlc::set_handler(move || {
+        kr.store(false, Ordering::Release);
+    }).expect("failed setting Ctrl-C handler");
 
     loop {
+        if !keep_running.load(Ordering::Acquire) {
+            info!("Ctrl-C caught, exiting...");
+            break;
+        }
+
         match socket.recv_from(&mut buf) {
             Ok((num_bytes, src_addr)) => {
-                println!("{} bytes from {}", num_bytes, src_addr);
-
                 if let Ok(nonce) = nonce_from_request(&buf, num_bytes) {
                     let resp = make_response(&mut ephemeral_key, &cert_bytes, nonce);
                     let resp_bytes = resp.encode().unwrap();
 
                     socket
                         .send_to(&resp_bytes, src_addr)
-                        .expect("could not send");
-                    println!("response to {}: {:?}", src_addr, resp_bytes.to_hex());
+                        .expect("could not send response");
 
+                    info!("Responded to {}", src_addr);
+                    responses += 1;
                 } else {
-                    println!("invalid request from {}", src_addr);
+                    info!("invalid request ({} bytes) from {}", num_bytes, src_addr);
+                    bad_requests += 1;
                 }
-
-            }
-            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => loops += 1,
-            Err(ref e) => println!("Error {:?}: {:?}", e.kind(), e),
+            },
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => { 
+                loops += 1;
+                if loops % 600 == 0 {
+                    info!("responses {}, invalid requests {}", responses, bad_requests);
+                }
+            },
+            Err(ref e) => error!("Error {:?}: {:?}", e.kind(), e),
         }
     }
 
+    info!("Done.");
 }
