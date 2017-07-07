@@ -3,8 +3,8 @@
 synchronization server implemented in Rust.
 
 The server is functionally complete: it parses client requests and generates valid Roughtime responses.
-Rough edges remain, particularly in error-handling. See 
-[Limitations](#limitations) below. Contributions welcome.
+However rough edges and unimplemented features remain, see [Limitations](#limitations) below. 
+Contributions are welcome.
 
 ## Links
 * [Roughenough Github repo](https://github.com/int08h/roughenough)
@@ -19,11 +19,18 @@ Rough edges remain, particularly in error-handling. See
 ```bash
 $ cargo run --release --bin server /path/to/config.file
 ...
-Thu Jul  6 15:56:12 2017 [INFO] Roughenough server v0.1 starting
-Thu Jul  6 15:56:12 2017 [INFO] Long-term public key: d0756ee69ff5fe96cbcf9273208fec53124b1dd3a24d3910e07c7c54e2473012
-Thu Jul  6 15:56:12 2017 [INFO] Ephemeral public key: 7e105566cb7e2e5526b807c4513ef82a417d7dd2556cd6afe6a148e76ac809a6
-Thu Jul  6 15:56:12 2017 [INFO] Server listening on 127.0.0.1:8686
+2017-07-03T19:39:45-05:00 [INFO] Roughenough server v0.1 starting
+2017-07-03T19:39:45-05:00 [INFO] Long-term public key: d0756ee69ff5fe96cbcf9273208fec53124b1dd3a24d3910e07c7c54e2473012
+2017-07-03T19:39:45-05:00 [INFO] Ephemeral public key: 575d5ed128143c0f7a5cdaf476601dd1b8a192a7199e62c0d2c039b53234d062
+2017-07-03T19:39:45-05:00 [INFO] Server listening on 127.0.0.1:8686
+```
 
+The resulting binary is `target/release/server`. After building you can copy the 
+binary and run on its own (no `cargo` needed):
+
+```bash
+$ cp target/release/server /usr/local/bin 
+$ /usr/local/bin/server /path/to/config.file
 ```
 
 ### Configuration File
@@ -40,9 +47,8 @@ Where:
 
 * **`interface`** - IP address or interface name for listening to client requests
 * **`port`** - UDP port to listen for requests
-* **`seed`** - A 32-byte hexadecimal value used to generate the 
-             server's long-term key pair. **This is a secret value**, treat it
-             with care.
+* **`seed`** - A 32-byte hexadecimal value used to generate the server's long-term 
+               key pair. **This is a secret value**, treat it with care.
 
 ### Stopping the Server
 Use Ctrl-C or `kill` the process.
@@ -51,22 +57,25 @@ Use Ctrl-C or `kill` the process.
 
 Roughtime features not implemented:
 
-* On-line key rotation. The server must be restarted to generate a new delegated key. 
+* Leap-second smearing.
 * Ecosystem-style response fault injection.
-* Multi-request Merkle tree is not built. Each request gets its own response with 
-  `PATH` empty and `INDX` zero.
+* On-line key rotation. The server must be restarted to generate a new delegated key. 
+* Multi-request Merkle Tree batching. For now each request gets its own response 
+  with `PATH` empty and `INDX` zero.
 
-Error-handling is not robust. There are `unwrap()`'s and `expect()`'s in the request 
-handling path.
+Other notes:
 
-The server is a dead simple single-threaded `recv_from` loop. `mio` and `tokio` are 
-intentionally avoided to keep the implementation straightforward and maximize 
-comprehensibility by newbie Rustaceans. Blazing async ninja speed is not a goal.
-
-Per-request heap allocations could be reduced: a few `Vec`'s could be replaced by 
-lifetime scoped slices.
-
-Constants aren't consistently used. A few hard-coded magic numbers remain.
+* Error-handling is not robust. There are `unwrap()`'s and `expect()`'s in the request 
+  handling path.
+* The server is a simple single-threaded `recv_from` loop. `mio` and `tokio` are 
+  intentionally avoided to keep the implementation straightforward and maximize 
+  comprehensibility by newbie Rustaceans. Blazing async ninja speed is not a goal.
+* Per-request heap allocations could be reduced: a few `Vec`'s could be replaced by 
+  lifetime scoped slices.
+* Constants aren't consistently used. A few hard-coded magic numbers remain.
+* Goal of using self-contained dependencies did not bear fruit. Many transitive 
+  dependencies lengthen the build-time. Build is (to me) too long for such a 
+  simple project. 
 
 ## About the Roughtime Protocol
 [Roughtime](https://roughtime.googlesource.com/roughtime) is a protocol that aims to achieve rough 

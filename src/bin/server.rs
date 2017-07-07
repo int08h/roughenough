@@ -198,7 +198,7 @@ fn init_logging() {
     fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(
-                format_args!("{} [{}] {}", time::now().asctime(), record.level(), message)
+                format_args!("{} [{}] {}", time::now().rfc3339(), record.level(), message)
             )
         })
         .level(log::LogLevelFilter::Info)
