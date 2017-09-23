@@ -8,8 +8,8 @@ description = "A Roughtime secure time sync server written in Rust"
 
 [dependencies]
 byteorder = "1"
-ring = "0.11.0"
-untrusted = "0.5.0"
+ring = "0.12"
+untrusted = "0.5.1"
 time = "0.1"
 log = "0.3"
 fern = "0.4"
