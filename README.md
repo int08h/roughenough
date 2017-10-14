@@ -1,9 +1,12 @@
-# Roughenough [![Build Status](https://travis-ci.org/int08h/roughenough.svg?branch=master)](https://travis-ci.org/int08h/roughenough)
+# Roughenough 
+
+[![Build Status](https://travis-ci.org/int08h/roughenough.svg?branch=master)](https://travis-ci.org/int08h/roughenough)
+
 **Roughenough** is a [Roughtime](https://roughtime.googlesource.com/roughtime) secure time 
 synchronization server implemented in Rust.
 
-The server is functionally complete: it parses client requests and generates valid Roughtime responses.
-However rough edges and unimplemented features remain, see [Limitations](#limitations) below. 
+The server is bare-bones, but functionally complete: it parses client requests and generates valid Roughtime responses.
+*Rough edges and unimplemented features remain*, see [limitations](#limitations) below. 
 Contributions are welcome.
 
 ## Links

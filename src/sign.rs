@@ -15,7 +15,7 @@
 //! Ed25519 signing and verification
 //!
 //! `Ring` does not provide a multi-step (init-update-finish) interface
-//! for Ed25519 signatures. `Verifier` and `Signer` attempt to provide this 
+//! for Ed25519 signatures. `Verifier` and `Signer` provide this 
 //! missing multi-step api.
 
 extern crate ring;
