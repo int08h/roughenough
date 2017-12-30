@@ -16,8 +16,39 @@
 //! An implementation of the [Roughtime](https://roughtime.googlesource.com/roughtime)
 //! secure time synchronization protocol.
 //!
-//! This documentation is for working with Roughtime protocol details. Docs for the
-//! **server** [are here](../server/index.html).
+//! Roughtime aims to achieve rough time synchronisation in a secure way that doesn't 
+//! depend on any particular time server, and in such a way that, if a time server does 
+//! misbehave, clients end up with cryptographic proof of it. 
+//!
+//! # Protocol
+//!
+//! Roughtime messages are represetned by [`RtMessage`](struct.RtMessage.html) which 
+//! implements the mapping of Roughtime `u32` [`tags`](enum.Tag.html) to byte-strings. 
+//!
+//! # Server
+//!
+//! A Roughtime server implementation is in `src/bin/server.rs`. The server is 
+//! configured via a yaml file:
+//!
+//! ```yaml
+//! interface: 127.0.0.1
+//! port: 8686
+//! seed: f61075c988feb9cb700a4a6a3291bfbc9cab11b9c9eca8c802468eb38a43d7d3
+//! ```
+//!
+//! Where:
+//!
+//!   * **interface** - IP address or interface name for listening to client requests
+//!   * **port** - UDP port to listen to requests
+//!   * **seed** - A 32-byte hexadecimal value used as the seed to generate the 
+//!                server's long-term key pair. **This is a secret value**, treat it
+//!                with care.
+//!
+//! To run the server:
+//!
+//! ```bash
+//! $ cargo run --release --bin server /path/to/config.file
+//! ```
 //!
 
 extern crate byteorder;
