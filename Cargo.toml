@@ -5,6 +5,11 @@ repository = "https://github.com/int08h/roughenough"
 authors = ["Stuart Stock <stuart@int08h.com>"]
 license = "Apache-2.0"
 description = "A Roughtime secure time sync server written in Rust"
+readme = "README.md"
+keywords = ["roughtime", "cryptography", "crypto"]
+
+[badges]
+travis-ci = { repository = "int08h/roughenough", branch = "master" }
 
 [dependencies]
 byteorder = "1"
