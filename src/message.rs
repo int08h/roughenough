@@ -98,7 +98,7 @@ impl RtMessage {
         }
 
         // check we wrote exactly what we expected
-        assert!(out.len() == self.encoded_size(), "unexpected length");
+        assert_eq!(out.len(), self.encoded_size(), "unexpected length");
 
         Ok(out)
     }
