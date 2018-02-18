@@ -91,7 +91,7 @@ created by Adam Langley and Robert Obryk.
 * Stuart Stock, original author and current maintainer (stuart {at} int08h.com)
 
 ## Copyright and License
-Roughenough is copyright (c) 2017 int08h LLC. All rights reserved. 
+Roughenough is copyright (c) 2017-2018 int08h LLC. All rights reserved. 
 
 int08h LLC licenses Roughenough (the "Software") to you under the Apache License, version 2.0 
 (the "License"); you may not use this Software except in compliance with the License. You may obtain 

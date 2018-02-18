@@ -72,7 +72,7 @@ use ring::rand::SecureRandom;
 
 use yaml_rust::YamlLoader;
 
-const SERVER_VERSION: &'static str = "0.1";
+const SERVER_VERSION: &'static str = "0.1.1";
 
 fn create_ephemeral_key() -> Signer {
     let rng = rand::SystemRandom::new();
