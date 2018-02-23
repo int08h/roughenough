@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use error::Error;
+
 /// An unsigned 32-bit value (key) that maps to a byte-string (value).
-#[derive(Debug, PartialEq, PartialOrd)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Clone)]
 pub enum Tag {
     // Enforcement of the "tags in strictly increasing order" rule is done using the
     // little-endian encoding of the ASCII tag value; e.g. 'SIG\x00' is 0x00474953 and
@@ -54,6 +56,26 @@ impl Tag {
             Tag::ROOT => b"ROOT",
             Tag::SIG => b"SIG\x00",
             Tag::SREP => b"SREP",
+        }
+    }
+
+    pub fn from_wire(bytes: &[u8]) -> Result<Self, Error> {
+        match bytes {
+            b"CERT" => Ok(Tag::CERT),
+            b"DELE" => Ok(Tag::DELE),
+            b"INDX" => Ok(Tag::INDX),
+            b"MAXT" => Ok(Tag::MAXT),
+            b"MIDP" => Ok(Tag::MIDP),
+            b"MINT" => Ok(Tag::MINT),
+            b"NONC" => Ok(Tag::NONC),
+            b"PAD\xff" => Ok(Tag::PAD),
+            b"PATH" => Ok(Tag::PATH),
+            b"PUBK" => Ok(Tag::PUBK),
+            b"RADI" => Ok(Tag::RADI),
+            b"ROOT" => Ok(Tag::ROOT),
+            b"SIG\x00" => Ok(Tag::SIG),
+            b"SREP" => Ok(Tag::SREP),
+            _ => Err(Error::InvalidTag(Box::from(bytes)))
         }
     }
 }

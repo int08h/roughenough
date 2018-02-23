@@ -21,6 +21,9 @@ log = "0.4"
 simple_logger = "0.5"
 yaml-rust = "0.3"
 ctrlc = { version = "3.1", features = ["termination"] }
+clap = "2"
+chrono = "0.4"
+hex = "0.3"
 
 [dev-dependencies]
 criterion = "0.2.0"
@@ -28,3 +31,4 @@ criterion = "0.2.0"
 [[bench]]
 name = "messages"
 harness = false
+
