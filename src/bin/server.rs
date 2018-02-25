@@ -313,7 +313,8 @@ fn polling_loop(addr: &SocketAddr, mut ephemeral_key: &mut Signer, cert_bytes: &
 }
 
 fn main() {
-    simple_logger::init().unwrap();
+    use log::Level;
+    simple_logger::init_with_level(Level::Info).unwrap();
 
     info!("Roughenough server v{} starting", SERVER_VERSION);
 
