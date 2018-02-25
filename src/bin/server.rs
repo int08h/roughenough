@@ -38,6 +38,8 @@
 //! $ cargo run --release --bin server /path/to/config.file
 //! ```
 
+#![allow(deprecated)] // for mio::Timer
+
 extern crate byteorder;
 extern crate core;
 extern crate ring;
@@ -49,16 +51,20 @@ extern crate ctrlc;
 extern crate yaml_rust;
 #[macro_use]
 extern crate log;
+extern crate mio;
 
 use std::env;
-use std::io;
 use std::process;
 use std::fs::File;
 use std::io::Read;
-use std::net::UdpSocket;
 use std::time::Duration;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+use mio::{Poll, Token, Ready, PollOpt, Events};
+use mio::net::UdpSocket;
+use mio::timer::Timer;
 
 use byteorder::{LittleEndian, WriteBytesExt};
 
@@ -72,7 +78,10 @@ use ring::rand::SecureRandom;
 
 use yaml_rust::YamlLoader;
 
-const SERVER_VERSION: &'static str = "0.1.1";
+const SERVER_VERSION: &'static str = "0.2.0";
+
+const MESSAGE: Token = Token(0);
+const STATUS: Token = Token(1);
 
 fn create_ephemeral_key() -> Signer {
     let rng = rand::SystemRandom::new();
@@ -94,7 +103,13 @@ fn make_dele_bytes(ephemeral_key: &Signer) -> Result<Vec<u8>, Error> {
     dele_msg.encode()
 }
 
-fn make_cert(long_term_key: &mut Signer, ephemeral_key: &Signer) -> RtMessage {
+fn make_key_and_cert(seed: &[u8]) -> (Signer, Vec<u8>) {
+    let mut long_term_key = Signer::new(seed);
+    let ephemeral_key = create_ephemeral_key();
+
+    info!("Long-term public key: {}", long_term_key.public_key_bytes().to_hex());
+    info!("Ephemeral public key: {}", ephemeral_key.public_key_bytes().to_hex());
+
     // Make DELE and sign it with long-term key
     let dele_bytes = make_dele_bytes(&ephemeral_key).unwrap();
     let dele_signature = {
@@ -104,11 +119,15 @@ fn make_cert(long_term_key: &mut Signer, ephemeral_key: &Signer) -> RtMessage {
     };
 
     // Create CERT
-    let mut cert_msg = RtMessage::new(2);
-    cert_msg.add_field(Tag::SIG, &dele_signature).unwrap();
-    cert_msg.add_field(Tag::DELE, &dele_bytes).unwrap();
+    let cert_bytes = {
+        let mut cert_msg = RtMessage::new(2);
+        cert_msg.add_field(Tag::SIG, &dele_signature).unwrap();
+        cert_msg.add_field(Tag::DELE, &dele_bytes).unwrap();
 
-    cert_msg
+        cert_msg.encode().unwrap()
+    };
+
+    return (ephemeral_key, cert_bytes);
 }
 
 fn make_response(ephemeral_key: &mut Signer, cert_bytes: &[u8], nonce: &[u8]) -> RtMessage {
@@ -207,7 +226,7 @@ fn init_logging() {
         .unwrap();
 }
 
-fn load_config(config_file: &str) -> (String, u16, Vec<u8>) {
+fn load_config(config_file: &str) -> (SocketAddr, Vec<u8>) {
     let mut infile = File::open(config_file)
         .expect("failed to open config file");
 
@@ -235,10 +254,75 @@ fn load_config(config_file: &str) -> (String, u16, Vec<u8>) {
         }
     }
 
+    let addr = format!("{}:{}", iface, port);
+    let sock_addr: SocketAddr = addr.parse()
+        .expect(&format!("could not create socket address from {}", addr));
+
     let binseed = seed.from_hex()
         .expect("seed value invalid; 'seed' should be 32 byte hex value");
 
-    (iface, port, binseed)
+    (sock_addr, binseed)
+}
+
+fn polling_loop(addr: &SocketAddr, mut ephemeral_key: &mut Signer, cert_bytes: &[u8]) {
+    let keep_running = Arc::new(AtomicBool::new(true));
+    let kr = keep_running.clone();
+
+    ctrlc::set_handler(move || { kr.store(false, Ordering::Release); })
+        .expect("failed setting Ctrl-C handler");
+
+    let socket = UdpSocket::bind(addr).expect("failed to bind to socket");
+    let status_duration = Duration::from_secs(6000);
+    let poll_duration = Some(Duration::from_millis(100));
+
+    let mut timer: Timer<()> = Timer::default();
+    timer.set_timeout(status_duration, ()).expect("unable to set_timeout");
+
+    let mut buf = [0u8; 65536];
+    let mut events = Events::with_capacity(32);
+    let mut num_responses = 0u64;
+    let mut num_bad_requests = 0u64;
+
+    let poll = Poll::new().unwrap();
+    poll.register(&socket, MESSAGE, Ready::readable(), PollOpt::edge()).unwrap();
+    poll.register(&timer, STATUS, Ready::readable(), PollOpt::edge()).unwrap();
+
+    loop {
+        if !keep_running.load(Ordering::Acquire) {
+            info!("Ctrl-C caught, exiting...");
+            break;
+        }
+
+        poll.poll(&mut events, poll_duration).expect("poll failed");
+
+        for event in events.iter() {
+            match event.token() {
+                MESSAGE => {
+                    let (num_bytes, src_addr) = socket.recv_from(&mut buf).expect("recv_from failed");
+
+                    if let Ok(nonce) = nonce_from_request(&buf, num_bytes) {
+                        let resp = make_response(&mut ephemeral_key, &cert_bytes, nonce);
+                        let resp_bytes = resp.encode().unwrap();
+
+                        socket.send_to(&resp_bytes, &src_addr).expect("send_to failed");
+
+                        info!("Responded to {}", src_addr);
+                        num_responses += 1;
+                    } else {
+                        info!("invalid request ({} bytes) from {}", num_bytes, src_addr);
+                        num_bad_requests += 1;
+                    }
+                }
+
+                STATUS => {
+                    info!("responses {}, invalid requests {}", num_responses, num_bad_requests);
+                    timer.set_timeout(status_duration, ()).expect("unable to set_timeout");
+                }
+
+                _ => unreachable!()
+            }
+        }
+    }
 }
 
 fn main() {
@@ -252,64 +336,13 @@ fn main() {
         process::exit(1);
     }
 
-    let (iface, port, seed) = load_config(&args.nth(1).unwrap());
+    let (addr, key_seed) = load_config(&args.nth(1).unwrap());
+    let (mut ephemeral_key, cert_bytes) = make_key_and_cert(&key_seed);
 
-    let mut lt_key = Signer::new(&seed);
-    let mut ephemeral_key = create_ephemeral_key();
-    let cert_bytes = make_cert(&mut lt_key, &ephemeral_key).encode().unwrap();
+    info!("Server listening on {}", addr);
 
-    info!("Long-term public key: {}", lt_key.public_key_bytes().to_hex());
-    info!("Ephemeral public key: {}", ephemeral_key.public_key_bytes().to_hex());
-    info!("Server listening on {}:{}", iface, port);
-
-    let socket = UdpSocket::bind(format!("{}:{}", iface, port)).expect("failed to bind to socket");
-    socket
-        .set_read_timeout(Some(Duration::from_millis(100)))
-        .expect("could not set read timeout");
-
-    let mut buf = [0u8; 65536];
-    let mut loop_count = 0u64;
-    let mut responses = 0u64;
-    let mut bad_requests = 0u64;
-
-    let keep_running = Arc::new(AtomicBool::new(true));
-    let kr = keep_running.clone();
-
-    ctrlc::set_handler(move || { kr.store(false, Ordering::Release); })
-        .expect("failed setting Ctrl-C handler");
-
-    loop {
-        if !keep_running.load(Ordering::Acquire) {
-            info!("Ctrl-C caught, exiting...");
-            break;
-        }
-
-        match socket.recv_from(&mut buf) {
-            Ok((num_bytes, src_addr)) => {
-                if let Ok(nonce) = nonce_from_request(&buf, num_bytes) {
-                    let resp = make_response(&mut ephemeral_key, &cert_bytes, nonce);
-                    let resp_bytes = resp.encode().unwrap();
-
-                    socket
-                        .send_to(&resp_bytes, src_addr)
-                        .expect("could not send response");
-
-                    info!("Responded to {}", src_addr);
-                    responses += 1;
-                } else {
-                    info!("invalid request ({} bytes) from {}", num_bytes, src_addr);
-                    bad_requests += 1;
-                }
-            }
-            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                loop_count += 1;
-                if loop_count % 600 == 0 {
-                    info!("responses {}, invalid requests {}", responses, bad_requests);
-                }
-            }
-            Err(ref e) => error!("Error {:?}: {:?}", e.kind(), e),
-        }
-    }
+    polling_loop(&addr, &mut ephemeral_key, &cert_bytes);
 
     info!("Done.");
+    process::exit(0);
 }
