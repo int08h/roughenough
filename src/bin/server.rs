@@ -46,11 +46,11 @@ extern crate ring;
 extern crate roughenough;
 extern crate time;
 extern crate untrusted;
-extern crate fern;
 extern crate ctrlc;
 extern crate yaml_rust;
 #[macro_use]
 extern crate log;
+extern crate simple_logger;
 extern crate mio;
 
 use std::env;
@@ -213,19 +213,6 @@ fn nonce_from_request(buf: &[u8], num_bytes: usize) -> Result<&[u8], Error> {
     }
 }
 
-fn init_logging() {
-    fern::Dispatch::new()
-        .format(|out, message, record| {
-            out.finish(
-                format_args!("{} [{}] {}", time::now().rfc3339(), record.level(), message)
-            )
-        })
-        .level(log::LogLevelFilter::Info)
-        .chain(std::io::stdout())
-        .apply()
-        .unwrap();
-}
-
 fn load_config(config_file: &str) -> (SocketAddr, Vec<u8>) {
     let mut infile = File::open(config_file)
         .expect("failed to open config file");
@@ -326,7 +313,7 @@ fn polling_loop(addr: &SocketAddr, mut ephemeral_key: &mut Signer, cert_bytes: &
 }
 
 fn main() {
-    init_logging();
+    simple_logger::init().unwrap();
 
     info!("Roughenough server v{} starting", SERVER_VERSION);
 
