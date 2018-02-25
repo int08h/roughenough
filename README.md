@@ -6,8 +6,8 @@
 **Roughenough** is a [Roughtime](https://roughtime.googlesource.com/roughtime) secure time 
 synchronization server implemented in Rust.
 
-The server is bare-bones, but functionally complete: it parses client requests and generates valid Roughtime responses.
-*Rough edges and unimplemented features remain*, see [limitations](#limitations) below. 
+The server is functionally complete: it parses client requests and generates valid Roughtime responses.
+*Some unimplemented features remain*, see [limitations](#limitations) below. 
 Contributions are welcome.
 
 ## Links
@@ -21,12 +21,12 @@ Contributions are welcome.
 ### Starting the Server
 
 ```bash
-$ cargo run --release --bin server /path/to/config.file
-...
-2017-07-03T19:39:45-05:00 [INFO] Roughenough server v0.1 starting
-2017-07-03T19:39:45-05:00 [INFO] Long-term public key: d0756ee69ff5fe96cbcf9273208fec53124b1dd3a24d3910e07c7c54e2473012
-2017-07-03T19:39:45-05:00 [INFO] Ephemeral public key: 575d5ed128143c0f7a5cdaf476601dd1b8a192a7199e62c0d2c039b53234d062
-2017-07-03T19:39:45-05:00 [INFO] Server listening on 127.0.0.1:8686
+$ cargo build --release
+$ target/release/server example.cfg
+2018-02-25 00:05:09 INFO  [server] Roughenough server v0.2.0 starting
+2018-02-25 00:05:09 INFO  [server] Long-term public key: d0756ee69ff5fe96cbcf9273208fec53124b1dd3a24d3910e07c7c54e2473012
+2018-02-25 00:05:09 INFO  [server] Ephemeral public key: 25fd5dc31ceee241aed3e643534e95ed0609e9a20982a45ac0312a5f55e2cc66
+2018-02-25 00:05:09 INFO  [server] Server listening on 127.0.0.1:8686
 ```
 
 The resulting binary is `target/release/server`. After building you can copy the 
@@ -52,34 +52,32 @@ Where:
 * **`interface`** - IP address or interface name for listening to client requests
 * **`port`** - UDP port to listen for requests
 * **`seed`** - A 32-byte hexadecimal value used to generate the server's long-term 
-               key pair. **This is a secret value**, treat it with care.
+               key pair. **This is a secret value and must be un-guessable**, 
+               treat it with care.
 
 ### Stopping the Server
+
 Use Ctrl-C or `kill` the process.
 
 ## Limitations
 
 Roughtime features not implemented:
 
-* Leap-second smearing.
-* Ecosystem-style response fault injection.
 * On-line key rotation. The server must be restarted to generate a new delegated key. 
 * Multi-request Merkle Tree batching. For now each request gets its own response 
   with `PATH` empty and `INDX` zero.
+* The Rougheough server depends on the host's time source to comply with the smeared leap-second 
+  requirement of the Roughtime protocol. A Roughenough server sourcing time from 
+  [Google's public NTP servers](https://developers.google.com/time/) would produce compliant
+  smeared leap-seconds but time sourced from members of `pool.ntp.org` likely will not.
+* Ecosystem-style response fault injection.
 
 Other notes:
 
-* Error-handling is not robust. There are `unwrap()`'s and `expect()`'s in the request 
-  handling path.
-* The server is a simple single-threaded `recv_from` loop. `mio` and `tokio` are 
-  intentionally avoided to keep the implementation straightforward and maximize 
-  comprehensibility by newbie Rustaceans. Blazing async ninja speed is not a goal.
-* Per-request heap allocations could be reduced: a few `Vec`'s could be replaced by 
+* Error-handling needs a closer examination to verify the `unwrap()`'s and `expect()`'s present
+  in the request handling path are for truly exceptional conditions.
+* Per-request heap allocations could probably be reduced: a few `Vec`'s could be replaced by 
   lifetime scoped slices.
-* Constants aren't consistently used. A few hard-coded magic numbers remain.
-* Goal of using self-contained dependencies did not bear fruit. Many transitive 
-  dependencies lengthen the build-time. Build is (to me) too long for such a 
-  simple project. 
 
 ## About the Roughtime Protocol
 [Roughtime](https://roughtime.googlesource.com/roughtime) is a protocol that aims to achieve rough 
