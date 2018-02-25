@@ -78,7 +78,7 @@ use ring::rand::SecureRandom;
 
 use yaml_rust::YamlLoader;
 
-const SERVER_VERSION: &'static str = "0.2.0";
+const SERVER_VERSION: &str = "0.2.0";
 
 const MESSAGE: Token = Token(0);
 const STATUS: Token = Token(1);
@@ -127,7 +127,7 @@ fn make_key_and_cert(seed: &[u8]) -> (Signer, Vec<u8>) {
         cert_msg.encode().unwrap()
     };
 
-    return (ephemeral_key, cert_bytes);
+    (ephemeral_key, cert_bytes)
 }
 
 fn make_response(ephemeral_key: &mut Signer, cert_bytes: &[u8], nonce: &[u8]) -> RtMessage {
@@ -147,13 +147,13 @@ fn make_response(ephemeral_key: &mut Signer, cert_bytes: &[u8], nonce: &[u8]) ->
     let mut midp: Vec<u8> = Vec::with_capacity(8);
 
     // one second (in microseconds)
-    radi.write_u32::<LittleEndian>(1000000).unwrap();
+    radi.write_u32::<LittleEndian>(1_000_000).unwrap();
 
     // current epoch time in microseconds
     let now = {
         let tv = time::get_time();
-        let secs = (tv.sec as u64) * 1000000;
-        let nsecs = (tv.nsec as u64) / 1000;
+        let secs = (tv.sec as u64) * 1_000_000;
+        let nsecs = (tv.nsec as u64) / 1_000;
 
         secs + nsecs
     };
@@ -163,8 +163,8 @@ fn make_response(ephemeral_key: &mut Signer, cert_bytes: &[u8], nonce: &[u8]) ->
     let srep_bytes = {
         // hash request nonce
         let mut ctx = digest::Context::new(&digest::SHA512);
-        ctx.update(&TREE_LEAF_TWEAK);
-        ctx.update(&nonce);
+        ctx.update(TREE_LEAF_TWEAK);
+        ctx.update(nonce);
         let digest = ctx.finish();
 
         let mut srep_msg = RtMessage::new(3);
@@ -255,17 +255,17 @@ fn polling_loop(addr: &SocketAddr, mut ephemeral_key: &mut Signer, cert_bytes: &
     let keep_running = Arc::new(AtomicBool::new(true));
     let kr = keep_running.clone();
 
-    ctrlc::set_handler(move || { kr.store(false, Ordering::Release); })
+    ctrlc::set_handler(move || kr.store(false, Ordering::Release))
         .expect("failed setting Ctrl-C handler");
 
     let socket = UdpSocket::bind(addr).expect("failed to bind to socket");
-    let status_duration = Duration::from_secs(6000);
+    let status_duration = Duration::from_secs(6_000);
     let poll_duration = Some(Duration::from_millis(100));
 
     let mut timer: Timer<()> = Timer::default();
     timer.set_timeout(status_duration, ()).expect("unable to set_timeout");
 
-    let mut buf = [0u8; 65536];
+    let mut buf = [0u8; 65_536];
     let mut events = Events::with_capacity(32);
     let mut num_responses = 0u64;
     let mut num_bad_requests = 0u64;
@@ -288,7 +288,7 @@ fn polling_loop(addr: &SocketAddr, mut ephemeral_key: &mut Signer, cert_bytes: &
                     let (num_bytes, src_addr) = socket.recv_from(&mut buf).expect("recv_from failed");
 
                     if let Ok(nonce) = nonce_from_request(&buf, num_bytes) {
-                        let resp = make_response(&mut ephemeral_key, &cert_bytes, nonce);
+                        let resp = make_response(&mut ephemeral_key, cert_bytes, nonce);
                         let resp_bytes = resp.encode().unwrap();
 
                         socket.send_to(&resp_bytes, &src_addr).expect("send_to failed");

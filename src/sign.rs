@@ -68,7 +68,7 @@ pub struct Signer {
 impl Signer {
     pub fn new(seed: &[u8]) -> Self {
         Signer {
-            key_pair: Ed25519KeyPair::from_seed_unchecked(Input::from(&seed)).unwrap(),
+            key_pair: Ed25519KeyPair::from_seed_unchecked(Input::from(seed)).unwrap(),
             buf: Vec::with_capacity(256),
         }
     }

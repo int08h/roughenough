@@ -80,13 +80,13 @@ fn make_response(ephemeral_key: &mut Signer, cert_bytes: &[u8], nonce: &[u8]) ->
   let mut midp: Vec<u8> = Vec::with_capacity(8);
 
   // one second (in microseconds)
-  radi.write_u32::<LittleEndian>(1000000).unwrap();
+  radi.write_u32::<LittleEndian>(1_000_000).unwrap();
 
   // current epoch time in microseconds
   let now = {
     let tv = time::get_time();
-    let secs = (tv.sec as u64) * 1000000;
-    let nsecs = (tv.nsec as u64) / 1000;
+    let secs = (tv.sec as u64) * 1_000_000;
+    let nsecs = (tv.nsec as u64) / 1_000;
 
     secs + nsecs
   };
@@ -96,8 +96,8 @@ fn make_response(ephemeral_key: &mut Signer, cert_bytes: &[u8], nonce: &[u8]) ->
   let srep_bytes = {
     // hash request nonce
     let mut ctx = digest::Context::new(&digest::SHA512);
-    ctx.update(&TREE_LEAF_TWEAK);
-    ctx.update(&nonce);
+    ctx.update(TREE_LEAF_TWEAK);
+    ctx.update(nonce);
     let digest = ctx.finish();
 
     let mut srep_msg = RtMessage::new(3);

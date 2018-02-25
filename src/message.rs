@@ -108,7 +108,7 @@ impl RtMessage {
         let num_tags = self.tags.len();
         let tags_size = 4 * num_tags;
         let offsets_size = if num_tags < 2 { 0 } else { 4 * (num_tags - 1) };
-        let values_size: usize = self.values.iter().map(|ref v| v.len()).sum();
+        let values_size: usize = self.values.iter().map(|v| v.len()).sum();
 
         4 + tags_size + offsets_size + values_size
     }
