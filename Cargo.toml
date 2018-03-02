@@ -13,6 +13,7 @@ travis-ci = { repository = "int08h/roughenough", branch = "master" }
 
 [dependencies]
 mio = "0.6"
+mio-extras = "2.0"
 byteorder = "1"
 ring = "0.12"
 untrusted = "0.5"

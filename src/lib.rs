@@ -58,6 +58,7 @@ mod tag;
 mod message;
 
 pub mod sign;
+pub mod merkle;
 
 pub use error::Error;
 pub use tag::Tag;
@@ -82,6 +83,9 @@ pub const NONCE_LENGTH: u32 = 64;
 
 /// Size (in bytes) of an Ed25519 signature
 pub const SIGNATURE_LENGTH: u32 = 64;
+
+/// Size (in bytes) of a SHA-512 hash
+pub const HASH_LENGTH: u32 = 64;
 
 /// Size (in bytes) of server's timestamp value
 pub const TIMESTAMP_LENGTH: u32 = 8;

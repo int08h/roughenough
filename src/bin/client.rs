@@ -9,7 +9,6 @@ extern crate hex;
 
 use ring::rand;
 use ring::rand::SecureRandom;
-use ring::digest;
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
@@ -20,8 +19,9 @@ use std::iter::Iterator;
 use std::collections::HashMap;
 use std::net::{UdpSocket, ToSocketAddrs};
 
-use roughenough::{RtMessage, Tag, VERSION, TREE_NODE_TWEAK, TREE_LEAF_TWEAK, CERTIFICATE_CONTEXT, SIGNED_RESPONSE_CONTEXT};
+use roughenough::{RtMessage, Tag, VERSION, CERTIFICATE_CONTEXT, SIGNED_RESPONSE_CONTEXT};
 use roughenough::sign::Verifier;
+use roughenough::merkle::root_from_paths;
 use clap::{Arg, App};
 
 fn create_nonce() -> [u8; 64] {
@@ -56,6 +56,12 @@ struct ResponseHandler {
     nonce: [u8; 64]
 }
 
+struct ParsedResponse {
+    verified: bool,
+    midpoint: u64,
+    radius: u32
+}
+
 impl ResponseHandler {
     pub fn new(pub_key: Option<Vec<u8>>, response: RtMessage, nonce: [u8; 64]) -> ResponseHandler {
         let msg = response.into_hash_map();
@@ -74,18 +80,24 @@ impl ResponseHandler {
         }
     }
 
-    pub fn extract_time(&self) -> (u64, u32) {
+    pub fn extract_time(&self) -> ParsedResponse {
         let midpoint = self.srep[&Tag::MIDP].as_slice().read_u64::<LittleEndian>().unwrap();
         let radius = self.srep[&Tag::RADI].as_slice().read_u32::<LittleEndian>().unwrap();
+        let mut verified = false;
 
         if self.pub_key.is_some() {
             self.validate_dele();
             self.validate_srep();
             self.validate_merkle();
             self.validate_midpoint(midpoint);
+            verified = true;
         }
 
-        (midpoint, radius)
+        ParsedResponse {
+            verified,
+            midpoint,
+            radius
+        }
     }
 
     fn validate_dele(&self) {
@@ -106,32 +118,12 @@ impl ResponseHandler {
 
     fn validate_merkle(&self) {
         let srep = RtMessage::from_bytes(&self.msg[&Tag::SREP]).unwrap().into_hash_map();
-        let mut index = self.msg[&Tag::INDX].as_slice().read_u32::<LittleEndian>().unwrap();
+        let index = self.msg[&Tag::INDX].as_slice().read_u32::<LittleEndian>().unwrap();
         let paths = &self.msg[&Tag::PATH];
 
-        let mut hash = sha_512(TREE_LEAF_TWEAK, &self.nonce);
+        let hash = root_from_paths(index as usize, &self.nonce, paths); 
 
-        assert_eq!(paths.len() % 64, 0);
-
-        for path in paths.chunks(64) {
-            let mut ctx = digest::Context::new(&digest::SHA512);
-            ctx.update(TREE_NODE_TWEAK);
-
-            if index & 1 == 0 {
-                // Left
-                ctx.update(&hash);
-                ctx.update(path);
-            } else {
-                // Right
-                ctx.update(path);
-                ctx.update(&hash);
-            }
-            hash = Vec::from(ctx.finish().as_ref());
-
-            index >>= 1;
-        }
-
-        assert_eq!(hash, srep[&Tag::ROOT], "Nonce not in merkle tree!");
+        assert_eq!(Vec::from(hash), srep[&Tag::ROOT], "Nonce not in merkle tree!");
 
     }
 
@@ -148,13 +140,6 @@ impl ResponseHandler {
         verifier.update(data);
         verifier.verify(sig)
     }
-}
-
-fn sha_512(prefix: &[u8], data: &[u8]) -> Vec<u8> {
-    let mut ctx = digest::Context::new(&digest::SHA512);
-    ctx.update(prefix);
-    ctx.update(data);
-    Vec::from(ctx.finish().as_ref())
 }
 
 fn main() {
@@ -187,6 +172,11 @@ fn main() {
                            .help("The number of requests to make to the server (each from a different source port). This is mainly useful for testing batch response handling")
                            .default_value("1")
                         )
+                      .arg(Arg::with_name("stress")
+                           .short("s")
+                           .long("stress")
+                           .help("Stress-tests the server by sending the same request as fast as possible. Please only use this on your own server")
+                        )
                       .get_matches();
 
     let host = matches.value_of("host").unwrap();
@@ -194,10 +184,30 @@ fn main() {
     let num_requests = value_t_or_exit!(matches.value_of("num-requests"), u16) as usize;
     let pub_key = matches.value_of("public-key").map(|pkey| hex::decode(pkey).expect("Error parsing public key!"));
     let time_format = matches.value_of("time-format").unwrap();
+    let stress = matches.is_present("stress");
 
     println!("Requesting time from: {:?}:{:?}", host, port);
 
-    let addrs: Vec<_> = (host, port).to_socket_addrs().unwrap().collect();
+    let addr = (host, port).to_socket_addrs().unwrap().next().unwrap();
+
+    if stress {
+
+        if !addr.ip().is_loopback() {
+            println!("ERROR: Cannot use non-loopback address {} for stress testing", addr.ip());
+            return;
+        }
+
+        println!("Stress-testing!");
+
+        let nonce = create_nonce();
+        let socket = UdpSocket::bind("0.0.0.0:0").expect("Couldn't open UDP socket");
+        let request = make_request(&nonce);
+
+        loop {
+            socket.send_to(&request, addr).unwrap();
+        }
+    }
+
 
     let mut requests = Vec::with_capacity(num_requests);
 
@@ -210,18 +220,21 @@ fn main() {
     }
 
     for &mut (_, ref request, ref mut socket) in requests.iter_mut() {
-        socket.send_to(request, addrs.as_slice()).unwrap();
+        socket.send_to(request, addr).unwrap();
     }
 
     for (nonce, _, mut socket) in requests {
         let resp = receive_response(&mut socket);
 
-        let (midpoint, radius) = ResponseHandler::new(pub_key.clone(), resp, nonce).extract_time();
+        let ParsedResponse {verified, midpoint, radius} = ResponseHandler::new(pub_key.clone(), resp.clone(), nonce).extract_time();
+
+        let map = resp.into_hash_map();
+        let index = map[&Tag::INDX].as_slice().read_u32::<LittleEndian>().unwrap();
 
         let seconds = midpoint / 10_u64.pow(6);
         let spec = Utc.timestamp(seconds as i64, ((midpoint - (seconds * 10_u64.pow(6))) * 10_u64.pow(3)) as u32);
         let out = spec.format(time_format).to_string();
 
-        println!("Recieved time from server: midpoint={:?}, radius={:?}", out, radius);
+        println!("Recieved time from server: midpoint={:?}, radius={:?} (merkle_index={}, verified={})", out, radius, index, verified);
     }
 }
