@@ -41,7 +41,6 @@
 #![allow(deprecated)] // for mio::Timer
 
 extern crate byteorder;
-extern crate core;
 extern crate ring;
 extern crate roughenough;
 extern crate time;
@@ -78,7 +77,7 @@ use ring::rand::SecureRandom;
 
 use yaml_rust::YamlLoader;
 
-const SERVER_VERSION: &str = "0.2.0";
+const SERVER_VERSION: &str = "0.2.2";
 
 const MESSAGE: Token = Token(0);
 const STATUS: Token = Token(1);
@@ -291,13 +290,13 @@ fn polling_loop(addr: &SocketAddr, mut ephemeral_key: &mut Signer, cert_bytes: &
                         let resp = make_response(&mut ephemeral_key, cert_bytes, nonce);
                         let resp_bytes = resp.encode().unwrap();
 
-                        socket.send_to(&resp_bytes, &src_addr).expect("send_to failed");
+                        let bytes_sent = socket.send_to(&resp_bytes, &src_addr).expect("send_to failed");
 
-                        info!("Responded to {}", src_addr);
                         num_responses += 1;
+                        info!("Responded {} bytes to {} for '{}..' (resp #{})", bytes_sent, src_addr, nonce[0..4].to_hex(), num_responses);
                     } else {
-                        info!("invalid request ({} bytes) from {}", num_bytes, src_addr);
                         num_bad_requests += 1;
+                        info!("Invalid request ({} bytes) from {} (resp #{})", num_bytes, src_addr, num_responses);
                     }
                 }
 
