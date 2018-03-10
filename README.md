@@ -7,7 +7,7 @@
 synchronization client and server implementation in Rust. 
 
 The server is functionally complete: it parses client requests and generates valid Roughtime responses.
-*Some unimplemented features remain*, see [server limitations](#server limitations) below. 
+*Some unimplemented features remain*, see [server limitations](#server-limitations) below. 
 
 The client is also functionally complete and validaties the Merkle Tree in responses, if present.
 
