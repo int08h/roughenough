@@ -291,7 +291,7 @@ fn polling_loop(addr: &SocketAddr, mut ephemeral_key: &mut Signer, cert_bytes: &
                         let bytes_sent = socket.send_to(&resp_bytes, &src_addr).expect("send_to failed");
 
                         num_responses += 1;
-                        info!("Responded {} bytes to {} for '{}..' (resp #{})", bytes_sent, src_addr, nonce[0..4].to_hex(), num_responses);
+                        info!("Responded {} bytes to {} for '{}..' (resp #{})", bytes_sent, src_addr, hex::encode(&nonce[0..4]), num_responses);
                     } else {
                         num_bad_requests += 1;
                         info!("Invalid request ({} bytes) from {} (resp #{})", num_bytes, src_addr, num_responses);
