@@ -1,10 +1,10 @@
 [package]
 name = "roughenough"
-version = "0.2.1"
+version = "0.3.0"
 repository = "https://github.com/int08h/roughenough"
-authors = ["Stuart Stock <stuart@int08h.com>"]
+authors = ["Stuart Stock <stuart@int08h.com>", "Aaron Hill <aa1ronham@gmail.com>"]
 license = "Apache-2.0"
-description = "A Roughtime secure time sync server written in Rust"
+description = "A Roughtime secure time sync server and client written in Rust"
 readme = "README.md"
 keywords = ["roughtime", "cryptography", "crypto"]
 
