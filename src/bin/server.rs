@@ -51,6 +51,7 @@ extern crate yaml_rust;
 extern crate log;
 extern crate simple_logger;
 extern crate mio;
+extern crate hex;
 
 use std::env;
 use std::process;
@@ -68,16 +69,13 @@ use mio::timer::Timer;
 use byteorder::{LittleEndian, WriteBytesExt};
 
 use roughenough::{RtMessage, Tag, Error};
-use roughenough::{CERTIFICATE_CONTEXT, MIN_REQUEST_LENGTH, SIGNED_RESPONSE_CONTEXT, TREE_LEAF_TWEAK};
-use roughenough::hex::*;
+use roughenough::{VERSION, CERTIFICATE_CONTEXT, MIN_REQUEST_LENGTH, SIGNED_RESPONSE_CONTEXT, TREE_LEAF_TWEAK};
 use roughenough::sign::Signer;
 
 use ring::{digest, rand};
 use ring::rand::SecureRandom;
 
 use yaml_rust::YamlLoader;
-
-const SERVER_VERSION: &str = "0.2.2";
 
 const MESSAGE: Token = Token(0);
 const STATUS: Token = Token(1);
@@ -106,8 +104,8 @@ fn make_key_and_cert(seed: &[u8]) -> (Signer, Vec<u8>) {
     let mut long_term_key = Signer::new(seed);
     let ephemeral_key = create_ephemeral_key();
 
-    info!("Long-term public key: {}", long_term_key.public_key_bytes().to_hex());
-    info!("Ephemeral public key: {}", ephemeral_key.public_key_bytes().to_hex());
+    info!("Long-term public key: {}", hex::encode(long_term_key.public_key_bytes()));
+    info!("Ephemeral public key: {}", hex::encode(ephemeral_key.public_key_bytes()));
 
     // Make DELE and sign it with long-term key
     let dele_bytes = make_dele_bytes(&ephemeral_key).unwrap();
@@ -244,7 +242,7 @@ fn load_config(config_file: &str) -> (SocketAddr, Vec<u8>) {
     let sock_addr: SocketAddr = addr.parse()
         .expect(&format!("could not create socket address from {}", addr));
 
-    let binseed = seed.from_hex()
+    let binseed = hex::decode(seed)
         .expect("seed value invalid; 'seed' should be 32 byte hex value");
 
     (sock_addr, binseed)
@@ -315,7 +313,7 @@ fn main() {
     use log::Level;
     simple_logger::init_with_level(Level::Info).unwrap();
 
-    info!("Roughenough server v{} starting", SERVER_VERSION);
+    info!("Roughenough server v{} starting", VERSION);
 
     let mut args = env::args();
     if args.len() != 2 {

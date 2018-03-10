@@ -57,12 +57,14 @@ mod error;
 mod tag;
 mod message;
 
-pub mod hex;
 pub mod sign;
 
 pub use error::Error;
 pub use tag::Tag;
 pub use message::RtMessage;
+
+/// Version of Roughenough
+pub const VERSION: &str = "0.3.0";
 
 //  Constants and magic numbers of the Roughtime protocol
 

@@ -4,10 +4,13 @@
 [![Build Status](https://travis-ci.org/int08h/roughenough.svg?branch=master)](https://travis-ci.org/int08h/roughenough)
 
 **Roughenough** is a [Roughtime](https://roughtime.googlesource.com/roughtime) secure time 
-synchronization server implemented in Rust.
+synchronization client and server implementation in Rust. 
 
 The server is functionally complete: it parses client requests and generates valid Roughtime responses.
-*Some unimplemented features remain*, see [limitations](#limitations) below. 
+*Some unimplemented features remain*, see [server limitations](#server limitations) below. 
+
+The client is also functionally complete and validaties the Merkle Tree in responses, if present.
+
 Contributions are welcome.
 
 ## Links
@@ -17,6 +20,22 @@ Contributions are welcome.
   exploring the [details of Roughtime messages](https://int08h.com/post/roughtime-message-anatomy/).
 
 ## Building and Running
+
+### Using the Client to Query a Roughtime Server 
+
+```bash
+$ cargo build --release
+$ target/release/client roughtime.int08h.com 2002
+Requesting time from: "roughtime.int08h.com":2002
+Recieved time from server: midpoint="Mar 10 2018 21:35:52", radius=1000000
+```
+
+The client binary is `target/release/client`. After building you can copy the 
+binary and run on its own (no `cargo` needed) if you wish.
+
+```bash
+$ cp target/release/server /usr/local/bin 
+```
 
 ### Starting the Server
 
@@ -59,9 +78,9 @@ Where:
 
 Use Ctrl-C or `kill` the process.
 
-## Limitations
+## Server Limitations
 
-Roughtime features not implemented:
+Roughtime features not implemented by the server:
 
 * On-line key rotation. The server must be restarted to generate a new delegated key. 
 * Multi-request Merkle Tree batching. For now each request gets its own response 
@@ -87,6 +106,7 @@ created by Adam Langley and Robert Obryk.
   
 ## Contributors
 * Stuart Stock, original author and current maintainer (stuart {at} int08h.com)
+* Aaron Hill, client implementation (aa1ronham {at} gmail.com)
 
 ## Copyright and License
 Roughenough is copyright (c) 2017-2018 int08h LLC. All rights reserved. 
