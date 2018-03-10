@@ -70,16 +70,13 @@ use mio::timer::Timer;
 use byteorder::{LittleEndian, WriteBytesExt};
 
 use roughenough::{RtMessage, Tag, Error};
-use roughenough::{CERTIFICATE_CONTEXT, MIN_REQUEST_LENGTH, SIGNED_RESPONSE_CONTEXT, TREE_LEAF_TWEAK};
-use roughenough::hex::*;
+use roughenough::{VERSION, CERTIFICATE_CONTEXT, MIN_REQUEST_LENGTH, SIGNED_RESPONSE_CONTEXT, TREE_LEAF_TWEAK};
 use roughenough::sign::Signer;
 
 use ring::{digest, rand};
 use ring::rand::SecureRandom;
 
 use yaml_rust::YamlLoader;
-
-const SERVER_VERSION: &str = "0.2.0";
 
 const MESSAGE: Token = Token(0);
 const STATUS: Token = Token(1);
@@ -317,7 +314,7 @@ fn main() {
     use log::Level;
     simple_logger::init_with_level(Level::Info).unwrap();
 
-    info!("Roughenough server v{} starting", SERVER_VERSION);
+    info!("Roughenough server v{} starting", VERSION);
 
     let mut args = env::args();
     if args.len() != 2 {

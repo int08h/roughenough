@@ -20,7 +20,7 @@ use std::iter::Iterator;
 use std::collections::HashMap;
 use std::net::{UdpSocket, ToSocketAddrs};
 
-use roughenough::{RtMessage, Tag, TREE_NODE_TWEAK, TREE_LEAF_TWEAK, CERTIFICATE_CONTEXT, SIGNED_RESPONSE_CONTEXT};
+use roughenough::{RtMessage, Tag, VERSION, TREE_NODE_TWEAK, TREE_LEAF_TWEAK, CERTIFICATE_CONTEXT, SIGNED_RESPONSE_CONTEXT};
 use roughenough::sign::Verifier;
 use clap::{Arg, App};
 
@@ -159,7 +159,7 @@ fn sha_512(prefix: &[u8], data: &[u8]) -> Vec<u8> {
 
 fn main() {
     let matches = App::new("roughenough client")
-                      .version("0.1.1")
+                      .version(VERSION)
                       .arg(Arg::with_name("host")
                            .required(true)
                            .help("The Roughtime server to connect to")
