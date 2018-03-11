@@ -23,7 +23,17 @@
 //! # Protocol
 //!
 //! Roughtime messages are represetned by [`RtMessage`](struct.RtMessage.html) which 
-//! implements the mapping of Roughtime `u32` [`tags`](enum.Tag.html) to byte-strings. 
+//! implements the mapping of Roughtime `u32` [`tags`](enum.Tag.html) to byte-strings.
+//!
+//! # Client
+//!
+//! A Roughtime client can be found in `src/bin/client.rs`. To run the client:
+//!
+//! ```bash
+//! $ cargo run --release --bin client roughtime.int08h.com 2002
+//! ```
+//!
+//! Consult the client's `--help` output for all runtime options.
 //!
 //! # Server
 //!
