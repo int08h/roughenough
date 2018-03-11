@@ -22,6 +22,7 @@ pub enum Error {
     /// The associated tag was added to an `RtMessage` in non-increasing order.
     TagNotStrictlyIncreasing(Tag),
 
+    /// Associated bytes do not correspond to a valid `Tag`
     InvalidTag(Box<[u8]>),
 
     /// Encoding failed. The associated `std::io::Error` should provide more information.

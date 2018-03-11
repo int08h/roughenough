@@ -15,7 +15,6 @@
 use std::io::{Read, Write, Cursor};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::iter::once;
-use std::collections::HashMap;
 
 use tag::Tag;
 use error::Error;
@@ -43,6 +42,7 @@ impl RtMessage {
         }
     }
 
+    /// Construct a new RtMessage from an on-the-wire byte representation
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
         let mut msg = Cursor::new(bytes);
 
@@ -135,16 +135,15 @@ impl RtMessage {
         self.tags.len() as u32
     }
 
-    pub fn tags(&self) -> &[Tag] {
-        &self.tags
-    }
-
-    pub fn values(&self) -> &[Vec<u8>] {
-        &self.values
-    }
-
-    pub fn into_hash_map(self) -> HashMap<Tag, Vec<u8>> {
-        self.tags.into_iter().zip(self.values.into_iter()).collect()
+    /// Returns a reference to the value corresponding to the provided `tag` if it
+    /// is present in the message.
+    ///
+    /// Retrieval is O(log n) where `n` is the number of fields in the message.
+    pub fn get(&self, tag: Tag) -> Option<&[u8]> {
+        match self.tags.binary_search(&tag) {
+            Ok(index) => Some(&self.values[index]),
+            _ => None
+        }
     }
 
     /// Encode this message into its on-the-wire representation.
@@ -231,6 +230,9 @@ mod test {
         assert_eq!(msg.num_fields(), 0);
         // Empty message is 4 bytes, a single num_tags value
         assert_eq!(msg.encoded_size(), 4);
+
+        // emtpy message has nothing to return
+        assert_eq!(msg.get(Tag::NONC), None);
     }
 
     #[test]
@@ -338,5 +340,19 @@ mod test {
 
         // Everything was read
         assert_eq!(encoded.position() as usize, msg.encoded_size());
+    }
+
+    #[test]
+    fn get_fields_from_message() {
+        let dele_value = vec![b'a'; 24];
+        let maxt_value = vec![b'z'; 32];
+
+        let mut msg = RtMessage::new(2);
+        msg.add_field(Tag::DELE, &dele_value).unwrap();
+        msg.add_field(Tag::MAXT, &maxt_value).unwrap();
+
+        assert_eq!(msg.get(Tag::MAXT), Some(maxt_value.as_ref()));
+        assert_eq!(msg.get(Tag::DELE), Some(dele_value.as_ref()));
+        assert_eq!(msg.get(Tag::CERT), None);
     }
 }

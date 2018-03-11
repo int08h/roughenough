@@ -14,8 +14,8 @@
 
 use error::Error;
 
-/// An unsigned 32-bit value (key) that maps to a byte-string (value).
-#[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Clone)]
+/// A Roughtime "tag" is an unsigned 32-bit key that maps to a byte-string (value).
+#[derive(Debug, PartialEq, Eq, Ord, PartialOrd, Hash, Clone)]
 pub enum Tag {
     // Enforcement of the "tags in strictly increasing order" rule is done using the
     // little-endian encoding of the ASCII tag value; e.g. 'SIG\x00' is 0x00474953 and
@@ -59,6 +59,8 @@ impl Tag {
         }
     }
 
+    /// Returns the tag corresponding to the on-the-wire bytes, or
+    /// [`Error::InvalidTag`](enum.Error.html) if they do not represent a valid tag.
     pub fn from_wire(bytes: &[u8]) -> Result<Self, Error> {
         match bytes {
             b"CERT" => Ok(Tag::CERT),
