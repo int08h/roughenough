@@ -34,6 +34,7 @@
 //! interface: 127.0.0.1
 //! port: 8686
 //! seed: f61075c988feb9cb700a4a6a3291bfbc9cab11b9c9eca8c802468eb38a43d7d3
+//! batch_size: 64
 //! ```
 //!
 //! Where:
@@ -43,6 +44,9 @@
 //!   * **seed** - A 32-byte hexadecimal value used as the seed to generate the 
 //!                server's long-term key pair. **This is a secret value**, treat it
 //!                with care.
+//!   * **batch_size** - The number of requests to process in one batch. All nonces
+//!                      in a batch are used to build a Merkle tree, the root of which
+//!                      is signed.
 //!
 //! To run the server:
 //!

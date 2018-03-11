@@ -64,6 +64,7 @@ The server is configured via a YAML file:
 interface: 127.0.0.1
 port: 8686
 seed: f61075c988feb9cb700a4a6a3291bfbc9cab11b9c9eca8c802468eb38a43d7d3
+batch_size: 64
 ```
 
 Where:
@@ -73,6 +74,10 @@ Where:
 * **`seed`** - A 32-byte hexadecimal value used to generate the server's long-term 
                key pair. **This is a secret value and must be un-guessable**, 
                treat it with care.
+* **`batch_size`** - The number of requests to process in one batch. All nonces
+                   in a batch are used to build a Merkle tree, the root of which
+                   is signed.
+
 
 ### Stopping the Server
 
@@ -83,8 +88,6 @@ Use Ctrl-C or `kill` the process.
 Roughtime features not implemented by the server:
 
 * On-line key rotation. The server must be restarted to generate a new delegated key. 
-* Multi-request Merkle Tree batching. For now each request gets its own response 
-  with `PATH` empty and `INDX` zero.
 * The Rougheough server depends on the host's time source to comply with the smeared leap-second 
   requirement of the Roughtime protocol. A Roughenough server sourcing time from 
   [Google's public NTP servers](https://developers.google.com/time/) would produce compliant
