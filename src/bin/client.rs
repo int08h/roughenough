@@ -1,3 +1,15 @@
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #[macro_use]
 extern crate clap;
 extern crate roughenough;
@@ -17,11 +29,12 @@ use chrono::TimeZone;
 use chrono::offset::Utc;
 
 use std::iter::Iterator;
-use std::collections::HashMap;
 use std::net::{UdpSocket, ToSocketAddrs};
 
-use roughenough::{RtMessage, Tag, VERSION, TREE_NODE_TWEAK, TREE_LEAF_TWEAK, CERTIFICATE_CONTEXT, SIGNED_RESPONSE_CONTEXT};
+use roughenough::{RtMessage, Tag};
+use roughenough::{VERSION, TREE_NODE_TWEAK, TREE_LEAF_TWEAK, CERTIFICATE_CONTEXT, SIGNED_RESPONSE_CONTEXT};
 use roughenough::sign::Verifier;
+
 use clap::{Arg, App};
 
 fn create_nonce() -> [u8; 64] {
@@ -46,23 +59,21 @@ fn receive_response(sock: &mut UdpSocket) -> RtMessage {
     RtMessage::from_bytes(&buf[0..resp_len]).unwrap()
 }
 
-
 struct ResponseHandler {
     pub_key: Option<Vec<u8>>,
-    msg: HashMap<Tag, Vec<u8>>,
-    srep: HashMap<Tag, Vec<u8>>,
-    cert: HashMap<Tag, Vec<u8>>,
-    dele: HashMap<Tag, Vec<u8>>,
+    msg: RtMessage,
+    srep: RtMessage,
+    cert: RtMessage,
+    dele: RtMessage,
     nonce: [u8; 64]
 }
 
 impl ResponseHandler {
     pub fn new(pub_key: Option<Vec<u8>>, response: RtMessage, nonce: [u8; 64]) -> ResponseHandler {
-        let msg = response.into_hash_map();
-        let srep = RtMessage::from_bytes(&msg[&Tag::SREP]).unwrap().into_hash_map();
-        let cert = RtMessage::from_bytes(&msg[&Tag::CERT]).unwrap().into_hash_map();
-
-        let dele = RtMessage::from_bytes(&cert[&Tag::DELE]).unwrap().into_hash_map();
+        let msg = response.clone();
+        let srep = RtMessage::from_bytes(response.get(Tag::SREP).unwrap()).unwrap();
+        let cert = RtMessage::from_bytes(response.get(Tag::CERT).unwrap()).unwrap();
+        let dele = RtMessage::from_bytes(cert.get(Tag::DELE).unwrap()).unwrap();
 
         ResponseHandler {
             pub_key,
@@ -75,8 +86,8 @@ impl ResponseHandler {
     }
 
     pub fn extract_time(&self) -> (u64, u32) {
-        let midpoint = self.srep[&Tag::MIDP].as_slice().read_u64::<LittleEndian>().unwrap();
-        let radius = self.srep[&Tag::RADI].as_slice().read_u32::<LittleEndian>().unwrap();
+        let midpoint = self.srep.get(Tag::MIDP).unwrap().read_u64::<LittleEndian>().unwrap();
+        let radius = self.srep.get(Tag::RADI).unwrap().read_u32::<LittleEndian>().unwrap();
 
         if self.pub_key.is_some() {
             self.validate_dele();
@@ -90,24 +101,27 @@ impl ResponseHandler {
 
     fn validate_dele(&self) {
         let mut full_cert = Vec::from(CERTIFICATE_CONTEXT.as_bytes());
-        full_cert.extend(&self.cert[&Tag::DELE]);
+        full_cert.extend(self.cert.get(Tag::DELE).unwrap());
 
-        assert!(self.validate_sig(self.pub_key.as_ref().unwrap(), &self.cert[&Tag::SIG], &full_cert),
-                "Invalid signature on DELE tag!");
+        let pub_key = self.pub_key.as_ref().unwrap();
+        let sig = self.cert.get(Tag::SIG).unwrap();
+
+        assert!(self.validate_sig(pub_key, sig, &full_cert), "Invalid signature on DELE tag!");
     }
 
     fn validate_srep(&self) {
         let mut full_srep = Vec::from(SIGNED_RESPONSE_CONTEXT.as_bytes());
-        full_srep.extend(&self.msg[&Tag::SREP]);
+        full_srep.extend(self.msg.get(Tag::SREP).unwrap());
 
-        assert!(self.validate_sig(&self.dele[&Tag::PUBK], &self.msg[&Tag::SIG], &full_srep),
-                "Invalid signature on SREP tag!");
+        let pub_key = self.dele.get(Tag::PUBK).unwrap();
+        let sig = self.msg.get(Tag::SIG).unwrap();
+
+        assert!(self.validate_sig(pub_key, sig, &full_srep), "Invalid signature on SREP tag!");
     }
 
     fn validate_merkle(&self) {
-        let srep = RtMessage::from_bytes(&self.msg[&Tag::SREP]).unwrap().into_hash_map();
-        let mut index = self.msg[&Tag::INDX].as_slice().read_u32::<LittleEndian>().unwrap();
-        let paths = &self.msg[&Tag::PATH];
+        let mut index = self.msg.get(Tag::INDX).unwrap().read_u32::<LittleEndian>().unwrap();
+        let paths = self.msg.get(Tag::PATH).unwrap();
 
         let mut hash = sha_512(TREE_LEAF_TWEAK, &self.nonce);
 
@@ -131,13 +145,13 @@ impl ResponseHandler {
             index >>= 1;
         }
 
-        assert_eq!(hash, srep[&Tag::ROOT], "Nonce not in merkle tree!");
+        assert_eq!(hash, self.srep.get(Tag::ROOT).unwrap(), "Nonce not in merkle tree!");
 
     }
 
     fn validate_midpoint(&self, midpoint: u64) {
-        let mint = self.dele[&Tag::MINT].as_slice().read_u64::<LittleEndian>().unwrap();
-        let maxt = self.dele[&Tag::MAXT].as_slice().read_u64::<LittleEndian>().unwrap();
+        let mint = self.dele.get(Tag::MINT).unwrap().read_u64::<LittleEndian>().unwrap();
+        let maxt = self.dele.get(Tag::MAXT).unwrap().read_u64::<LittleEndian>().unwrap();
 
         assert!(midpoint >= mint, "Response midpoint {} lies before delegation span ({}, {})");
         assert!(midpoint <= maxt, "Response midpoint {} lies after delegation span ({}, {})");
@@ -222,6 +236,6 @@ fn main() {
         let spec = Utc.timestamp(seconds as i64, ((midpoint - (seconds * 10_u64.pow(6))) * 10_u64.pow(3)) as u32);
         let out = spec.format(time_format).to_string();
 
-        println!("Recieved time from server: midpoint={:?}, radius={:?}", out, radius);
+        println!("Received time from server: midpoint={:?}, radius={:?}", out, radius);
     }
 }
