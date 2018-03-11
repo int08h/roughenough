@@ -57,6 +57,7 @@ use std::env;
 use std::process;
 use std::fs::File;
 use std::io::Read;
+use std::io;
 use std::time::Duration;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -282,19 +283,30 @@ fn polling_loop(addr: &SocketAddr, mut ephemeral_key: &mut Signer, cert_bytes: &
         for event in events.iter() {
             match event.token() {
                 MESSAGE => {
-                    let (num_bytes, src_addr) = socket.recv_from(&mut buf).expect("recv_from failed");
+                    loop {
+                        match socket.recv_from(&mut buf) {
+                            Ok((num_bytes, src_addr)) => {
+                                if let Ok(nonce) = nonce_from_request(&buf, num_bytes) {
+                                    let resp = make_response(&mut ephemeral_key, cert_bytes, nonce);
+                                    let resp_bytes = resp.encode().unwrap();
 
-                    if let Ok(nonce) = nonce_from_request(&buf, num_bytes) {
-                        let resp = make_response(&mut ephemeral_key, cert_bytes, nonce);
-                        let resp_bytes = resp.encode().unwrap();
+                                    let bytes_sent = socket.send_to(&resp_bytes, &src_addr).expect("send_to failed");
 
-                        let bytes_sent = socket.send_to(&resp_bytes, &src_addr).expect("send_to failed");
-
-                        num_responses += 1;
-                        info!("Responded {} bytes to {} for '{}..' (resp #{})", bytes_sent, src_addr, hex::encode(&nonce[0..4]), num_responses);
-                    } else {
-                        num_bad_requests += 1;
-                        info!("Invalid request ({} bytes) from {} (resp #{})", num_bytes, src_addr, num_responses);
+                                    num_responses += 1;
+                                    info!("Responded {} bytes to {} for '{}..' (resp #{})", bytes_sent, src_addr, hex::encode(&nonce[0..4]), num_responses);
+                                } else {
+                                    num_bad_requests += 1;
+                                    info!("Invalid request ({} bytes) from {} (resp #{})", num_bytes, src_addr, num_responses);
+                                }
+                            }
+                            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                                break
+                            }
+                            Err(ref e) => {
+                                error!("Error {:?}: {:?}", e.kind(), e);
+                                break
+                            }
+                        }
                     }
                 }
 
