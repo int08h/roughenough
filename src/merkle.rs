@@ -151,7 +151,7 @@ mod test {
 
         for i in 0..num {
             println!("Testing {:?} {:?}", num, i);
-            let paths: Vec<u8> = merkle.get_paths(i).into_iter().flat_map(|x| x).collect();
+            let paths: Vec<u8> = merkle.get_paths(i);
             let computed_root = root_from_paths(i, &[i as u8], &paths);
 
             assert_eq!(root, computed_root);
