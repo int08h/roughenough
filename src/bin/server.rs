@@ -351,7 +351,7 @@ fn polling_loop(addr: &SocketAddr, mut ephemeral_key: &mut Signer, cert_bytes: &
                         let srep = make_srep(&mut ephemeral_key, &root);
 
                         for (i, &(ref nonce, ref src_addr)) in requests.iter().enumerate() {
-                            let paths: Vec<_> = merkle.get_paths(i).into_iter().flat_map(|x| x).collect();
+                            let paths = merkle.get_paths(i);
 
                             let resp = make_response(&srep, cert_bytes, &paths, i as u32);
                             let resp_bytes = resp.encode().unwrap();

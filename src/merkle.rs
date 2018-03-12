@@ -36,8 +36,8 @@ impl MerkleTree {
         self.levels[0].push(hash);
     }
 
-    pub fn get_paths(&self, mut index: usize) -> Vec<Hash> {
-        let mut paths = Vec::new();
+    pub fn get_paths(&self, mut index: usize) -> Vec<u8> {
+        let mut paths = Vec::with_capacity(self.levels.len() * 64);
         let mut level = 0;
 
         while !self.levels[level].is_empty() {
@@ -47,7 +47,7 @@ impl MerkleTree {
                 index - 1
             };
 
-            paths.push(self.levels[level][sibling].clone());
+            paths.extend(self.levels[level][sibling].clone());
             level += 1;
             index /= 2;
         }
