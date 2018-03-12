@@ -134,7 +134,12 @@ fn make_key_and_cert(seed: &[u8]) -> (Signer, Vec<u8>) {
     (ephemeral_key, cert_bytes)
 }
 
-fn make_response(ephemeral_key: &mut Signer, cert_bytes: &[u8], root: &[u8], path: &[u8], idx: u32) -> RtMessage {
+struct SRep {
+    raw_bytes: Vec<u8>,
+    signature: Vec<u8>
+}
+
+fn make_srep(ephemeral_key: &mut Signer, root: &[u8]) -> SRep {
     //   create SREP
     //   sign SREP
     //   create response:
@@ -144,13 +149,11 @@ fn make_response(ephemeral_key: &mut Signer, cert_bytes: &[u8], root: &[u8], pat
     //    - CERT (pre-created)
     //    - INDX (always 0)
 
-    let mut index = [0; 4];
-
+    
     let mut radi = [0; 4];
     let mut midp = [0; 8];
 
-    (&mut index as &mut [u8]).write_u32::<LittleEndian>(idx).unwrap();
-
+    
     // one second (in microseconds)
     (&mut radi as &mut [u8]).write_u32::<LittleEndian>(1_000_000).unwrap();
 
@@ -181,10 +184,22 @@ fn make_response(ephemeral_key: &mut Signer, cert_bytes: &[u8], root: &[u8], pat
         ephemeral_key.sign()
     };
 
+    SRep {
+        raw_bytes: srep_bytes,
+        signature: srep_signature
+    }
+}
+
+fn make_response(srep: &SRep, cert_bytes: &[u8], path: &[u8], idx: u32) -> RtMessage {
+
+    let mut index = [0; 4];
+    (&mut index as &mut [u8]).write_u32::<LittleEndian>(idx).unwrap();
+
+
     let mut response = RtMessage::new(5);
-    response.add_field(Tag::SIG, &srep_signature).unwrap();
+    response.add_field(Tag::SIG, &srep.signature).unwrap();
     response.add_field(Tag::PATH, &path).unwrap();
-    response.add_field(Tag::SREP, &srep_bytes).unwrap();
+    response.add_field(Tag::SREP, &srep.raw_bytes).unwrap();
     response.add_field(Tag::CERT, cert_bytes).unwrap();
     response.add_field(Tag::INDX, &index).unwrap();
 
@@ -333,10 +348,12 @@ fn polling_loop(addr: &SocketAddr, mut ephemeral_key: &mut Signer, cert_bytes: &
                         }
 
                         let root = merkle.compute_root();
+                        let srep = make_srep(&mut ephemeral_key, &root);
+
                         for (i, &(ref nonce, ref src_addr)) in requests.iter().enumerate() {
                             let paths: Vec<_> = merkle.get_paths(i).into_iter().flat_map(|x| x).collect();
 
-                            let resp = make_response(&mut ephemeral_key, cert_bytes, &root, &paths, i as u32);
+                            let resp = make_response(&srep, cert_bytes, &paths, i as u32);
                             let resp_bytes = resp.encode().unwrap();
 
                             let bytes_sent = socket.send_to(&resp_bytes, &src_addr).expect("send_to failed");
