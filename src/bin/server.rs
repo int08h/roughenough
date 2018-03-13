@@ -85,8 +85,6 @@ use yaml_rust::YamlLoader;
 const MESSAGE: Token = Token(0);
 const STATUS: Token = Token(1);
 
-pub static NUM_RESPONSES: AtomicUsize = AtomicUsize::new(0);
-
 fn create_ephemeral_key() -> Signer {
     let rng = rand::SystemRandom::new();
     let mut seed = [0u8; 32];
@@ -267,7 +265,7 @@ fn load_config(config_file: &str) -> (SocketAddr, Vec<u8>, u8) {
     (sock_addr, binseed, batch_size)
 }
 
-fn polling_loop(addr: &SocketAddr, mut ephemeral_key: &mut Signer, cert_bytes: &[u8], batch_size: u8) {
+fn polling_loop(addr: &SocketAddr, mut ephemeral_key: &mut Signer, cert_bytes: &[u8], batch_size: u8, response_counter: Arc<AtomicUsize>) {
     let keep_running = Arc::new(AtomicBool::new(true));
     let kr = keep_running.clone();
 
@@ -320,7 +318,7 @@ fn polling_loop(addr: &SocketAddr, mut ephemeral_key: &mut Signer, cert_bytes: &
                         merkle.reset();
                         requests.clear();
 
-                        let resp_start = NUM_RESPONSES.load(Ordering::SeqCst);
+                        let resp_start = response_counter.load(Ordering::SeqCst);
 
                         for i in 0..batch_size {
                             match socket.recv_from(&mut buf) {
@@ -357,7 +355,7 @@ fn polling_loop(addr: &SocketAddr, mut ephemeral_key: &mut Signer, cert_bytes: &
                             let resp_bytes = resp.encode().unwrap();
 
                             let bytes_sent = socket.send_to(&resp_bytes, &src_addr).expect("send_to failed");
-                            let num_responses = NUM_RESPONSES.fetch_add(1, Ordering::SeqCst);
+                            let num_responses = response_counter.fetch_add(1, Ordering::SeqCst);
 
                             info!("Responded {} bytes to {} for '{}..' (#{} in batch, resp #{})", bytes_sent, src_addr, hex::encode(&nonce[0..4]), i, num_responses);
                         }
@@ -369,7 +367,7 @@ fn polling_loop(addr: &SocketAddr, mut ephemeral_key: &mut Signer, cert_bytes: &
                 }
 
                 STATUS => {
-                    info!("responses {}, invalid requests {}", NUM_RESPONSES.load(Ordering::SeqCst), num_bad_requests);
+                    info!("responses {}, invalid requests {}", response_counter.load(Ordering::SeqCst), num_bad_requests);
                     timer.set_timeout(status_duration, ());
                 }
 
@@ -397,26 +395,28 @@ pub fn main() {
 
     info!("Server listening on {}", addr);
 
+    let response_counter = Arc::new(AtomicUsize::new(0));
+
     if env::var("BENCH").is_ok()  {
         log::set_max_level(log::LevelFilter::Warn);
+        let response_counter = response_counter.clone();
 
-        thread::spawn(|| {
+        thread::spawn(move || {
             loop {
                 let old = time::get_time().sec;
-                let old_reqs = NUM_RESPONSES.load(Ordering::SeqCst);
+                let old_reqs = response_counter.load(Ordering::SeqCst);
 
                 thread::sleep(Duration::from_secs(1));
 
                 let new = time::get_time().sec;
-                let new_reqs = NUM_RESPONSES.load(Ordering::SeqCst);
+                let new_reqs = response_counter.load(Ordering::SeqCst);
 
                 warn!("Processing at {:?} reqs/sec", (new_reqs - old_reqs) / (new - old) as usize);
             }
         });
     }
 
-
-    polling_loop(&addr, &mut ephemeral_key, &cert_bytes, batch_size);
+    polling_loop(&addr, &mut ephemeral_key, &cert_bytes, batch_size, response_counter.clone());
 
     info!("Done.");
     process::exit(0);
