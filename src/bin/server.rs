@@ -336,7 +336,10 @@ fn polling_loop(addr: &SocketAddr, mut ephemeral_key: &mut Signer, cert_bytes: &
                                         done = true;
                                         break;
                                     },
-                                    _ => panic!("recv_from failed with {:?}", e)
+                                    _ => {
+                                        error!("Error receiving from socket: {:?}: {:?}", e.kind(), e);
+                                        break
+                                    }
                                 }
                             };
                         }
