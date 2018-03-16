@@ -108,8 +108,8 @@ a way that, if a time server does misbehave, clients end up with cryptographic p
 created by Adam Langley and Robert Obryk.
   
 ## Contributors
-* Stuart Stock, original author and current maintainer (stuart {at} int08h.com)
-* Aaron Hill, client implementation (aa1ronham {at} gmail.com)
+* Stuart Stock (stuart {at} int08h.com)
+* Aaron Hill (aa1ronham {at} gmail.com)
 
 ## Copyright and License
 Roughenough is copyright (c) 2017-2018 int08h LLC. All rights reserved. 
