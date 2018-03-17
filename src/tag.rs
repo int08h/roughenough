@@ -19,7 +19,7 @@ use error::Error;
 pub enum Tag {
     // Enforcement of the "tags in strictly increasing order" rule is done using the
     // little-endian encoding of the ASCII tag value; e.g. 'SIG\x00' is 0x00474953 and
-    // 'NONC' is 0x434e4f4e. 
+    // 'NONC' is 0x434e4f4e.
     //
     // Tags are written here in ascending order
     SIG,
@@ -75,7 +75,7 @@ impl Tag {
             b"ROOT" => Ok(Tag::ROOT),
             b"SIG\x00" => Ok(Tag::SIG),
             b"SREP" => Ok(Tag::SREP),
-            _ => Err(Error::InvalidTag(Box::from(bytes)))
+            _ => Err(Error::InvalidTag(Box::from(bytes))),
         }
     }
 }

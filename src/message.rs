@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::io::{Read, Write, Cursor};
+use std::io::{Cursor, Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::iter::once;
 use std::collections::HashMap;
@@ -51,27 +51,26 @@ impl RtMessage {
 
         if num_tags == 1 {
             let pos = msg.position() as usize;
-            let tag = Tag::from_wire(&bytes[pos..pos+4])?;
+            let tag = Tag::from_wire(&bytes[pos..pos + 4])?;
             msg.set_position((pos + 4) as u64);
 
             let mut value = Vec::new();
-            
+
             msg.read_to_end(&mut value).unwrap();
             rt_msg.add_field(tag, &value)?;
-            return Ok(rt_msg)
+            return Ok(rt_msg);
         }
 
         let mut offsets = Vec::with_capacity((num_tags - 1) as usize);
         let mut tags = Vec::with_capacity(num_tags as usize);
 
         for _ in 0..num_tags - 1 {
-            let offset =  msg.read_u32::<LittleEndian>()?;
+            let offset = msg.read_u32::<LittleEndian>()?;
             if offset % 4 != 0 {
                 panic!("Invalid offset {:?} in message {:?}", offset, bytes);
             }
             offsets.push(offset as usize);
         }
-
 
         let mut buf = [0; 4];
         for _ in 0..num_tags {
@@ -80,7 +79,7 @@ impl RtMessage {
 
             if let Some(last_tag) = tags.last() {
                 if tag <= *last_tag {
-                    return Err(Error::TagNotStrictlyIncreasing(tag))
+                    return Err(Error::TagNotStrictlyIncreasing(tag));
                 }
             }
             tags.push(tag);
@@ -96,11 +95,10 @@ impl RtMessage {
         assert_eq!(offsets.len(), tags.len() - 1);
 
         for (tag, (value_start, value_end)) in tags.into_iter().zip(
-            once(&0).chain(offsets.iter()).zip(
-                offsets.iter().chain(once(&msg_end))
-            )
+            once(&0)
+                .chain(offsets.iter())
+                .zip(offsets.iter().chain(once(&msg_end))),
         ) {
-
             let value = bytes[(header_end + value_start)..(header_end + value_end)].to_vec();
             rt_msg.add_field(tag, &value)?;
         }
@@ -111,8 +109,8 @@ impl RtMessage {
     ///
     /// ## Arguments
     ///
-    /// * `tag` - The [`Tag`](enum.Tag.html) to add. Tags must be added in **strictly 
-    ///   increasing order**, violating this will result in a 
+    /// * `tag` - The [`Tag`](enum.Tag.html) to add. Tags must be added in **strictly
+    ///   increasing order**, violating this will result in a
     ///   [`Error::TagNotStrictlyIncreasing`](enum.Error.html).
     ///
     /// * `value` - Value for the tag.
@@ -193,7 +191,7 @@ impl RtMessage {
 
     /// Adds a PAD tag to the end of this message, with a length
     /// set such that the final encoded size of this message is 1KB
-    /// 
+    ///
     /// If the encoded size of this message is already >= 1KB,
     /// this method does nothing
     pub fn pad_to_kilobyte(&mut self) {
@@ -313,8 +311,10 @@ mod test {
         assert_eq!(encoded.read_u32::<LittleEndian>().unwrap(), 2);
 
         // Offset past DELE value to start of MAXT value
-        assert_eq!(encoded.read_u32::<LittleEndian>().unwrap(),
-                   dele_value.len() as u32);
+        assert_eq!(
+            encoded.read_u32::<LittleEndian>().unwrap(),
+            dele_value.len() as u32
+        );
 
         // DELE tag
         let mut dele = [0u8; 4];

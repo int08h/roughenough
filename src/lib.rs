@@ -16,13 +16,13 @@
 //! An implementation of the [Roughtime](https://roughtime.googlesource.com/roughtime)
 //! secure time synchronization protocol.
 //!
-//! Roughtime aims to achieve rough time synchronisation in a secure way that doesn't 
-//! depend on any particular time server, and in such a way that, if a time server does 
-//! misbehave, clients end up with cryptographic proof of it. 
+//! Roughtime aims to achieve rough time synchronisation in a secure way that doesn't
+//! depend on any particular time server, and in such a way that, if a time server does
+//! misbehave, clients end up with cryptographic proof of it.
 //!
 //! # Protocol
 //!
-//! Roughtime messages are represetned by [`RtMessage`](struct.RtMessage.html) which 
+//! Roughtime messages are represetned by [`RtMessage`](struct.RtMessage.html) which
 //! implements the mapping of Roughtime `u32` [`tags`](enum.Tag.html) to byte-strings.
 //!
 //! # Client
@@ -37,7 +37,7 @@
 //!
 //! # Server
 //!
-//! A Roughtime server implementation is in `src/bin/server.rs`. The server is 
+//! A Roughtime server implementation is in `src/bin/server.rs`. The server is
 //! configured via a yaml file:
 //!
 //! ```yaml
@@ -51,7 +51,7 @@
 //!
 //!   * **interface** - IP address or interface name for listening to client requests
 //!   * **port** - UDP port to listen to requests
-//!   * **seed** - A 32-byte hexadecimal value used as the seed to generate the 
+//!   * **seed** - A 32-byte hexadecimal value used as the seed to generate the
 //!                server's long-term key pair. **This is a secret value**, treat it
 //!                with care.
 //!   * **batch_size** - The number of requests to process in one batch. All nonces

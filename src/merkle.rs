@@ -14,7 +14,7 @@
 
 extern crate ring;
 
-use super::{TREE_LEAF_TWEAK, TREE_NODE_TWEAK, HASH_LENGTH};
+use super::{HASH_LENGTH, TREE_LEAF_TWEAK, TREE_NODE_TWEAK};
 use self::ring::digest;
 
 type Data = Vec<u8>;
@@ -27,7 +27,7 @@ pub struct MerkleTree {
 impl MerkleTree {
     pub fn new() -> MerkleTree {
         MerkleTree {
-            levels: vec![vec![]]
+            levels: vec![vec![]],
         }
     }
 
@@ -41,11 +41,7 @@ impl MerkleTree {
         let mut level = 0;
 
         while !self.levels[level].is_empty() {
-            let sibling = if index % 2 == 0 {
-                index + 1
-            } else {
-                index - 1
-            };
+            let sibling = if index % 2 == 0 { index + 1 } else { index - 1 };
 
             paths.extend(self.levels[level][sibling].clone());
             level += 1;
@@ -55,10 +51,14 @@ impl MerkleTree {
     }
 
     pub fn compute_root(&mut self) -> Hash {
-        assert!(self.levels[0].len() > 0, "Must have at least one leaf to hash!");
+        assert!(
+            self.levels[0].len() > 0,
+            "Must have at least one leaf to hash!"
+        );
 
         let mut level = 0;
         let mut node_count = self.levels[0].len();
+
         while node_count > 1 {
             level += 1;
 
@@ -74,10 +74,14 @@ impl MerkleTree {
             node_count /= 2;
 
             for i in 0..node_count {
-                let hash = self.hash_nodes(&self.levels[level - 1][i*2], &self.levels[level - 1][(i*2)+1]);
+                let hash = self.hash_nodes(
+                    &self.levels[level - 1][i * 2],
+                    &self.levels[level - 1][(i * 2) + 1],
+                );
                 self.levels[level].push(hash);
             }
         }
+
         assert_eq!(self.levels[level].len(), 1);
         self.levels[level].pop().unwrap()
     }
@@ -128,16 +132,16 @@ pub fn root_from_paths(mut index: usize, data: &[u8], paths: &[u8]) -> Hash {
             ctx.update(path);
             ctx.update(&hash);
         }
-        hash = Hash::from(ctx.finish().as_ref());
 
+        hash = Hash::from(ctx.finish().as_ref());
         index >>= 1;
     }
+
     hash
 }
 
 #[cfg(test)]
 mod test {
-
     use merkle::*;
 
     fn test_paths_with_num(num: usize) {

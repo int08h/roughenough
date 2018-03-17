@@ -10,7 +10,7 @@ Please open a pull request (PR) for your changes and include:
 
 * An overall description/rationale of the PR
 * Tests for any new functionality
-* Code style that matches what is already in the repo
+* Code formatted with `rustfmt` default style settings 
 * License (Apache 2.0) and copyright statements for your code
 * A willingness to iterate and make changes ;)
 

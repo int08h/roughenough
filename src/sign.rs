@@ -15,19 +15,19 @@
 //! Ed25519 signing and verification
 //!
 //! `Ring` does not provide a multi-step (init-update-finish) interface
-//! for Ed25519 signatures. `Verifier` and `Signer` provide this 
+//! for Ed25519 signatures. `Verifier` and `Signer` provide this
 //! missing multi-step api.
 
+extern crate hex;
 extern crate ring;
 extern crate untrusted;
-extern crate hex;
 
 use self::ring::signature;
 use self::ring::signature::Ed25519KeyPair;
 
 use self::untrusted::Input;
 
-/// A multi-step (init-update-finish) interface for verifying an 
+/// A multi-step (init-update-finish) interface for verifying an
 /// Ed25519 signature
 #[derive(Debug)]
 pub struct Verifier<'a> {
@@ -59,7 +59,7 @@ impl<'a> Verifier<'a> {
     }
 }
 
-/// A multi-step (init-update-finish) interface for creating an 
+/// A multi-step (init-update-finish) interface for creating an
 /// Ed25519 signature
 pub struct Signer {
     key_pair: Ed25519KeyPair,
@@ -91,17 +91,20 @@ impl Signer {
     }
 }
 
+#[cfg_attr(rustfmt, rustfmt_skip)] // rustfmt errors on the long signature strings
 #[cfg(test)]
 mod test {
     use super::*;
 
     #[test]
     fn verify_ed25519_sig_on_empty_message() {
-        let pubkey = hex::decode("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a")
-            .unwrap();
+        let pubkey = hex::decode(
+            "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        ).unwrap();
 
-        let signature = hex::decode("e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b")
-            .unwrap();
+        let signature = hex::decode(
+            "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
+        ).unwrap();
 
         let v = Verifier::new(&pubkey);
         let result = v.verify(&signature);
@@ -110,13 +113,15 @@ mod test {
 
     #[test]
     fn verify_ed25519_sig() {
-        let pubkey = hex::decode("c0dac102c4533186e25dc43128472353eaabdb878b152aeb8e001f92d90233a7")
-            .unwrap();
+        let pubkey = hex::decode(
+            "c0dac102c4533186e25dc43128472353eaabdb878b152aeb8e001f92d90233a7",
+        ).unwrap();
 
         let message = hex::decode("5f4c8989").unwrap();
 
-        let signature = hex::decode("124f6fc6b0d100842769e71bd530664d888df8507df6c56dedfdb509aeb93416e26b918d38aa06305df3095697c18b2aa832eaa52edc0ae49fbae5a85e150c07")
-            .unwrap();
+        let signature = hex::decode(
+            "124f6fc6b0d100842769e71bd530664d888df8507df6c56dedfdb509aeb93416e26b918d38aa06305df3095697c18b2aa832eaa52edc0ae49fbae5a85e150c07"
+        ).unwrap();
 
         let mut v = Verifier::new(&pubkey);
         v.update(&message);
@@ -129,8 +134,9 @@ mod test {
         let seed = hex::decode("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
             .unwrap();
 
-        let expected_sig = hex::decode("e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b")
-            .unwrap();
+        let expected_sig = hex::decode(
+            "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
+        ).unwrap();
 
         let mut s = Signer::new(&seed);
         let sig = s.sign();
@@ -144,8 +150,9 @@ mod test {
 
         let message = hex::decode("cbc77b").unwrap();
 
-        let expected_sig = hex::decode("d9868d52c2bebce5f3fa5a79891970f309cb6591e3e1702a70276fa97c24b3a8e58606c38c9758529da50ee31b8219cba45271c689afa60b0ea26c99db19b00c")
-            .unwrap();
+        let expected_sig = hex::decode(
+            "d9868d52c2bebce5f3fa5a79891970f309cb6591e3e1702a70276fa97c24b3a8e58606c38c9758529da50ee31b8219cba45271c689afa60b0ea26c99db19b00c"
+        ).unwrap();
 
         let mut s = Signer::new(&seed);
         s.update(&message);
@@ -170,5 +177,4 @@ mod test {
 
         assert_eq!(result, true);
     }
-
 }

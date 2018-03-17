@@ -29,7 +29,7 @@
 //!
 //!   * **interface** - IP address or interface name for listening to client requests
 //!   * **port** - UDP port to listen to requests
-//!   * **seed** - A 32-byte hexadecimal value used as the seed to generate the 
+//!   * **seed** - A 32-byte hexadecimal value used as the seed to generate the
 //!                server's long-term key pair. **This is a secret value**, treat it
 //!                with care.
 //!   * **batch_size** - The number of requests to process in one batch. All nonces
@@ -43,37 +43,37 @@
 //! ```
 
 extern crate byteorder;
-extern crate ring;
-extern crate roughenough;
-extern crate time;
-extern crate untrusted;
 extern crate ctrlc;
-extern crate yaml_rust;
+extern crate hex;
 #[macro_use]
 extern crate log;
-extern crate simple_logger;
 extern crate mio;
 extern crate mio_extras;
-extern crate hex;
+extern crate ring;
+extern crate roughenough;
+extern crate simple_logger;
+extern crate time;
+extern crate untrusted;
+extern crate yaml_rust;
 
 use std::env;
 use std::process;
 use std::fs::File;
-use std::io::{Read, ErrorKind};
+use std::io::{ErrorKind, Read};
 use std::time::Duration;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
 
-use mio::{Poll, Token, Ready, PollOpt, Events};
+use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio::net::UdpSocket;
 use mio_extras::timer::Timer;
 
 use byteorder::{LittleEndian, WriteBytesExt};
 
-use roughenough::{RtMessage, Tag, Error};
-use roughenough::{VERSION, CERTIFICATE_CONTEXT, MIN_REQUEST_LENGTH, SIGNED_RESPONSE_CONTEXT};
+use roughenough::{Error, RtMessage, Tag};
+use roughenough::{CERTIFICATE_CONTEXT, MIN_REQUEST_LENGTH, SIGNED_RESPONSE_CONTEXT, VERSION};
 use roughenough::sign::Signer;
 use roughenough::merkle::*;
 
@@ -109,8 +109,14 @@ fn make_key_and_cert(seed: &[u8]) -> (Signer, Vec<u8>) {
     let mut long_term_key = Signer::new(seed);
     let ephemeral_key = create_ephemeral_key();
 
-    info!("Long-term public key: {}", hex::encode(long_term_key.public_key_bytes()));
-    info!("Ephemeral public key: {}", hex::encode(ephemeral_key.public_key_bytes()));
+    info!(
+        "Long-term public key: {}",
+        hex::encode(long_term_key.public_key_bytes())
+    );
+    info!(
+        "Ephemeral public key: {}",
+        hex::encode(ephemeral_key.public_key_bytes())
+    );
 
     // Make DELE and sign it with long-term key
     let dele_bytes = make_dele_bytes(&ephemeral_key).unwrap();
@@ -134,26 +140,17 @@ fn make_key_and_cert(seed: &[u8]) -> (Signer, Vec<u8>) {
 
 struct SRep {
     raw_bytes: Vec<u8>,
-    signature: Vec<u8>
+    signature: Vec<u8>,
 }
 
 fn make_srep(ephemeral_key: &mut Signer, root: &[u8]) -> SRep {
-    //   create SREP
-    //   sign SREP
-    //   create response:
-    //    - SIG
-    //    - PATH (always 0)
-    //    - SREP
-    //    - CERT (pre-created)
-    //    - INDX (always 0)
-
-    
     let mut radi = [0; 4];
     let mut midp = [0; 8];
 
-    
     // one second (in microseconds)
-    (&mut radi as &mut [u8]).write_u32::<LittleEndian>(1_000_000).unwrap();
+    (&mut radi as &mut [u8])
+        .write_u32::<LittleEndian>(1_000_000)
+        .unwrap();
 
     // current epoch time in microseconds
     let now = {
@@ -163,7 +160,9 @@ fn make_srep(ephemeral_key: &mut Signer, root: &[u8]) -> SRep {
 
         secs + nsecs
     };
-    (&mut midp as &mut [u8]).write_u64::<LittleEndian>(now).unwrap();
+    (&mut midp as &mut [u8])
+        .write_u64::<LittleEndian>(now)
+        .unwrap();
 
     // Signed response SREP
     let srep_bytes = {
@@ -184,15 +183,15 @@ fn make_srep(ephemeral_key: &mut Signer, root: &[u8]) -> SRep {
 
     SRep {
         raw_bytes: srep_bytes,
-        signature: srep_signature
+        signature: srep_signature,
     }
 }
 
 fn make_response(srep: &SRep, cert_bytes: &[u8], path: &[u8], idx: u32) -> RtMessage {
-
     let mut index = [0; 4];
-    (&mut index as &mut [u8]).write_u32::<LittleEndian>(idx).unwrap();
-
+    (&mut index as &mut [u8])
+        .write_u32::<LittleEndian>(idx)
+        .unwrap();
 
     let mut response = RtMessage::new(5);
     response.add_field(Tag::SIG, &srep.signature).unwrap();
@@ -226,15 +225,14 @@ fn nonce_from_request(buf: &[u8], num_bytes: usize) -> Result<&[u8], Error> {
 }
 
 fn load_config(config_file: &str) -> (SocketAddr, Vec<u8>, u8) {
-    let mut infile = File::open(config_file)
-        .expect("failed to open config file");
+    let mut infile = File::open(config_file).expect("failed to open config file");
 
     let mut contents = String::new();
-    infile.read_to_string(&mut contents)
+    infile
+        .read_to_string(&mut contents)
         .expect("could not read config file");
 
-    let cfg = YamlLoader::load_from_str(&contents)
-        .expect("could not parse config file");
+    let cfg = YamlLoader::load_from_str(&contents).expect("could not parse config file");
 
     if cfg.len() != 1 {
         panic!("empty or malformed config file");
@@ -251,7 +249,7 @@ fn load_config(config_file: &str) -> (SocketAddr, Vec<u8>, u8) {
             "interface" => iface = value.as_str().unwrap().to_string(),
             "seed" => seed = value.as_str().unwrap().to_string(),
             "batch_size" => batch_size = value.as_i64().unwrap() as u8,
-            _ => warn!("ignoring unknown config key '{}'", key.as_str().unwrap())
+            _ => warn!("ignoring unknown config key '{}'", key.as_str().unwrap()),
         }
     }
 
@@ -259,13 +257,19 @@ fn load_config(config_file: &str) -> (SocketAddr, Vec<u8>, u8) {
     let sock_addr: SocketAddr = addr.parse()
         .expect(&format!("could not create socket address from {}", addr));
 
-    let binseed = hex::decode(seed)
-        .expect("seed value invalid; 'seed' should be 32 byte hex value");
+    let binseed =
+        hex::decode(seed).expect("seed value invalid; 'seed' should be 32 byte hex value");
 
     (sock_addr, binseed, batch_size)
 }
 
-fn polling_loop(addr: &SocketAddr, mut ephemeral_key: &mut Signer, cert_bytes: &[u8], batch_size: u8, response_counter: Arc<AtomicUsize>) {
+fn polling_loop(
+    addr: &SocketAddr,
+    mut ephemeral_key: &mut Signer,
+    cert_bytes: &[u8],
+    batch_size: u8,
+    response_counter: Arc<AtomicUsize>,
+) {
     let keep_running = Arc::new(AtomicBool::new(true));
     let kr = keep_running.clone();
 
@@ -279,26 +283,27 @@ fn polling_loop(addr: &SocketAddr, mut ephemeral_key: &mut Signer, cert_bytes: &
     let mut timer: Timer<()> = Timer::default();
     timer.set_timeout(status_duration, ());
 
-    
     let mut buf = [0u8; 65_536];
     let mut events = Events::with_capacity(32);
     let mut num_bad_requests = 0u64;
 
     let poll = Poll::new().unwrap();
-    poll.register(&socket, MESSAGE, Ready::readable(), PollOpt::edge()).unwrap();
-    poll.register(&timer, STATUS, Ready::readable(), PollOpt::edge()).unwrap();
+    poll.register(&socket, MESSAGE, Ready::readable(), PollOpt::edge())
+        .unwrap();
+    poll.register(&timer, STATUS, Ready::readable(), PollOpt::edge())
+        .unwrap();
 
     let mut merkle = MerkleTree::new();
     let mut requests = Vec::with_capacity(batch_size as usize);
 
     macro_rules! check_ctrlc {
-        () => {
-            if !keep_running.load(Ordering::Acquire) {
-                warn!("Ctrl-C caught, exiting...");
-                return;
-            }
+    () => {
+        if !keep_running.load(Ordering::Acquire) {
+          warn!("Ctrl-C caught, exiting...");
+          return;
         }
     }
+  }
 
     loop {
         check_ctrlc!();
@@ -306,10 +311,8 @@ fn polling_loop(addr: &SocketAddr, mut ephemeral_key: &mut Signer, cert_bytes: &
         poll.poll(&mut events, poll_duration).expect("poll failed");
 
         for event in events.iter() {
-
             match event.token() {
                 MESSAGE => {
-
                     let mut done = false;
 
                     'process_batch: loop {
@@ -328,24 +331,31 @@ fn polling_loop(addr: &SocketAddr, mut ephemeral_key: &mut Signer, cert_bytes: &
                                         merkle.push_leaf(nonce);
                                     } else {
                                         num_bad_requests += 1;
-                                        info!("Invalid request ({} bytes) from {} (#{} in batch, resp #{})", num_bytes, src_addr, i, resp_start + i as usize);
+                                        info!(
+                                            "Invalid request ({} bytes) from {} (#{} in batch, resp #{})",
+                                            num_bytes, src_addr, i, resp_start + i as usize
+                                        );
                                     }
-                                },
+                                }
                                 Err(e) => match e.kind() {
                                     ErrorKind::WouldBlock => {
                                         done = true;
                                         break;
-                                    },
-                                    _ => {
-                                        error!("Error receiving from socket: {:?}: {:?}", e.kind(), e);
-                                        break
                                     }
-                                }
+                                    _ => {
+                                        error!(
+                                            "Error receiving from socket: {:?}: {:?}",
+                                            e.kind(),
+                                            e
+                                        );
+                                        break;
+                                    }
+                                },
                             };
                         }
 
                         if requests.is_empty() {
-                            break 'process_batch
+                            break 'process_batch;
                         }
 
                         let root = merkle.compute_root();
@@ -357,24 +367,37 @@ fn polling_loop(addr: &SocketAddr, mut ephemeral_key: &mut Signer, cert_bytes: &
                             let resp = make_response(&srep, cert_bytes, &paths, i as u32);
                             let resp_bytes = resp.encode().unwrap();
 
-                            let bytes_sent = socket.send_to(&resp_bytes, &src_addr).expect("send_to failed");
+                            let bytes_sent = socket
+                                .send_to(&resp_bytes, &src_addr)
+                                .expect("send_to failed");
                             let num_responses = response_counter.fetch_add(1, Ordering::SeqCst);
 
-                            info!("Responded {} bytes to {} for '{}..' (#{} in batch, resp #{})", bytes_sent, src_addr, hex::encode(&nonce[0..4]), i, num_responses);
+                            info!(
+                                "Responded {} bytes to {} for '{}..' (#{} in batch, resp #{})",
+                                bytes_sent,
+                                src_addr,
+                                hex::encode(&nonce[0..4]),
+                                i,
+                                num_responses
+                            );
                         }
                         if done {
-                            break 'process_batch
+                            break 'process_batch;
                         }
                     }
-                    
                 }
 
                 STATUS => {
-                    info!("responses {}, invalid requests {}", response_counter.load(Ordering::SeqCst), num_bad_requests);
+                    info!(
+                        "responses {}, invalid requests {}",
+                        response_counter.load(Ordering::SeqCst),
+                        num_bad_requests
+                    );
+
                     timer.set_timeout(status_duration, ());
                 }
 
-                _ => unreachable!()
+                _ => unreachable!(),
             }
         }
     }
@@ -400,26 +423,33 @@ pub fn main() {
 
     let response_counter = Arc::new(AtomicUsize::new(0));
 
-    if env::var("BENCH").is_ok()  {
+    if env::var("BENCH").is_ok() {
         log::set_max_level(log::LevelFilter::Warn);
         let response_counter = response_counter.clone();
 
-        thread::spawn(move || {
-            loop {
-                let old = time::get_time().sec;
-                let old_reqs = response_counter.load(Ordering::SeqCst);
+        thread::spawn(move || loop {
+            let old = time::get_time().sec;
+            let old_reqs = response_counter.load(Ordering::SeqCst);
 
-                thread::sleep(Duration::from_secs(1));
+            thread::sleep(Duration::from_secs(1));
 
-                let new = time::get_time().sec;
-                let new_reqs = response_counter.load(Ordering::SeqCst);
+            let new = time::get_time().sec;
+            let new_reqs = response_counter.load(Ordering::SeqCst);
 
-                warn!("Processing at {:?} reqs/sec", (new_reqs - old_reqs) / (new - old) as usize);
-            }
+            warn!(
+                "Processing at {:?} reqs/sec",
+                (new_reqs - old_reqs) / (new - old) as usize
+            );
         });
     }
 
-    polling_loop(&addr, &mut ephemeral_key, &cert_bytes, batch_size, response_counter.clone());
+    polling_loop(
+        &addr,
+        &mut ephemeral_key,
+        &cert_bytes,
+        batch_size,
+        response_counter.clone(),
+    );
 
     info!("Done.");
     process::exit(0);
