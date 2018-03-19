@@ -31,6 +31,9 @@ pub enum Error {
     /// Request was less than 1024 bytes
     RequestTooShort,
 
+    /// Offset within message was not 32-bit aligned 
+    InvalidOffsetAlignment(u32),
+
     /// Otherwise invalid request
     InvalidRequest,
 }

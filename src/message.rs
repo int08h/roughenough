@@ -67,7 +67,7 @@ impl RtMessage {
         for _ in 0..num_tags - 1 {
             let offset = msg.read_u32::<LittleEndian>()?;
             if offset % 4 != 0 {
-                panic!("Invalid offset {:?} in message {:?}", offset, bytes);
+                return Err(Error::InvalidOffsetAlignment(offset));
             }
             offsets.push(offset as usize);
         }
