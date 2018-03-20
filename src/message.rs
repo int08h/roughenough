@@ -67,12 +67,17 @@ impl RtMessage {
 
         let mut offsets = Vec::with_capacity((num_tags - 1) as usize);
         let mut tags = Vec::with_capacity(num_tags as usize);
+        let end_of_data = bytes.len() as u32;
 
         for _ in 0..num_tags - 1 {
             let offset = msg.read_u32::<LittleEndian>()?;
+
             if offset % 4 != 0 {
                 return Err(Error::InvalidOffsetAlignment(offset));
+            } else if offset > end_of_data {
+                return Err(Error::InvalidOffsetValue(offset));
             }
+
             offsets.push(offset as usize);
         }
 
@@ -343,4 +348,32 @@ mod test {
         // Everything was read
         assert_eq!(encoded.position() as usize, msg.encoded_size());
     }
+
+    #[test]
+    #[should_panic(expected="InvalidOffsetValue(128)")]
+    fn from_bytes_offset_past_end_of_message() {
+        let mut msg = RtMessage::new(2);
+        msg.add_field(Tag::NONC, "1111".as_bytes()).unwrap();
+        msg.add_field(Tag::PAD, "aaaaaaaaa".as_bytes()).unwrap();
+
+        let mut bytes = msg.encode().unwrap();
+        // set the PAD value offset to beyond end of the message 
+        bytes[4] = 128;
+
+        RtMessage::from_bytes(&bytes).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected="InvalidNumTags(0)")]
+    fn from_bytes_zero_tags() {
+        let mut msg = RtMessage::new(1);
+        msg.add_field(Tag::NONC, "1111".as_bytes()).unwrap();
+
+        let mut bytes = msg.encode().unwrap();
+        // set num_tags to zero
+        bytes[0] = 0;
+
+        RtMessage::from_bytes(&bytes).unwrap();
+    }
+
 }
