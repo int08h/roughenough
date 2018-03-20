@@ -40,6 +40,9 @@ pub enum Error {
     /// Invalid number of tags specified 
     InvalidNumTags(u32),
 
+    /// Could not convert bytes to message because bytes were too short
+    MessageTooShort,
+
     /// Otherwise invalid request
     InvalidRequest,
 }

@@ -83,7 +83,10 @@ impl RtMessage {
 
         let mut buf = [0; 4];
         for _ in 0..num_tags {
-            msg.read_exact(&mut buf).unwrap();
+            if msg.read_exact(&mut buf).is_err() {
+                return Err(Error::MessageTooShort);
+            }
+
             let tag = Tag::from_wire(&buf)?;
 
             if let Some(last_tag) = tags.last() {
@@ -91,6 +94,7 @@ impl RtMessage {
                     return Err(Error::TagNotStrictlyIncreasing(tag));
                 }
             }
+
             tags.push(tag);
         }
 
@@ -111,6 +115,7 @@ impl RtMessage {
             let value = bytes[(header_end + value_start)..(header_end + value_end)].to_vec();
             rt_msg.add_field(tag, &value)?;
         }
+
         Ok(rt_msg)
     }
 
@@ -374,6 +379,14 @@ mod test {
         bytes[0] = 0;
 
         RtMessage::from_bytes(&bytes).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected="MessageTooShort")]
+    fn from_bytes_too_few_bytes_for_tags() {
+        // Header says two tags (8 bytes) but truncate first tag at 2 bytes
+        let bytes = &[0x02, 0, 0, 0, 4, 0, 0, 0, 0, 0];
+        RtMessage::from_bytes(bytes).unwrap();
     }
 
 }
