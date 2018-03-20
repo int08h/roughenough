@@ -47,6 +47,10 @@ impl RtMessage {
         let mut msg = Cursor::new(bytes);
 
         let num_tags = msg.read_u32::<LittleEndian>()?;
+        if num_tags == 0 {
+            return Err(Error::InvalidNumTags(0));
+        }
+
         let mut rt_msg = RtMessage::new(num_tags);
 
         if num_tags == 1 {

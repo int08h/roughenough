@@ -34,6 +34,9 @@ pub enum Error {
     /// Offset within message was not 32-bit aligned 
     InvalidOffsetAlignment(u32),
 
+    /// Invalid number of tags specified 
+    InvalidNumTags(u32),
+
     /// Otherwise invalid request
     InvalidRequest,
 }
