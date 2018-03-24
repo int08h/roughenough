@@ -184,14 +184,17 @@ impl RtMessage {
         self.tags.len() as u32
     }
 
+    /// Returns a slice of the tags in the message
     pub fn tags(&self) -> &[Tag] {
         &self.tags
     }
 
+    /// Returns a slice of the values in the message
     pub fn values(&self) -> &[Vec<u8>] {
         &self.values
     }
 
+    /// Converts the message into a `HashMap` mapping each tag to its value
     pub fn into_hash_map(self) -> HashMap<Tag, Vec<u8>> {
         self.tags.into_iter().zip(self.values.into_iter()).collect()
     }

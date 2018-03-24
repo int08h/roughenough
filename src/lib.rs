@@ -22,7 +22,7 @@
 //!
 //! # Protocol
 //!
-//! Roughtime messages are represetned by [`RtMessage`](struct.RtMessage.html) which
+//! Roughtime messages are represented by [`RtMessage`](struct.RtMessage.html) which
 //! implements the mapping of Roughtime `u32` [`tags`](enum.Tag.html) to byte-strings.
 //!
 //! # Client
