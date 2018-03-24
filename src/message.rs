@@ -70,6 +70,10 @@ impl RtMessage {
 
     /// Internal function to create a single tag message
     fn single_tag_message(bytes: &[u8], msg: &mut Cursor<&[u8]>) -> Result<Self, Error> {
+        if bytes.len() < 8 {
+            return Err(Error::MessageTooShort);
+        }
+
         let pos = msg.position() as usize;
         msg.set_position((pos + 4) as u64);
 
@@ -80,7 +84,7 @@ impl RtMessage {
         let mut rt_msg = RtMessage::new(1);
         rt_msg.add_field(tag, &value)?;
 
-        return Ok(rt_msg);
+        Ok(rt_msg)
     }
 
     /// Internal function to create a multiple tag message
