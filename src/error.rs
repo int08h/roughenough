@@ -25,6 +25,12 @@ pub enum Error {
     /// The associated byte sequence does not correspond to a valid Roughtime tag.
     InvalidTag(Box<[u8]>),
 
+    /// Invalid number of tags specified
+    InvalidNumTags(u32),
+
+    /// Tag value length exceeds length of source bytes
+    InvalidValueLength(Tag, u32),
+
     /// Encoding failed. The associated `std::io::Error` should provide more information.
     EncodingFailure(std::io::Error),
 
@@ -36,9 +42,6 @@ pub enum Error {
 
     /// Offset is outside of valid message range
     InvalidOffsetValue(u32),
-
-    /// Invalid number of tags specified 
-    InvalidNumTags(u32),
 
     /// Could not convert bytes to message because bytes were too short
     MessageTooShort,

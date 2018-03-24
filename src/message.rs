@@ -112,14 +112,19 @@ impl RtMessage {
         // as an offset from the end of the header
         let msg_end = bytes.len() - header_end;
 
-        assert_eq!(offsets.len(), tags.len() - 1);
-
         for (tag, (value_start, value_end)) in tags.into_iter().zip(
             once(&0)
                 .chain(offsets.iter())
-                .zip(offsets.iter().chain(once(&msg_end))),
+                .zip(offsets.iter().chain(once(&msg_end)))
         ) {
-            let value = bytes[(header_end + value_start)..(header_end + value_end)].to_vec();
+            let start_idx = header_end + value_start;
+            let end_idx = header_end + value_end;
+
+            if end_idx > msg_end || start_idx > end_idx {
+                return Err(Error::InvalidValueLength(tag, end_idx as u32));
+            }
+
+            let value = bytes[start_idx..end_idx].to_vec();
             rt_msg.add_field(tag, &value)?;
         }
 
