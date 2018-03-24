@@ -43,38 +43,79 @@ impl RtMessage {
         }
     }
 
+    /// Construct a new RtMessage from the on-the-wire representation in `bytes`
+    ///
+    /// ## Arguments
+    ///
+    /// * `bytes` - On-the-wire representation
+    ///
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
-        let mut msg = Cursor::new(bytes);
+        let bytes_len = bytes.len();
 
-        let num_tags = msg.read_u32::<LittleEndian>()?;
-        let mut rt_msg = RtMessage::new(num_tags);
-
-        if num_tags == 1 {
-            let pos = msg.position() as usize;
-            let tag = Tag::from_wire(&bytes[pos..pos + 4])?;
-            msg.set_position((pos + 4) as u64);
-
-            let mut value = Vec::new();
-
-            msg.read_to_end(&mut value).unwrap();
-            rt_msg.add_field(tag, &value)?;
-            return Ok(rt_msg);
+        if bytes_len < 4 {
+            return Err(Error::MessageTooShort);
+        } else if bytes_len % 4 != 0 {
+            return Err(Error::InvalidAlignment(bytes_len as u32));
         }
 
+        let mut msg = Cursor::new(bytes);
+        let num_tags = msg.read_u32::<LittleEndian>()?;
+
+        match num_tags {
+            0 => Ok(RtMessage::new(0)),
+            1 => RtMessage::single_tag_message(bytes, &mut msg),
+            _ => RtMessage::multi_tag_message(num_tags, bytes, &mut msg),
+        }
+    }
+
+    /// Internal function to create a single tag message
+    fn single_tag_message(bytes: &[u8], msg: &mut Cursor<&[u8]>) -> Result<Self, Error> {
+        if bytes.len() < 8 {
+            return Err(Error::MessageTooShort);
+        }
+
+        let pos = msg.position() as usize;
+        msg.set_position((pos + 4) as u64);
+
+        let mut value = Vec::new();
+        msg.read_to_end(&mut value)?;
+
+        let tag = Tag::from_wire(&bytes[pos..pos + 4])?;
+        let mut rt_msg = RtMessage::new(1);
+        rt_msg.add_field(tag, &value)?;
+
+        Ok(rt_msg)
+    }
+
+    /// Internal function to create a multiple tag message
+    fn multi_tag_message(
+        num_tags: u32,
+        bytes: &[u8],
+        msg: &mut Cursor<&[u8]>,
+    ) -> Result<Self, Error> {
+        let bytes_len = bytes.len();
         let mut offsets = Vec::with_capacity((num_tags - 1) as usize);
-        let mut tags = Vec::with_capacity(num_tags as usize);
 
         for _ in 0..num_tags - 1 {
             let offset = msg.read_u32::<LittleEndian>()?;
+
             if offset % 4 != 0 {
-                panic!("Invalid offset {:?} in message {:?}", offset, bytes);
+                return Err(Error::InvalidAlignment(offset));
+            } else if offset > bytes_len as u32 {
+                return Err(Error::InvalidOffsetValue(offset));
             }
+
             offsets.push(offset as usize);
         }
 
         let mut buf = [0; 4];
+        let mut tags = Vec::with_capacity(num_tags as usize);
+
         for _ in 0..num_tags {
-            msg.read_exact(&mut buf).unwrap();
+            if msg.read_exact(&mut buf).is_err() {
+                return Err(Error::MessageTooShort);
+            }
+
             let tag = Tag::from_wire(&buf)?;
 
             if let Some(last_tag) = tags.last() {
@@ -82,26 +123,36 @@ impl RtMessage {
                     return Err(Error::TagNotStrictlyIncreasing(tag));
                 }
             }
+
             tags.push(tag);
         }
 
         // All offsets are relative to the end of the header,
         // which is our current position
         let header_end = msg.position() as usize;
+
         // Compute the end of the last value,
         // as an offset from the end of the header
         let msg_end = bytes.len() - header_end;
 
-        assert_eq!(offsets.len(), tags.len() - 1);
+        let mut rt_msg = RtMessage::new(num_tags);
 
         for (tag, (value_start, value_end)) in tags.into_iter().zip(
             once(&0)
                 .chain(offsets.iter())
                 .zip(offsets.iter().chain(once(&msg_end))),
         ) {
-            let value = bytes[(header_end + value_start)..(header_end + value_end)].to_vec();
+            let start_idx = header_end + value_start;
+            let end_idx = header_end + value_end;
+
+            if end_idx > msg_end || start_idx > end_idx {
+                return Err(Error::InvalidValueLength(tag, end_idx as u32));
+            }
+
+            let value = bytes[start_idx..end_idx].to_vec();
             rt_msg.add_field(tag, &value)?;
         }
+
         Ok(rt_msg)
     }
 
@@ -133,14 +184,17 @@ impl RtMessage {
         self.tags.len() as u32
     }
 
+    /// Returns a slice of the tags in the message
     pub fn tags(&self) -> &[Tag] {
         &self.tags
     }
 
+    /// Returns a slice of the values in the message
     pub fn values(&self) -> &[Vec<u8>] {
         &self.values
     }
 
+    /// Converts the message into a `HashMap` mapping each tag to its value
     pub fn into_hash_map(self) -> HashMap<Tag, Vec<u8>> {
         self.tags.into_iter().zip(self.values.into_iter()).collect()
     }
@@ -339,4 +393,35 @@ mod test {
         // Everything was read
         assert_eq!(encoded.position() as usize, msg.encoded_size());
     }
+
+    #[test]
+    fn from_bytes_zero_tags() {
+        let bytes = [0, 0, 0, 0];
+        let msg = RtMessage::from_bytes(&bytes).unwrap();
+
+        assert_eq!(msg.num_fields(), 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "InvalidAlignment")]
+    fn from_bytes_offset_past_end_of_message() {
+        let mut msg = RtMessage::new(2);
+        msg.add_field(Tag::NONC, "1111".as_bytes()).unwrap();
+        msg.add_field(Tag::PAD, "aaaaaaaaa".as_bytes()).unwrap();
+
+        let mut bytes = msg.encode().unwrap();
+        // set the PAD value offset to beyond end of the message
+        bytes[4] = 128;
+
+        RtMessage::from_bytes(&bytes).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "InvalidAlignment")]
+    fn from_bytes_too_few_bytes_for_tags() {
+        // Header says two tags (8 bytes) but truncate first tag at 2 bytes
+        let bytes = &[0x02, 0, 0, 0, 4, 0, 0, 0, 0, 0];
+        RtMessage::from_bytes(bytes).unwrap();
+    }
+
 }

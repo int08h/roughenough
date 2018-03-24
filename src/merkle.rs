@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//!
+//! Merkle Tree implementation using SHA-512 and the Roughtime leaf and node tweak values.
+//!
+
 extern crate ring;
 
 use super::{HASH_LENGTH, TREE_LEAF_TWEAK, TREE_NODE_TWEAK};
@@ -20,11 +24,18 @@ use self::ring::digest;
 type Data = Vec<u8>;
 type Hash = Data;
 
+///
+/// Merkle Tree implementation using SHA-512 and the Roughtime leaf and node tweak values.
+///
 pub struct MerkleTree {
     levels: Vec<Vec<Data>>,
 }
 
 impl MerkleTree {
+
+    ///
+    /// Create a new empty Merkle Tree
+    ///
     pub fn new() -> MerkleTree {
         MerkleTree {
             levels: vec![vec![]],

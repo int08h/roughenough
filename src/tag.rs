@@ -59,6 +59,8 @@ impl Tag {
         }
     }
 
+    /// Return the `Tag` corresponding to the on-the-wire representation in `bytes` or an
+    /// `Error::InvalidTag` if `bytes` do not correspond to a valid tag.
     pub fn from_wire(bytes: &[u8]) -> Result<Self, Error> {
         match bytes {
             b"CERT" => Ok(Tag::CERT),
