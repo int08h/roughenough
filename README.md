@@ -96,8 +96,6 @@ Roughtime features not implemented by the server:
 
 Other notes:
 
-* Error-handling needs a closer examination to verify the `unwrap()`'s and `expect()`'s present
-  in the request handling path are for truly exceptional conditions.
 * Per-request heap allocations could probably be reduced: a few `Vec`'s could be replaced by 
   lifetime scoped slices.
 
