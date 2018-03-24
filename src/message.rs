@@ -53,6 +53,10 @@ impl RtMessage {
         let mut msg = Cursor::new(bytes);
 
         let num_tags = msg.read_u32::<LittleEndian>()?;
+        if num_tags == 0 {
+            return Err(Error::InvalidNumTags(0));
+        }
+
         let mut rt_msg = RtMessage::new(num_tags);
 
         if num_tags == 1 {
@@ -69,18 +73,26 @@ impl RtMessage {
 
         let mut offsets = Vec::with_capacity((num_tags - 1) as usize);
         let mut tags = Vec::with_capacity(num_tags as usize);
+        let end_of_data = bytes.len() as u32;
 
         for _ in 0..num_tags - 1 {
             let offset = msg.read_u32::<LittleEndian>()?;
+
             if offset % 4 != 0 {
                 return Err(Error::InvalidOffsetAlignment(offset));
+            } else if offset > end_of_data {
+                return Err(Error::InvalidOffsetValue(offset));
             }
+
             offsets.push(offset as usize);
         }
 
         let mut buf = [0; 4];
         for _ in 0..num_tags {
-            msg.read_exact(&mut buf).unwrap();
+            if msg.read_exact(&mut buf).is_err() {
+                return Err(Error::MessageTooShort);
+            }
+
             let tag = Tag::from_wire(&buf)?;
 
             if let Some(last_tag) = tags.last() {
@@ -88,6 +100,7 @@ impl RtMessage {
                     return Err(Error::TagNotStrictlyIncreasing(tag));
                 }
             }
+
             tags.push(tag);
         }
 
@@ -109,6 +122,7 @@ impl RtMessage {
             let value = bytes[(header_end + value_start)..(header_end + value_end)].to_vec();
             rt_msg.add_field(tag, &value)?;
         }
+
         Ok(rt_msg)
     }
 
@@ -346,4 +360,40 @@ mod test {
         // Everything was read
         assert_eq!(encoded.position() as usize, msg.encoded_size());
     }
+
+    #[test]
+    #[should_panic(expected="InvalidOffsetValue(128)")]
+    fn from_bytes_offset_past_end_of_message() {
+        let mut msg = RtMessage::new(2);
+        msg.add_field(Tag::NONC, "1111".as_bytes()).unwrap();
+        msg.add_field(Tag::PAD, "aaaaaaaaa".as_bytes()).unwrap();
+
+        let mut bytes = msg.encode().unwrap();
+        // set the PAD value offset to beyond end of the message 
+        bytes[4] = 128;
+
+        RtMessage::from_bytes(&bytes).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected="InvalidNumTags(0)")]
+    fn from_bytes_zero_tags() {
+        let mut msg = RtMessage::new(1);
+        msg.add_field(Tag::NONC, "1111".as_bytes()).unwrap();
+
+        let mut bytes = msg.encode().unwrap();
+        // set num_tags to zero
+        bytes[0] = 0;
+
+        RtMessage::from_bytes(&bytes).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected="MessageTooShort")]
+    fn from_bytes_too_few_bytes_for_tags() {
+        // Header says two tags (8 bytes) but truncate first tag at 2 bytes
+        let bytes = &[0x02, 0, 0, 0, 4, 0, 0, 0, 0, 0];
+        RtMessage::from_bytes(bytes).unwrap();
+    }
+
 }
