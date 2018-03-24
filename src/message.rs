@@ -43,6 +43,12 @@ impl RtMessage {
         }
     }
 
+    /// Construct a new RtMessage from the on-the-wire representation in `bytes`
+    ///
+    /// ## Arguments
+    ///
+    /// * `bytes` - On-the-wire representation
+    ///
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
         let mut msg = Cursor::new(bytes);
 
@@ -88,6 +94,7 @@ impl RtMessage {
         // All offsets are relative to the end of the header,
         // which is our current position
         let header_end = msg.position() as usize;
+
         // Compute the end of the last value,
         // as an offset from the end of the header
         let msg_end = bytes.len() - header_end;
