@@ -145,7 +145,7 @@ impl RtMessage {
             let start_idx = header_end + value_start;
             let end_idx = header_end + value_end;
 
-            if end_idx > msg_end || start_idx > end_idx {
+            if end_idx > bytes_len || start_idx > end_idx {
                 return Err(Error::InvalidValueLength(tag, end_idx as u32));
             }
 
@@ -342,6 +342,9 @@ mod test {
 
         // Entire message was read
         assert_eq!(encoded.position(), 72);
+
+        // Round-trip single-tag message
+        RtMessage::from_bytes(&msg.encode().unwrap()).unwrap();
     }
 
     #[test]
@@ -392,6 +395,9 @@ mod test {
 
         // Everything was read
         assert_eq!(encoded.position() as usize, msg.encoded_size());
+
+        // Round-trip multi-tag message
+        RtMessage::from_bytes(&msg.encode().unwrap()).unwrap();
     }
 
     #[test]
