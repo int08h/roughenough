@@ -6,28 +6,22 @@
 **Roughenough** is a [Roughtime](https://roughtime.googlesource.com/roughtime) secure time 
 synchronization client and server implementation in Rust. 
 
-The server is functionally complete: it parses client requests and generates valid Roughtime responses.
-*Some unimplemented features remain*, see [server limitations](#server-limitations) below. 
+The server and client are functionally complete and at feature parity with the reference 
+C++ and Golang implementations. 
 
-The client is also functionally complete and validaties the Merkle Tree in responses, if present.
-
-Contributions are welcome.
+Areas for improvement remain, see [limitations](#limitations) below. Contributions are welcome.
 
 ## Links
 * [Roughenough Github repo](https://github.com/int08h/roughenough)
-* [Roughtime project](https://roughtime.googlesource.com/roughtime)
-* My blog posts [describing Roughtime features](https://int08h.com/post/to-catch-a-lying-timeserver/) and 
-  exploring the [details of Roughtime messages](https://int08h.com/post/roughtime-message-anatomy/).
+* Original [Roughtime project](https://roughtime.googlesource.com/roughtime)
+* My blog posts giving a [techncial deep-dive into Roughtime](https://int08h.com/post/to-catch-a-lying-timeserver/) and 
+  exploring details of [on-the-wire Roughtime messages](https://int08h.com/post/roughtime-message-anatomy/).
 
 ## Building and Running
 
-### Using the Client to Query a Roughtime Server 
-
 ```bash
+# Build roughenough
 $ cargo build --release
-$ target/release/client roughtime.int08h.com 2002
-Requesting time from: "roughtime.int08h.com":2002
-Recieved time from server: midpoint="Mar 10 2018 21:35:52", radius=1000000
 ```
 
 The client binary is `target/release/client`. After building you can copy the 
@@ -37,15 +31,41 @@ binary and run on its own (no `cargo` needed) if you wish.
 $ cp target/release/server /usr/local/bin 
 ```
 
+### Using the Client to Query a Roughtime Server 
+
+```bash
+$ target/release/client roughtime.int08h.com 2002
+Requesting time from: "roughtime.int08h.com":2002
+Received time from server: midpoint="Jul 28 2018 15:21:31", radius=1000000 (merkle_index=0, verified=false)
+```
+
+### Validating Server Responses 
+
+Use the `-p` flag with the client to validate the server's response with its public key.
+
+```bash
+# The public key of 'roughtime.int08h.com' is stored in a DNS TXT record 
+$ host -t TXT roughtime.int08h.com
+roughtime.int08h.com descriptive text "016e6e0284d24c37c6e4d7d8d5b4e1d3c1949ceaa545bf875616c9dce0c9bec1"
+
+# Validate the server response using its public key
+$ target/release/client roughtime.int08h.com 2002 -p 016e6e0284d24c37c6e4d7d8d5b4e1d3c1949ceaa545bf875616c9dce0c9bec1
+Requesting time from: "roughtime.int08h.com":2002
+Received time from server: midpoint="Jul 28 2018 15:26:54", radius=1000000 (merkle_index=0, verified=true)
+```
+
+Note `verified=true` in the output which confirms that the server's response had a valid signature.
+
+
 ### Starting the Server
 
 ```bash
 $ cargo build --release
 $ target/release/server example.cfg
-2018-02-25 00:05:09 INFO  [server] Roughenough server v0.2.0 starting
-2018-02-25 00:05:09 INFO  [server] Long-term public key: d0756ee69ff5fe96cbcf9273208fec53124b1dd3a24d3910e07c7c54e2473012
-2018-02-25 00:05:09 INFO  [server] Ephemeral public key: 25fd5dc31ceee241aed3e643534e95ed0609e9a20982a45ac0312a5f55e2cc66
-2018-02-25 00:05:09 INFO  [server] Server listening on 127.0.0.1:8686
+2018-07-25 00:05:09 INFO  [server] Roughenough server v1.0.4 starting
+2018-07-25 00:05:09 INFO  [server] Long-term public key: d0756ee69ff5fe96cbcf9273208fec53124b1dd3a24d3910e07c7c54e2473012
+2018-07-25 00:05:09 INFO  [server] Ephemeral public key: 25fd5dc31ceee241aed3e643534e95ed0609e9a20982a45ac0312a5f55e2cc66
+2018-07-25 00:05:09 INFO  [server] Server listening on 127.0.0.1:8686
 ```
 
 The resulting binary is `target/release/server`. After building you can copy the 
@@ -83,7 +103,7 @@ Where:
 
 Use Ctrl-C or `kill` the process.
 
-## Server Limitations
+## Limitations
 
 Roughtime features not implemented by the server:
 
