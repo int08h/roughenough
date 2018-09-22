@@ -9,7 +9,8 @@ synchronization client and server implementation in Rust.
 The server and client are functionally complete and at feature parity with the reference 
 C++ and Golang implementations. 
 
-Areas for improvement remain, see [limitations](#limitations) below. Contributions are welcome.
+Requires latest stable Rust to compile. Areas for improvement remain, 
+see [limitations](#limitations) below. Contributions are welcome.
 
 ## Links
 * [Roughenough Github repo](https://github.com/int08h/roughenough)
@@ -20,6 +21,8 @@ Areas for improvement remain, see [limitations](#limitations) below. Contributio
   [open-source project](https://developers.cloudflare.com/roughtime/).
 
 ## Building and Running
+
+Requires the latest stable Rust to build.
 
 ```bash
 # Build roughenough
