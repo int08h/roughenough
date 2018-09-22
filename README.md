@@ -16,6 +16,8 @@ Areas for improvement remain, see [limitations](#limitations) below. Contributio
 * Original [Roughtime project](https://roughtime.googlesource.com/roughtime)
 * My blog posts giving a [techncial deep-dive into Roughtime](https://int08h.com/post/to-catch-a-lying-timeserver/) and 
   exploring details of [on-the-wire Roughtime messages](https://int08h.com/post/roughtime-message-anatomy/).
+* Cloudflare's fantastic [blog post](https://blog.cloudflare.com/roughtime/) and accompanying 
+  [open-source project](https://developers.cloudflare.com/roughtime/).
 
 ## Building and Running
 
