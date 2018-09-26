@@ -10,7 +10,8 @@ The server and client are functionally complete and at feature parity with the r
 C++ and Golang implementations. 
 
 Requires latest stable Rust to compile. Areas for improvement remain, 
-see [limitations](#limitations) below. Contributions are welcome.
+see [limitations](#limitations) below. Contributions are welcome, see
+[CONTRIBUTING](../master/CONTRIBUTING.md) for instructions.
 
 ## Links
 * [Roughenough Github repo](https://github.com/int08h/roughenough)
