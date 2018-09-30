@@ -140,10 +140,9 @@ impl FileConfig {
                     let val = value.as_i64().expect("status_interval value invalid");
                     config.status_interval = Duration::from_secs(val as u64)
                 }
-                _ => {
+                unknown => {
                     return Err(Error::InvalidConfiguration(format!(
-                        "unknown config key '{}'",
-                        key.as_str().unwrap()
+                        "unknown config key: {}", unknown
                     )));
                 }
             }
