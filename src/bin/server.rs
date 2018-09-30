@@ -45,7 +45,6 @@ use std::io::ErrorKind;
 use std::process;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::thread;
 use std::time::Duration;
 
 use mio::net::UdpSocket;
@@ -54,7 +53,7 @@ use mio_extras::timer::Timer;
 
 use byteorder::{LittleEndian, WriteBytesExt};
 
-use roughenough::config::{FileConfig, ServerConfig};
+use roughenough::config::{EnvironmentConfig, FileConfig, ServerConfig};
 use roughenough::keys::{LongTermKey, OnlineKey};
 use roughenough::merkle::MerkleTree;
 use roughenough::{Error, RtMessage, Tag};
@@ -104,18 +103,18 @@ fn nonce_from_request(buf: &[u8], num_bytes: usize) -> Result<&[u8], Error> {
 }
 
 fn polling_loop(
-    config: &ServerConfig,
+    config: Box<ServerConfig>,
     online_key: &mut OnlineKey,
     cert_bytes: &[u8],
-    response_counter: Arc<AtomicUsize>,
 ) {
+    let response_counter = AtomicUsize::new(0);
     let keep_running = Arc::new(AtomicBool::new(true));
     let kr = keep_running.clone();
 
     ctrlc::set_handler(move || kr.store(false, Ordering::Release))
         .expect("failed setting Ctrl-C handler");
 
-    let sock_addr = config.socket_addr();
+    let sock_addr = config.socket_addr().expect("");
     let socket = UdpSocket::bind(&sock_addr).expect("failed to bind to socket");
     let poll_duration = Some(Duration::from_millis(100));
 
@@ -251,11 +250,16 @@ pub fn main() {
 
     let mut args = env::args();
     if args.len() != 2 {
-        error!("Usage: server /path/to/config.file");
+        error!("Usage: server /path/to/config.file|ENV");
         process::exit(1);
     }
 
-    let config = FileConfig::from_file(&args.nth(1).unwrap()).expect("Unable to load config");
+    let arg1 = args.nth(1).unwrap();
+
+    let config: Box<ServerConfig> = match arg1.as_ref() {
+        "ENV" => Box::new(EnvironmentConfig::new()),
+        _ => Box::new(FileConfig::from_file(&arg1).unwrap()),
+    };
 
     let mut online_key = OnlineKey::new();
     let mut long_term_key = LongTermKey::new(config.seed());
@@ -267,35 +271,9 @@ pub fn main() {
     info!("Status updates every    : {} seconds", config.status_interval().as_secs());
     info!("Server listening on     : {}:{}", config.interface(), config.port());
 
-    let response_counter = Arc::new(AtomicUsize::new(0));
-
-    if env::var("BENCH").is_ok() {
-        log::set_max_level(log::LevelFilter::Warn);
-        let response_counter = response_counter.clone();
-
-        thread::spawn(move || loop {
-            let old = time::get_time().sec;
-            let old_reqs = response_counter.load(Ordering::SeqCst);
-
-            thread::sleep(Duration::from_secs(1));
-
-            let new = time::get_time().sec;
-            let new_reqs = response_counter.load(Ordering::SeqCst);
-
-            warn!(
-                "Processing at {:?} reqs/sec",
-                (new_reqs - old_reqs) / (new - old) as usize
-            );
-        });
-    }
-
-    polling_loop(
-        &config,
-        &mut online_key,
-        &cert_bytes,
-        response_counter.clone(),
-    );
+    polling_loop(config, &mut online_key, &cert_bytes);
 
     info!("Done.");
     process::exit(0);
 }
+

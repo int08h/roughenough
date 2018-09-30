@@ -12,15 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//!
-//! Ways to configure the Roughenough server.
-//!
-//! The [ServerConfig](trait.ServerConfig.html) trait specifies the required and optional
-//! parameters available for configuring a Roughenoguh server instance.
-//!
-//! Implementations of `ServerConfig` obtain configurations from different back-end sources.
-//!
-
 extern crate hex;
 
 use std::fs::File;
@@ -28,64 +19,16 @@ use std::io::Read;
 use std::net::SocketAddr;
 use std::time::Duration;
 use yaml_rust::YamlLoader;
+
 use Error;
-
-const DEFAULT_BATCH_SIZE: u8 = 64;
-const DEFAULT_STATUS_INTERVAL: Duration = Duration::from_secs(600);
-
-///
-/// Specifies parameters needed to configure a Roughenough server.
-///
-/// Parameters labeled "**Required**" must are always be provided and have no default value.
-/// Parameters labeled "**Optional**" provide default values that can be overridden.
-///
-/// * **`interface`** - [Required] IP address or interface name for listening to client requests
-/// * **`port`** - [Required] UDP port to listen for requests
-/// * **`seed`** - [Required] A 32-byte hexadecimal value used to generate the server's long-term
-///                key pair. **This is a secret value and must be un-guessable**,
-///                treat it with care.
-/// * **`batch_size`** - [Optional] The maximum number of requests to process in one batch. All
-///                      nonces in a batch are used to build a Merkle tree, the root of which
-///                      is signed. Default is 64 requests per batch.
-/// * **`status_interval`** - [Optional] Amount of time between each logged status update.
-///                           Default is 600 seconds (10 minutes).
-///
-/// Implementations of this trait obtain a valid configuration from different back-
-/// end sources.
-///
-/// See:
-///   * [FileConfig](struct.FileConfig.html)
-///
-pub trait ServerConfig {
-    /// [Required] IP address or interface name to listen for client requests
-    fn interface(&self) -> &str;
-
-    /// [Required] UDP port to listen for requests
-    fn port(&self) -> u16;
-
-    /// [Required] A 32-byte hexadecimal value used to generate the server's
-    /// long-term key pair. **This is a secret value and must be un-guessable**,
-    /// treat it with care.
-    fn seed(&self) -> &[u8];
-
-    /// [Optional] The maximum number of requests to process in one batch. All
-    /// nonces in a batch are used to build a Merkle tree, the root of which is signed.
-    /// Default is 64 requests per batch.
-    fn batch_size(&self) -> u8;
-
-    /// [Optional] Amount of time between each logged status update.
-    /// Default is 600 seconds (10 minutes).
-    fn status_interval(&self) -> Duration;
-
-    /// Convenience function to create a `SocketAddr` from the provided `interface` and `port`
-    fn socket_addr(&self) -> SocketAddr;
-}
+use config::ServerConfig;
+use config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
 
 ///
-/// Read the configuration from a YAML file
+/// Read a Roughenough server configuration ([ServerConfig](trait.ServerConfig.html))
+/// from a YAML file.
 ///
-/// Example minimal config file with only the required parameters from
-/// [ServerConfig](trait.ServerConfig.html):
+/// Example config:
 ///
 /// ```yaml
 /// interface: 127.0.0.1
@@ -120,7 +63,7 @@ impl FileConfig {
 
         let mut config = FileConfig {
             port: 0,
-            interface: "unknown".to_string(),
+            interface: "".to_string(),
             seed: Vec::new(),
             batch_size: DEFAULT_BATCH_SIZE,
             status_interval: DEFAULT_STATUS_INTERVAL,
@@ -142,7 +85,8 @@ impl FileConfig {
                 }
                 unknown => {
                     return Err(Error::InvalidConfiguration(format!(
-                        "unknown config key: {}", unknown
+                        "unknown config key: {}",
+                        unknown
                     )));
                 }
             }
@@ -173,9 +117,11 @@ impl ServerConfig for FileConfig {
         self.status_interval
     }
 
-    fn socket_addr(&self) -> SocketAddr {
+    fn socket_addr(&self) -> Result<SocketAddr, Error> {
         let addr = format!("{}:{}", self.interface, self.port);
-        addr.parse()
-            .expect(&format!("could not create socket address from {}", addr))
+        match addr.parse() {
+            Ok(v) => Ok(v),
+            Err(_) => Err(Error::InvalidConfiguration(addr)),
+        }
     }
 }

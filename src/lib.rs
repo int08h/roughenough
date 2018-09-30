@@ -58,6 +58,7 @@ mod message;
 mod tag;
 
 pub mod config;
+
 pub mod keys;
 pub mod merkle;
 pub mod sign;
