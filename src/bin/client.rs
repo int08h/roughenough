@@ -24,17 +24,17 @@ use ring::rand::SecureRandom;
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
-use chrono::TimeZone;
 use chrono::offset::Utc;
+use chrono::TimeZone;
 
-use std::iter::Iterator;
 use std::collections::HashMap;
+use std::iter::Iterator;
 use std::net::{ToSocketAddrs, UdpSocket};
 
-use roughenough::{RtMessage, Tag, CERTIFICATE_CONTEXT, SIGNED_RESPONSE_CONTEXT, VERSION};
-use roughenough::sign::Verifier;
-use roughenough::merkle::root_from_paths;
 use clap::{App, Arg};
+use roughenough::merkle::root_from_paths;
+use roughenough::sign::Verifier;
+use roughenough::{RtMessage, Tag, CERTIFICATE_CONTEXT, SIGNED_RESPONSE_CONTEXT, VERSION};
 
 fn create_nonce() -> [u8; 64] {
     let rng = rand::SystemRandom::new();

@@ -90,19 +90,20 @@ The server is configured via a YAML file:
 interface: 127.0.0.1
 port: 8686
 seed: f61075c988feb9cb700a4a6a3291bfbc9cab11b9c9eca8c802468eb38a43d7d3
-batch_size: 64
 ```
 
 Where:
 
-* **`interface`** - IP address or interface name for listening to client requests
-* **`port`** - UDP port to listen for requests
-* **`seed`** - A 32-byte hexadecimal value used to generate the server's long-term 
+* **`interface`** - [Mandatory] IP address or interface name for listening to client requests
+* **`port`** - [Mandatory] UDP port to listen for requests
+* **`seed`** - [Mandatory] A 32-byte hexadecimal value used to generate the server's long-term 
                key pair. **This is a secret value and must be un-guessable**, 
                treat it with care.
-* **`batch_size`** - The number of requests to process in one batch. All nonces
+* **`batch_size`** - [Optional] The maximum number of requests to process in one batch. All nonces
                    in a batch are used to build a Merkle tree, the root of which
-                   is signed.
+                   is signed. Default is 64 requests per batch.
+* **`status_interval`** - [Optional] Number of _seconds_ between each logged status update. 
+                   Default is 600 seconds (10 minutes).
 
 
 ### Stopping the Server

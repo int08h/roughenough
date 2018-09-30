@@ -1,4 +1,4 @@
-// Copyright 2018 int08h LLC
+// Copyright 2017-2018 int08h LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,8 +18,8 @@
 
 extern crate ring;
 
-use super::{HASH_LENGTH, TREE_LEAF_TWEAK, TREE_NODE_TWEAK};
 use self::ring::digest;
+use super::{HASH_LENGTH, TREE_LEAF_TWEAK, TREE_NODE_TWEAK};
 
 type Data = Vec<u8>;
 type Hash = Data;
@@ -32,7 +32,6 @@ pub struct MerkleTree {
 }
 
 impl MerkleTree {
-
     ///
     /// Create a new empty Merkle Tree
     ///

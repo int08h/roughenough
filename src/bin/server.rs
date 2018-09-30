@@ -1,4 +1,4 @@
-// Copyright 2017 int08h LLC
+// Copyright 2017-2018 int08h LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,31 +16,15 @@
 //! Roughtime server
 //!
 //! # Configuration
-//! The `roughenough` server is configured via a config file:
+//! The `roughenough` server is configured via a YAML config file. See the documentation
+//! for [FileConfig](struct.FileConfig.html) for details.
 //!
-//! ```yaml
-//! interface: 127.0.0.1
-//! port: 8686
-//! seed: f61075c988feb9cb700a4a6a3291bfbc9cab11b9c9eca8c802468eb38a43d7d3
-//! batch_size: 64
-//! ```
-//!
-//! Where:
-//!
-//!   * **interface** - IP address or interface name for listening to client requests
-//!   * **port** - UDP port to listen to requests
-//!   * **seed** - A 32-byte hexadecimal value used as the seed to generate the
-//!                server's long-term key pair. **This is a secret value**, treat it
-//!                with care.
-//!   * **batch_size** - The number of requests to process in one batch. All nonces
-//!                      in a batch are used to build a Merkle tree, the root of which
-//!                      is signed.
-//!
-//! # Running the Server
+//! To run the server:
 //!
 //! ```bash
 //! $ cargo run --release --bin server /path/to/config.file
 //! ```
+//!
 
 extern crate byteorder;
 extern crate ctrlc;
@@ -57,146 +41,41 @@ extern crate untrusted;
 extern crate yaml_rust;
 
 use std::env;
+use std::io::ErrorKind;
 use std::process;
-use std::fs::File;
-use std::io::{ErrorKind, Read};
-use std::time::Duration;
-use std::net::SocketAddr;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
 
-use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio::net::UdpSocket;
+use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio_extras::timer::Timer;
 
 use byteorder::{LittleEndian, WriteBytesExt};
 
+use roughenough::config::{FileConfig, ServerConfig};
+use roughenough::keys::{LongTermKey, OnlineKey};
+use roughenough::merkle::MerkleTree;
 use roughenough::{Error, RtMessage, Tag};
-use roughenough::{CERTIFICATE_CONTEXT, MIN_REQUEST_LENGTH, SIGNED_RESPONSE_CONTEXT, VERSION};
-use roughenough::sign::Signer;
-use roughenough::merkle::*;
-
-use ring::rand;
-use ring::rand::SecureRandom;
-
-use yaml_rust::YamlLoader;
+use roughenough::{MIN_REQUEST_LENGTH, VERSION};
 
 const MESSAGE: Token = Token(0);
 const STATUS: Token = Token(1);
 
-fn create_ephemeral_key() -> Signer {
-    let rng = rand::SystemRandom::new();
-    let mut seed = [0u8; 32];
-    rng.fill(&mut seed).unwrap();
-
-    Signer::new(&seed)
-}
-
-fn make_dele_bytes(ephemeral_key: &Signer) -> Result<Vec<u8>, Error> {
-    let zeros = [0u8; 8];
-    let max = [0xff; 8];
-
-    let mut dele_msg = RtMessage::new(3);
-    dele_msg.add_field(Tag::PUBK, ephemeral_key.public_key_bytes())?;
-    dele_msg.add_field(Tag::MINT, &zeros)?;
-    dele_msg.add_field(Tag::MAXT, &max)?;
-
-    dele_msg.encode()
-}
-
-fn make_key_and_cert(seed: &[u8]) -> (Signer, Vec<u8>) {
-    let mut long_term_key = Signer::new(seed);
-    let ephemeral_key = create_ephemeral_key();
-
-    info!(
-        "Long-term public key: {}",
-        hex::encode(long_term_key.public_key_bytes())
-    );
-    info!(
-        "Ephemeral public key: {}",
-        hex::encode(ephemeral_key.public_key_bytes())
-    );
-
-    // Make DELE and sign it with long-term key
-    let dele_bytes = make_dele_bytes(&ephemeral_key).unwrap();
-    let dele_signature = {
-        long_term_key.update(CERTIFICATE_CONTEXT.as_bytes());
-        long_term_key.update(&dele_bytes);
-        long_term_key.sign()
-    };
-
-    // Create CERT
-    let cert_bytes = {
-        let mut cert_msg = RtMessage::new(2);
-        cert_msg.add_field(Tag::SIG, &dele_signature).unwrap();
-        cert_msg.add_field(Tag::DELE, &dele_bytes).unwrap();
-
-        cert_msg.encode().unwrap()
-    };
-
-    (ephemeral_key, cert_bytes)
-}
-
-struct SRep {
-    raw_bytes: Vec<u8>,
-    signature: Vec<u8>,
-}
-
-fn make_srep(ephemeral_key: &mut Signer, root: &[u8]) -> SRep {
-    let mut radi = [0; 4];
-    let mut midp = [0; 8];
-
-    // one second (in microseconds)
-    (&mut radi as &mut [u8])
-        .write_u32::<LittleEndian>(1_000_000)
-        .unwrap();
-
-    // current epoch time in microseconds
-    let now = {
-        let tv = time::get_time();
-        let secs = (tv.sec as u64) * 1_000_000;
-        let nsecs = (tv.nsec as u64) / 1_000;
-
-        secs + nsecs
-    };
-    (&mut midp as &mut [u8])
-        .write_u64::<LittleEndian>(now)
-        .unwrap();
-
-    // Signed response SREP
-    let srep_bytes = {
-        let mut srep_msg = RtMessage::new(3);
-        srep_msg.add_field(Tag::RADI, &radi).unwrap();
-        srep_msg.add_field(Tag::MIDP, &midp).unwrap();
-        srep_msg.add_field(Tag::ROOT, root).unwrap();
-
-        srep_msg.encode().unwrap()
-    };
-
-    // signature on SREP
-    let srep_signature = {
-        ephemeral_key.update(SIGNED_RESPONSE_CONTEXT.as_bytes());
-        ephemeral_key.update(&srep_bytes);
-        ephemeral_key.sign()
-    };
-
-    SRep {
-        raw_bytes: srep_bytes,
-        signature: srep_signature,
-    }
-}
-
-fn make_response(srep: &SRep, cert_bytes: &[u8], path: &[u8], idx: u32) -> RtMessage {
+fn make_response(srep: &RtMessage, cert_bytes: &[u8], path: &[u8], idx: u32) -> RtMessage {
     let mut index = [0; 4];
     (&mut index as &mut [u8])
         .write_u32::<LittleEndian>(idx)
         .unwrap();
 
+    let sig_bytes = srep.get_field(Tag::SIG).unwrap();
+    let srep_bytes = srep.get_field(Tag::SREP).unwrap();
+
     let mut response = RtMessage::new(5);
-    response.add_field(Tag::SIG, &srep.signature).unwrap();
-    response.add_field(Tag::PATH, &path).unwrap();
-    response.add_field(Tag::SREP, &srep.raw_bytes).unwrap();
+    response.add_field(Tag::SIG, sig_bytes).unwrap();
+    response.add_field(Tag::PATH, path).unwrap();
+    response.add_field(Tag::SREP, srep_bytes).unwrap();
     response.add_field(Tag::CERT, cert_bytes).unwrap();
     response.add_field(Tag::INDX, &index).unwrap();
 
@@ -224,50 +103,10 @@ fn nonce_from_request(buf: &[u8], num_bytes: usize) -> Result<&[u8], Error> {
     }
 }
 
-fn load_config(config_file: &str) -> (SocketAddr, Vec<u8>, u8) {
-    let mut infile = File::open(config_file).expect("failed to open config file");
-
-    let mut contents = String::new();
-    infile
-        .read_to_string(&mut contents)
-        .expect("could not read config file");
-
-    let cfg = YamlLoader::load_from_str(&contents).expect("could not parse config file");
-
-    if cfg.len() != 1 {
-        panic!("empty or malformed config file");
-    }
-
-    let mut port: u16 = 0;
-    let mut iface: String = "unknown".to_string();
-    let mut seed: String = "".to_string();
-    let mut batch_size: u8 = 1;
-
-    for (key, value) in cfg[0].as_hash().unwrap() {
-        match key.as_str().unwrap() {
-            "port" => port = value.as_i64().unwrap() as u16,
-            "interface" => iface = value.as_str().unwrap().to_string(),
-            "seed" => seed = value.as_str().unwrap().to_string(),
-            "batch_size" => batch_size = value.as_i64().unwrap() as u8,
-            _ => warn!("ignoring unknown config key '{}'", key.as_str().unwrap()),
-        }
-    }
-
-    let addr = format!("{}:{}", iface, port);
-    let sock_addr: SocketAddr = addr.parse()
-        .expect(&format!("could not create socket address from {}", addr));
-
-    let binseed =
-        hex::decode(seed).expect("seed value invalid; 'seed' should be 32 byte hex value");
-
-    (sock_addr, binseed, batch_size)
-}
-
 fn polling_loop(
-    addr: &SocketAddr,
-    mut ephemeral_key: &mut Signer,
+    config: &ServerConfig,
+    online_key: &mut OnlineKey,
     cert_bytes: &[u8],
-    batch_size: u8,
     response_counter: Arc<AtomicUsize>,
 ) {
     let keep_running = Arc::new(AtomicBool::new(true));
@@ -276,12 +115,12 @@ fn polling_loop(
     ctrlc::set_handler(move || kr.store(false, Ordering::Release))
         .expect("failed setting Ctrl-C handler");
 
-    let socket = UdpSocket::bind(addr).expect("failed to bind to socket");
-    let status_duration = Duration::from_secs(6);
+    let sock_addr = config.socket_addr();
+    let socket = UdpSocket::bind(&sock_addr).expect("failed to bind to socket");
     let poll_duration = Some(Duration::from_millis(100));
 
     let mut timer: Timer<()> = Timer::default();
-    timer.set_timeout(status_duration, ());
+    timer.set_timeout(config.status_interval(), ());
 
     let mut buf = [0u8; 65_536];
     let mut events = Events::with_capacity(32);
@@ -294,16 +133,16 @@ fn polling_loop(
         .unwrap();
 
     let mut merkle = MerkleTree::new();
-    let mut requests = Vec::with_capacity(batch_size as usize);
+    let mut requests = Vec::with_capacity(config.batch_size() as usize);
 
     macro_rules! check_ctrlc {
-    () => {
-        if !keep_running.load(Ordering::Acquire) {
-          warn!("Ctrl-C caught, exiting...");
-          return;
-        }
+        () => {
+            if !keep_running.load(Ordering::Acquire) {
+                warn!("Ctrl-C caught, exiting...");
+                return;
+            }
+        };
     }
-  }
 
     loop {
         check_ctrlc!();
@@ -323,7 +162,7 @@ fn polling_loop(
 
                         let resp_start = response_counter.load(Ordering::SeqCst);
 
-                        for i in 0..batch_size {
+                        for i in 0..config.batch_size() {
                             match socket.recv_from(&mut buf) {
                                 Ok((num_bytes, src_addr)) => {
                                     if let Ok(nonce) = nonce_from_request(&buf, num_bytes) {
@@ -358,8 +197,8 @@ fn polling_loop(
                             break 'process_batch;
                         }
 
-                        let root = merkle.compute_root();
-                        let srep = make_srep(&mut ephemeral_key, &root);
+                        let merkle_root = merkle.compute_root();
+                        let srep = online_key.make_srep(time::get_time(), &merkle_root);
 
                         for (i, &(ref nonce, ref src_addr)) in requests.iter().enumerate() {
                             let paths = merkle.get_paths(i);
@@ -394,7 +233,7 @@ fn polling_loop(
                         num_bad_requests
                     );
 
-                    timer.set_timeout(status_duration, ());
+                    timer.set_timeout(config.status_interval(), ());
                 }
 
                 _ => unreachable!(),
@@ -416,10 +255,17 @@ pub fn main() {
         process::exit(1);
     }
 
-    let (addr, key_seed, batch_size) = load_config(&args.nth(1).unwrap());
-    let (mut ephemeral_key, cert_bytes) = make_key_and_cert(&key_seed);
+    let config = FileConfig::from_file(&args.nth(1).unwrap()).expect("Unable to load config");
 
-    info!("Server listening on {}", addr);
+    let mut online_key = OnlineKey::new();
+    let mut long_term_key = LongTermKey::new(config.seed());
+    let cert_bytes = long_term_key.make_cert(&online_key).encode().unwrap();
+
+    info!("Long-term public key    : {}", long_term_key);
+    info!("Online public key       : {}", online_key);
+    info!("Max response batch size : {}", config.batch_size());
+    info!("Status updates every    : {} seconds", config.status_interval().as_secs());
+    info!("Server listening on     : {}:{}", config.interface(), config.port());
 
     let response_counter = Arc::new(AtomicUsize::new(0));
 
@@ -444,10 +290,9 @@ pub fn main() {
     }
 
     polling_loop(
-        &addr,
-        &mut ephemeral_key,
+        &config,
+        &mut online_key,
         &cert_bytes,
-        batch_size,
         response_counter.clone(),
     );
 
