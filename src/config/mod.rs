@@ -22,6 +22,7 @@
 //!
 
 extern crate hex;
+extern crate log;
 
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -88,3 +89,38 @@ pub trait ServerConfig {
     /// Convenience function to create a `SocketAddr` from the provided `interface` and `port`
     fn socket_addr(&self) -> Result<SocketAddr, Error>;
 }
+
+pub fn is_valid_config(cfg: &Box<ServerConfig>) -> bool {
+    let mut is_valid = true;
+
+    if cfg.port() == 0 {
+        error!("unset port: {}", cfg.port());
+        is_valid = false;
+    }
+    if cfg.interface().is_empty() {
+        error!("interface is missing");
+        is_valid = false;
+    }
+    match cfg.socket_addr() {
+        Err(e) => {
+            error!("{}:{}: {:?}", cfg.interface(), cfg.port(), e);
+            is_valid = false;
+        }
+        _ => ()
+    }
+    if cfg.seed().is_empty() {
+        error!("seed value is missing");
+        is_valid = false;
+    }
+    if !cfg.seed().is_empty() && cfg.seed().len() != 32 {
+        error!("seed value must be 32 characters long");
+        is_valid = false;
+    }
+    if cfg.batch_size() < 1 || cfg.batch_size() > 64 {
+        error!("batch_size {} is invalid; valid range 1-64", cfg.batch_size());
+        is_valid = false;
+    }
+
+    is_valid
+}
+

@@ -53,12 +53,14 @@ extern crate core;
 extern crate time;
 extern crate yaml_rust;
 
+#[macro_use]
+extern crate log;
+
 mod error;
 mod message;
 mod tag;
 
 pub mod config;
-
 pub mod keys;
 pub mod merkle;
 pub mod sign;

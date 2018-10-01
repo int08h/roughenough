@@ -53,6 +53,7 @@ use mio_extras::timer::Timer;
 
 use byteorder::{LittleEndian, WriteBytesExt};
 
+use roughenough::config;
 use roughenough::config::{EnvironmentConfig, FileConfig, ServerConfig};
 use roughenough::keys::{LongTermKey, OnlineKey};
 use roughenough::merkle::MerkleTree;
@@ -102,8 +103,9 @@ fn nonce_from_request(buf: &[u8], num_bytes: usize) -> Result<&[u8], Error> {
     }
 }
 
+
 fn polling_loop(
-    config: Box<ServerConfig>,
+    config: &Box<ServerConfig>,
     online_key: &mut OnlineKey,
     cert_bytes: &[u8],
 ) {
@@ -254,12 +256,30 @@ pub fn main() {
         process::exit(1);
     }
 
-    let arg1 = args.nth(1).unwrap();
-
-    let config: Box<ServerConfig> = match arg1.as_ref() {
-        "ENV" => Box::new(EnvironmentConfig::new()),
-        _ => Box::new(FileConfig::from_file(&arg1).unwrap()),
+    let config: Box<ServerConfig> = {
+        let arg1 = args.nth(1).unwrap();
+        if &arg1 == "ENV" {
+            match EnvironmentConfig::new() {
+                Ok(cfg) => Box::new(cfg),
+                Err(e) => {
+                    error!("{:?}", e);
+                    process::exit(1)
+                }
+            }
+        } else {
+            match FileConfig::new(&arg1) {
+                Ok(cfg) => Box::new(cfg),
+                Err(e) => {
+                    error!("{:?}", e);
+                    process::exit(1)
+                }
+            }
+        }
     };
+
+    if !config::is_valid_config(&config) {
+        process::exit(2);
+    }
 
     let mut online_key = OnlineKey::new();
     let mut long_term_key = LongTermKey::new(config.seed());
@@ -271,7 +291,7 @@ pub fn main() {
     info!("Status updates every    : {} seconds", config.status_interval().as_secs());
     info!("Server listening on     : {}:{}", config.interface(), config.port());
 
-    polling_loop(config, &mut online_key, &cert_bytes);
+    polling_loop(&config, &mut online_key, &cert_bytes);
 
     info!("Done.");
     process::exit(0);

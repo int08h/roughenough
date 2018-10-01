@@ -49,7 +49,7 @@ const ROUGHENOUGH_BATCH_SIZE: &str = "ROUGHENOUGH_BATCH_SIZE";
 const ROUGHENOUGH_STATUS_INTERVAL: &str = "ROUGHENOUGH_STATUS_INTERVAL";
 
 impl EnvironmentConfig {
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self, Error> {
         let mut cfg = EnvironmentConfig {
             port: 0,
             interface: "".to_string(),
@@ -91,7 +91,7 @@ impl EnvironmentConfig {
             cfg.status_interval = Duration::from_secs(val as u64);
         };
 
-        cfg
+        Ok(cfg)
     }
 }
 

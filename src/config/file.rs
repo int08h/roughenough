@@ -45,7 +45,7 @@ pub struct FileConfig {
 }
 
 impl FileConfig {
-    pub fn from_file(config_file: &str) -> Result<Self, Error> {
+    pub fn new(config_file: &str) -> Result<Self, Error> {
         let mut infile = File::open(config_file).expect("failed to open config file");
 
         let mut contents = String::new();
