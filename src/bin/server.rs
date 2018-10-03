@@ -54,7 +54,7 @@ use mio_extras::timer::Timer;
 use byteorder::{LittleEndian, WriteBytesExt};
 
 use roughenough::config;
-use roughenough::config::{EnvironmentConfig, FileConfig, ServerConfig};
+use roughenough::config::ServerConfig;
 use roughenough::keys::{LongTermKey, OnlineKey};
 use roughenough::merkle::MerkleTree;
 use roughenough::{Error, RtMessage, Tag};
@@ -103,12 +103,7 @@ fn nonce_from_request(buf: &[u8], num_bytes: usize) -> Result<&[u8], Error> {
     }
 }
 
-
-fn polling_loop(
-    config: &Box<ServerConfig>,
-    online_key: &mut OnlineKey,
-    cert_bytes: &[u8],
-) {
+fn polling_loop(config: &Box<ServerConfig>, online_key: &mut OnlineKey, cert_bytes: &[u8]) {
     let response_counter = AtomicUsize::new(0);
     let keep_running = Arc::new(AtomicBool::new(true));
     let kr = keep_running.clone();
@@ -252,34 +247,19 @@ pub fn main() {
 
     let mut args = env::args();
     if args.len() != 2 {
-        error!("Usage: server /path/to/config.file|ENV");
+        error!("Usage: server <ENV|/path/to/config.yaml>");
         process::exit(1);
     }
 
-    let config: Box<ServerConfig> = {
-        let arg1 = args.nth(1).unwrap();
-        if &arg1 == "ENV" {
-            match EnvironmentConfig::new() {
-                Ok(cfg) => Box::new(cfg),
-                Err(e) => {
-                    error!("{:?}", e);
-                    process::exit(1)
-                }
-            }
-        } else {
-            match FileConfig::new(&arg1) {
-                Ok(cfg) => Box::new(cfg),
-                Err(e) => {
-                    error!("{:?}", e);
-                    process::exit(1)
-                }
-            }
-        }
+    let arg1 = args.nth(1).unwrap();
+    let config = match config::make_config(&arg1) {
+        Err(e) => {
+            error!("{:?}", e);
+            process::exit(1)
+        },
+        Ok(ref cfg) if !config::is_valid_config(&cfg) => process::exit(1),
+        Ok(cfg) => cfg,
     };
-
-    if !config::is_valid_config(&config) {
-        process::exit(2);
-    }
 
     let mut online_key = OnlineKey::new();
     let mut long_term_key = LongTermKey::new(config.seed());
@@ -296,4 +276,3 @@ pub fn main() {
     info!("Done.");
     process::exit(0);
 }
-

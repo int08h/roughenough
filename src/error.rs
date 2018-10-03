@@ -58,5 +58,3 @@ impl From<std::io::Error> for Error {
         Error::EncodingFailure(err)
     }
 }
-
-
