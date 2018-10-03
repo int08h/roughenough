@@ -9,7 +9,7 @@ synchronization client and server implementation in Rust.
 Roughenough's server and client are functionally complete and 
 at feature parity with the reference C++ and Golang implementations. 
 
-Requires latest stable Rust to compile. Contribution welcome, see
+Requires latest stable Rust to compile. Contributions welcome, see
 [CONTRIBUTING](../master/CONTRIBUTING.md) for instructions and [limitations](#limitations) for areas that could use attention.
 
 ## Links
@@ -59,27 +59,7 @@ Requesting time from: "roughtime.int08h.com":2002
 Received time from server: midpoint="Jul 28 2018 15:26:54", radius=1000000 (merkle_index=0, verified=true)
 ```
 
-Note `verified=true` in the output which confirms that the server's response had a valid signature.
-
-
-### Starting the Server
-
-```bash
-$ cargo build --release
-$ target/release/server example.cfg
-2018-07-25 00:05:09 INFO  [server] Roughenough server v1.0.4 starting
-2018-07-25 00:05:09 INFO  [server] Long-term public key: d0756ee69ff5fe96cbcf9273208fec53124b1dd3a24d3910e07c7c54e2473012
-2018-07-25 00:05:09 INFO  [server] Ephemeral public key: 25fd5dc31ceee241aed3e643534e95ed0609e9a20982a45ac0312a5f55e2cc66
-2018-07-25 00:05:09 INFO  [server] Server listening on 127.0.0.1:8686
-```
-
-The resulting binary is `target/release/server`. After building you can copy the 
-binary and run on its own (no `cargo` needed):
-
-```bash
-$ cp target/release/server /usr/local/bin 
-$ /usr/local/bin/server /path/to/config.file
-```
+The **`verified=true`** in the output confirms that the server's response had a valid signature.
 
 ### Server Configuration
 
@@ -116,13 +96,45 @@ $ /path/to/server /path/to/config.yaml
 
 #### Environment Configuration
 
-Roughenough can be configured via the `ROUGHENOUGH_*` [environment variables](https://12factor.net/config) listed in the table above. Example:
+Roughenough can be configured via the `ROUGHENOUGH_*` [environment variables](https://12factor.net/config) 
+listed in the table above. Start the server with a single `ENV` argument to have Roughenough configure itself
+from the environment. Example:
 
 ```bash
 $ export ROUGHENOUGH_INTERFACE=127.0.0.1
 $ export ROUGHENOUGH_PORT=8686
 $ export ROUGHENOUGH_SEED=f61075c988feb9cb700a4a6a3291bfbc9cab11b9c9eca8c802468eb38a43d7d3
-$ /path/to/server
+$ /path/to/server ENV
+```
+
+### Starting the Server
+
+```bash
+$ cargo build --release
+
+# Via a config file
+$ target/release/server example.cfg
+2018-07-25 00:05:09 INFO  [server] Roughenough server v1.0.5 starting
+2018-07-25 00:05:09 INFO  [server] Long-term public key: d0756ee69ff5fe96cbcf9273208fec53124b1dd3a24d3910e07c7c54e2473012
+2018-07-25 00:05:09 INFO  [server] Ephemeral public key: 25fd5dc31ceee241aed3e643534e95ed0609e9a20982a45ac0312a5f55e2cc66
+2018-07-25 00:05:09 INFO  [server] Server listening on 127.0.0.1:8686
+
+# Or using environment variables
+$ export ROUGHENOUGH_INTERFACE=127.0.0.1
+$ export ROUGHENOUGH_PORT=8686
+$ export ROUGHENOUGH_SEED=f61075c988feb9cb700a4a6a3291bfbc9cab11b9c9eca8c802468eb38a43d7d3
+$ target/release/server ENV
+2018-07-25 00:05:09 INFO  [server] Roughenough server v1.0.5 starting
+2018-07-25 00:05:09 INFO  [server] Long-term public key: d0756ee69ff5fe96cbcf9273208fec53124b1dd3a24d3910e07c7c54e2473012
+2018-07-25 00:05:09 INFO  [server] Ephemeral public key: 25fd5dc31ceee241aed3e643534e95ed0609e9a20982a45ac0312a5f55e2cc66
+2018-07-25 00:05:09 INFO  [server] Server listening on 127.0.0.1:8686
+```
+
+The resulting binary is `target/release/server`. After building you can copy the 
+binary and run on its own (no `cargo` needed):
+
+```bash
+$ cp target/release/server /usr/local/bin 
 ```
 
 ### Stopping the Server
