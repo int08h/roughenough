@@ -1,6 +1,6 @@
 [package]
 name = "roughenough"
-version = "1.0.4"
+version = "1.0.5"
 repository = "https://github.com/int08h/roughenough"
 authors = ["Stuart Stock <stuart@int08h.com>", "Aaron Hill <aa1ronham@gmail.com>"]
 license = "Apache-2.0"
@@ -25,11 +25,4 @@ ctrlc = { version = "3.1", features = ["termination"] }
 clap = "2"
 chrono = "0.4"
 hex = "0.3"
-
-[dev-dependencies]
-criterion = "0.2.0"
-
-[[bench]]
-name = "messages"
-harness = false
 

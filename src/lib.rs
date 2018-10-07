@@ -1,4 +1,4 @@
-// Copyright 2017 int08h LLC
+// Copyright 2017-2018 int08h LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -37,26 +37,9 @@
 //!
 //! # Server
 //!
-//! A Roughtime server implementation is in `src/bin/server.rs`. The server is
-//! configured via a yaml file:
-//!
-//! ```yaml
-//! interface: 127.0.0.1
-//! port: 8686
-//! seed: f61075c988feb9cb700a4a6a3291bfbc9cab11b9c9eca8c802468eb38a43d7d3
-//! batch_size: 64
-//! ```
-//!
-//! Where:
-//!
-//!   * **interface** - IP address or interface name for listening to client requests
-//!   * **port** - UDP port to listen to requests
-//!   * **seed** - A 32-byte hexadecimal value used as the seed to generate the
-//!                server's long-term key pair. **This is a secret value**, treat it
-//!                with care.
-//!   * **batch_size** - The number of requests to process in one batch. All nonces
-//!                      in a batch are used to build a Merkle tree, the root of which
-//!                      is signed.
+//! The Roughtime server implementation is in `src/bin/server.rs`. The server is
+//! configured via a YAML config file. See [FileConfig](config/struct.FileConfig.html)
+//! for details of the configuration parameters.
 //!
 //! To run the server:
 //!
@@ -66,20 +49,28 @@
 //!
 
 extern crate byteorder;
+extern crate core;
+extern crate time;
+extern crate yaml_rust;
+
+#[macro_use]
+extern crate log;
 
 mod error;
-mod tag;
 mod message;
+mod tag;
 
-pub mod sign;
+pub mod config;
+pub mod keys;
 pub mod merkle;
+pub mod sign;
 
 pub use error::Error;
-pub use tag::Tag;
 pub use message::RtMessage;
+pub use tag::Tag;
 
 /// Version of Roughenough
-pub const VERSION: &str = "1.0.4";
+pub const VERSION: &str = "1.0.5";
 
 //  Constants and magic numbers of the Roughtime protocol
 

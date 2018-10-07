@@ -1,4 +1,4 @@
-// Copyright 2017 int08h LLC
+// Copyright 2017-2018 int08h LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -48,6 +48,9 @@ pub enum Error {
 
     /// Otherwise invalid request
     InvalidRequest,
+
+    /// Runtime configuration is invalid for the reason provided
+    InvalidConfiguration(String),
 }
 
 impl From<std::io::Error> for Error {

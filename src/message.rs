@@ -1,4 +1,4 @@
-// Copyright 2017 int08h LLC
+// Copyright 2017-2018 int08h LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::io::{Cursor, Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use std::iter::once;
 use std::collections::HashMap;
+use std::io::{Cursor, Read, Write};
+use std::iter::once;
 
-use tag::Tag;
 use error::Error;
+use tag::Tag;
 
 ///
 /// A Roughtime protocol message; a map of u32 tags to arbitrary byte-strings.
@@ -64,7 +64,7 @@ impl RtMessage {
         match num_tags {
             0 => Ok(RtMessage::new(0)),
             1 => RtMessage::single_tag_message(bytes, &mut msg),
-            2 ... 1024 => RtMessage::multi_tag_message(num_tags, bytes, &mut msg),
+            2...1024 => RtMessage::multi_tag_message(num_tags, bytes, &mut msg),
             _ => Err(Error::InvalidNumTags(num_tags)),
         }
     }
@@ -180,6 +180,21 @@ impl RtMessage {
         Ok(())
     }
 
+    /// Retrieve the value associated with `tag`, if present.
+    ///
+    /// ## Arguments
+    ///
+    /// * `tag` - The [`Tag`](enum.Tag.html) to try and retrieve.
+    ///
+    pub fn get_field(&self, tag: Tag) -> Option<&[u8]> {
+        for (i, self_tag) in self.tags.iter().enumerate() {
+            if tag == *self_tag {
+                return Some(&self.values[i]);
+            }
+        }
+        return None;
+    }
+
     /// Returns the number of tag/value pairs in the message
     pub fn num_fields(&self) -> u32 {
         self.tags.len() as u32
@@ -272,9 +287,9 @@ impl RtMessage {
 
 #[cfg(test)]
 mod test {
-    use std::io::{Cursor, Read};
     use byteorder::{LittleEndian, ReadBytesExt};
     use message::*;
+    use std::io::{Cursor, Read};
     use tag::Tag;
 
     #[test]
@@ -407,6 +422,20 @@ mod test {
         let msg = RtMessage::from_bytes(&bytes).unwrap();
 
         assert_eq!(msg.num_fields(), 0);
+    }
+
+    #[test]
+    fn retrieve_message_values() {
+        let val1 = b"aabbccddeeffgg";
+        let val2 = b"0987654321";
+
+        let mut msg = RtMessage::new(2);
+        msg.add_field(Tag::NONC, val1).unwrap();
+        msg.add_field(Tag::MAXT, val2).unwrap();
+
+        assert_eq!(msg.get_field(Tag::NONC), Some(val1.as_ref()));
+        assert_eq!(msg.get_field(Tag::MAXT), Some(val2.as_ref()));
+        assert_eq!(msg.get_field(Tag::CERT), None);
     }
 
     #[test]

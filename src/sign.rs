@@ -1,4 +1,4 @@
-// Copyright 2017 int08h LLC
+// Copyright 2017-2018 int08h LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,11 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Ed25519 signing and verification
 //!
-//! `Ring` does not provide a multi-step (init-update-finish) interface
-//! for Ed25519 signatures. `Verifier` and `Signer` provide this
-//! missing multi-step api.
+//! A multi-step (init-update-finish) interface for Ed25519 signing and verification
+//!
 
 extern crate hex;
 extern crate ring;
@@ -24,11 +22,15 @@ extern crate untrusted;
 
 use self::ring::signature;
 use self::ring::signature::Ed25519KeyPair;
+use self::ring::rand;
+use self::ring::rand::SecureRandom;
 
 use self::untrusted::Input;
 
-/// A multi-step (init-update-finish) interface for verifying an
-/// Ed25519 signature
+use std::fmt;
+use std::fmt::Formatter;
+
+/// A multi-step (init-update-finish) interface for verifying an Ed25519 signature
 #[derive(Debug)]
 pub struct Verifier<'a> {
     pubkey: Input<'a>,
@@ -59,17 +61,25 @@ impl<'a> Verifier<'a> {
     }
 }
 
-/// A multi-step (init-update-finish) interface for creating an
-/// Ed25519 signature
+/// A multi-step (init-update-finish) interface for creating an Ed25519 signature
 pub struct Signer {
     key_pair: Ed25519KeyPair,
     buf: Vec<u8>,
 }
 
 impl Signer {
-    pub fn new(seed: &[u8]) -> Self {
+    pub fn new() -> Self {
+        let rng = rand::SystemRandom::new();
+        let mut seed = [0u8; 32];
+        rng.fill(&mut seed).unwrap();
+
+        Signer::from_seed(&seed)
+    }
+
+    pub fn from_seed(seed: &[u8]) -> Self {
+        let seed_input = Input::from(seed);
         Signer {
-            key_pair: Ed25519KeyPair::from_seed_unchecked(Input::from(seed)).unwrap(),
+            key_pair: Ed25519KeyPair::from_seed_unchecked(seed_input).unwrap(),
             buf: Vec::with_capacity(256),
         }
     }
@@ -88,6 +98,23 @@ impl Signer {
 
     pub fn public_key_bytes(&self) -> &[u8] {
         self.key_pair.public_key_bytes()
+    }
+}
+
+impl fmt::Display for Signer {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", hex::encode(self.public_key_bytes()))
+    }
+}
+
+impl fmt::Debug for Signer {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(
+            f,
+            "Signer({}, {:?})",
+            hex::encode(self.public_key_bytes()),
+            self.buf
+        )
     }
 }
 
@@ -138,7 +165,7 @@ mod test {
             "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
         ).unwrap();
 
-        let mut s = Signer::new(&seed);
+        let mut s = Signer::from_seed(&seed);
         let sig = s.sign();
         assert_eq!(sig, expected_sig);
     }
@@ -154,7 +181,7 @@ mod test {
             "d9868d52c2bebce5f3fa5a79891970f309cb6591e3e1702a70276fa97c24b3a8e58606c38c9758529da50ee31b8219cba45271c689afa60b0ea26c99db19b00c"
         ).unwrap();
 
-        let mut s = Signer::new(&seed);
+        let mut s = Signer::from_seed(&seed);
         s.update(&message);
         let sig = s.sign();
         assert_eq!(sig, expected_sig);
@@ -167,7 +194,7 @@ mod test {
 
         let message = "Hello world".as_bytes();
 
-        let mut signer = Signer::new(&seed);
+        let mut signer = Signer::from_seed(&seed);
         signer.update(&message);
         let signature = signer.sign();
 
