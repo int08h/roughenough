@@ -49,6 +49,7 @@
 //!
 
 extern crate byteorder;
+extern crate clear_on_drop;
 extern crate core;
 extern crate time;
 extern crate yaml_rust;
@@ -72,7 +73,7 @@ pub use message::RtMessage;
 pub use tag::Tag;
 
 /// Version of Roughenough
-pub const VERSION: &str = "1.0.6";
+pub const VERSION: &str = "1.1.0";
 
 //  Constants and magic numbers of the Roughtime protocol
 

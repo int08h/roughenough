@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+extern crate log;
+
 #[cfg(feature = "kms")]
 extern crate rusoto_core;
 #[cfg(feature = "kms")]
@@ -30,6 +32,8 @@ use std::fmt;
 use std::fmt::Formatter;
 use std::str::FromStr;
 
+use key::{EncryptedDEK, KmsError, KmsProvider, PlaintextDEK, DEK_SIZE_BYTES};
+
 #[cfg(feature = "kms")]
 pub struct AwsKms {
     kms_client: KmsClient,
@@ -38,57 +42,75 @@ pub struct AwsKms {
 
 #[cfg(feature = "kms")]
 impl AwsKms {
-    pub fn from_uri(uri: &str) -> Result<Self, DecryptError> {
-        let parts: Vec<&str> = uri.split(':').collect();
+    pub fn from_arn(arn: &str) -> Result<Self, KmsError> {
+        let parts: Vec<&str> = arn.split(':').collect();
 
         if parts.len() != 6 {
-            return Err(DecryptError::Validation(
-                "invalid KMS arn: too few parts".to_string(),
+            return Err(KmsError::InvalidConfiguration(
+                format!("invalid KMS arn: too few parts {}", parts.len())
             ));
         }
 
         let region_part = parts.get(3).expect("region is missing");
         let region = match Region::from_str(region_part) {
             Ok(r) => r,
-            Err(e) => return Err(DecryptError::Validation(e.description().to_string())),
+            Err(e) => return Err(KmsError::InvalidConfiguration(e.description().to_string())),
         };
 
         Ok(AwsKms {
             kms_client: KmsClient::new(region),
-            key_id: uri.to_string(),
+            key_id: arn.to_string(),
         })
     }
+}
 
-    pub fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, EncryptError> {
+impl KmsProvider for AwsKms {
+    fn encrypt_dek(&self, plaintext_dek: &PlaintextDEK) -> Result<EncryptedDEK, KmsError> {
+        if plaintext_dek.len() != DEK_SIZE_BYTES {
+            return Err(KmsError::InvalidKey(
+                format!("provided DEK wrong length: {}", plaintext_dek.len()),
+            ));
+        }
+
         let mut encrypt_req: EncryptRequest = Default::default();
-
         encrypt_req.key_id = self.key_id.clone();
-        encrypt_req.plaintext = Vec::from(plaintext);
+        encrypt_req.plaintext = plaintext_dek.clone();
 
         match self.kms_client.encrypt(encrypt_req).sync() {
             Ok(result) => {
-                let ciphertext = result
-                    .ciphertext_blob
-                    .expect("no ciphertext despite successful response");
-                Ok(ciphertext)
+                if let Some(ciphertext) = result.ciphertext_blob {
+                    Ok(ciphertext)
+                } else {
+                    Err(KmsError::EncryptionFailed(
+                        "no ciphertext despite successful response".to_string(),
+                    ))
+                }
             }
-            Err(e) => Err(e),
+            Err(e) => Err(KmsError::EncryptionFailed(e.description().to_string())),
         }
     }
 
-    pub fn decrypt(&self, ciphertext: &[u8]) -> Result<Vec<u8>, DecryptError> {
+    fn decrypt_dek(&self, encrypted_dek: &EncryptedDEK) -> Result<PlaintextDEK, KmsError> {
         let mut decrypt_req: DecryptRequest = Default::default();
-
-        decrypt_req.ciphertext_blob = Vec::from(ciphertext);
+        decrypt_req.ciphertext_blob = encrypted_dek.clone();
 
         match self.kms_client.decrypt(decrypt_req).sync() {
             Ok(result) => {
-                let plaintext = result
-                    .plaintext
-                    .expect("no plaintext despite successful response");
-                Ok(plaintext)
+                if let Some(plaintext_dek) = result.plaintext {
+                    if plaintext_dek.len() == DEK_SIZE_BYTES {
+                        Ok(plaintext_dek)
+                    } else {
+                        Err(KmsError::InvalidKey(
+                            format!("decrypted DEK wrong length: {}", plaintext_dek.len())
+                        ))
+                    }
+                } else {
+                    Err(KmsError::DecryptionFailed(
+                        "decrypted payload is empty".to_string(),
+                    ))
+                }
             }
-            Err(e) => Err(e),
+            Err(e) => Err(KmsError::DecryptionFailed(e.description().to_string())),
         }
     }
 }

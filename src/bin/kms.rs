@@ -49,8 +49,8 @@ pub fn main() {
 
     if cfg!(feature = "kms") {
         info!("KMS feature enabled");
-        let client = AwsKms::from_uri(
-            "arn:aws:kms:us-east-2:927891522318:key/1c96fb2c-d417-48f4-bf24-8e7173a587f5"
+        let client = AwsKms::from_arn(
+            "arn:aws:kms:us-east-2:927891522318:key/1c96fb2c-d417-48f4-bf24-8e7173a587f5",
         ).unwrap();
 
         let ciphertext = client.encrypt("This is a test".as_ref()).unwrap();

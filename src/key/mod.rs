@@ -19,9 +19,9 @@
 extern crate hex;
 extern crate log;
 
+mod envelope;
 mod longterm;
 mod online;
-mod envelope;
 
 pub use self::longterm::LongTermKey;
 pub use self::online::OnlineKey;
@@ -34,9 +34,33 @@ pub enum KeyProtection {
     /// No protection, seed is in plaintext
     Plaintext,
 
-    /// Envelope encryption of seed by AWS Key Management Service
+    /// Envelope encryption with Key-Encrypting-Key (KEK) from AWS Key Management Service
     AwsKmsEnvelope,
 
-    /// Envelope encryption of seed by Google Cloud Key Management Service
+    /// Envelope encryption with Key-Encrypting-Key (KEK) from Google Cloud Key Management Service
     GoogleKmsEnvelope,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Clone, Copy)]
+pub enum KmsError {
+    DecryptionFailed(String),
+    EncryptionFailed(String),
+    InvalidConfiguration(String),
+    InvalidKey(String),
+}
+
+/// Size of the Data Encryption Key (DEK) in bytes
+pub const DEK_SIZE_BYTES: usize = 32;
+
+/// An unencrypted (plaintext) 256-bit Data Encryption Key (DEK).
+type PlaintextDEK = Vec<u8>;
+
+/// A Data Encryption Key (DEK) that has been encrypted (wrapped) by a Key Encryption Key (KEK).
+/// Size of the encrypted DEK is implementation specific (things like AEAD tag size, nonce size,
+/// provider metadata, and so on will cause it to vary).
+type EncryptedDEK = Vec<u8>;
+
+pub trait KmsProvider {
+    fn encrypt_dek(&self, plaintext_dek: &PlaintextDEK) -> Result<EncryptedDEK, KmsError>;
+    fn decrypt_dek(&self, encrypted_dek: &EncryptedDEK) -> Result<PlaintextDEK, KmsError>;
 }

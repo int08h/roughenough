@@ -14,18 +14,22 @@
 
 extern crate hex;
 
+use ring::aead::AES_256_GCM;
 use ring::rand;
 use ring::rand::SecureRandom;
-use ring::aead::AES_256_GCM;
-use key::awskms::AwsKms;
 
+use key::KmsProvider;
+
+///
+/// 2 bytes - encrypted DEK length
+/// n bytes - encrypted DEK
+/// 2 bytes - encrypted 
 pub struct EnvelopeEncryption;
 
 impl EnvelopeEncryption {
-    pub fn encrypt(kms: &AwsKms, plaintext: &[u8]) -> Vec<u8> {
+    pub fn encrypt(kms: &KmsProvider, plaintext: &[u8]) -> Vec<u8> {
         let rng = rand::SystemRandom::new();
         let mut dek = [0u8; 16];
         rng.fill(&mut dek).unwrap();
-        
     }
 }
