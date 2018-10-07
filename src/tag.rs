@@ -15,7 +15,7 @@
 use error::Error;
 
 /// An unsigned 32-bit value (key) that maps to a byte-string (value).
-#[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Clone, Copy)]
 pub enum Tag {
     // Enforcement of the "tags in strictly increasing order" rule is done using the
     // little-endian encoding of the ASCII tag value; e.g. 'SIG\x00' is 0x00474953 and

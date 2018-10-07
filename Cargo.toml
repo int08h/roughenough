@@ -11,6 +11,10 @@ keywords = ["roughtime", "cryptography", "crypto"]
 [badges]
 travis-ci = { repository = "int08h/roughenough", branch = "master" }
 
+[features]
+default = []
+kms = ["rusoto_core", "rusoto_kms"]
+
 [dependencies]
 mio = "0.6"
 mio-extras = "2.0"
@@ -26,3 +30,5 @@ clap = "2"
 chrono = "0.4"
 hex = "0.3"
 
+rusoto_core = { version = "0.34", optional = true }
+rusoto_kms = { version = "0.34", optional = true }

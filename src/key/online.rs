@@ -12,10 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//!
-//! Representations of Roughtime's online and long-term Ed25519 keys
-//!
-
 use message::RtMessage;
 use sign::Signer;
 use tag::Tag;
@@ -23,9 +19,10 @@ use time::Timespec;
 
 use byteorder::{LittleEndian, WriteBytesExt};
 
-use super::{CERTIFICATE_CONTEXT, SIGNED_RESPONSE_CONTEXT};
 use std::fmt;
 use std::fmt::Formatter;
+
+use SIGNED_RESPONSE_CONTEXT;
 
 ///
 /// Represents the delegated Roughtime ephemeral online key.
@@ -103,44 +100,6 @@ impl OnlineKey {
 }
 
 impl fmt::Display for OnlineKey {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}", self.signer)
-    }
-}
-
-///
-/// Represents the server's long-term identity.
-///
-pub struct LongTermKey {
-    signer: Signer,
-}
-
-impl LongTermKey {
-    pub fn new(seed: &[u8]) -> Self {
-        LongTermKey {
-            signer: Signer::from_seed(seed),
-        }
-    }
-
-    /// Create a CERT message with a DELE containing the provided online key
-    /// and a SIG of the DELE value signed by the long-term key
-    pub fn make_cert(&mut self, online_key: &OnlineKey) -> RtMessage {
-        let dele_bytes = online_key.make_dele().encode().unwrap();
-
-        self.signer.update(CERTIFICATE_CONTEXT.as_bytes());
-        self.signer.update(&dele_bytes);
-
-        let dele_signature = self.signer.sign();
-
-        let mut cert_msg = RtMessage::new(2);
-        cert_msg.add_field(Tag::SIG, &dele_signature).unwrap();
-        cert_msg.add_field(Tag::DELE, &dele_bytes).unwrap();
-
-        cert_msg
-    }
-}
-
-impl fmt::Display for LongTermKey {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{}", self.signer)
     }

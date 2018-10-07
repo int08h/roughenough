@@ -61,11 +61,12 @@ mod message;
 mod tag;
 
 pub mod config;
-pub mod keys;
+pub mod key;
 pub mod merkle;
 pub mod sign;
 
 pub use error::Error;
+pub use key::KeyProtection;
 pub use message::RtMessage;
 pub use tag::Tag;
 

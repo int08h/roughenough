@@ -21,6 +21,7 @@ use std::time::Duration;
 use config::ServerConfig;
 use config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
 use Error;
+use KeyProtection;
 
 ///
 /// Obtain a Roughenough server configuration ([ServerConfig](trait.ServerConfig.html))
@@ -33,6 +34,7 @@ use Error;
 ///   seed             | `ROUGHENOUGH_SEED`
 ///   batch_size       | `ROUGHENOUGH_BATCH_SIZE`
 ///   status_interval  | `ROUGHENOUGH_STATUS_INTERVAL`
+///   key_protection   | `ROUGHENOUGH_KEY_PROTECTION`
 ///
 pub struct EnvironmentConfig {
     port: u16,
@@ -40,6 +42,7 @@ pub struct EnvironmentConfig {
     seed: Vec<u8>,
     batch_size: u8,
     status_interval: Duration,
+    key_protection: KeyProtection,
 }
 
 const ROUGHENOUGH_PORT: &str = "ROUGHENOUGH_PORT";
@@ -47,6 +50,7 @@ const ROUGHENOUGH_INTERFACE: &str = "ROUGHENOUGH_INTERFACE";
 const ROUGHENOUGH_SEED: &str = "ROUGHENOUGH_SEED";
 const ROUGHENOUGH_BATCH_SIZE: &str = "ROUGHENOUGH_BATCH_SIZE";
 const ROUGHENOUGH_STATUS_INTERVAL: &str = "ROUGHENOUGH_STATUS_INTERVAL";
+const ROUGHENOUGH_KEY_PROTECTION: &str = "ROUGHENOUGH_KEY_PROTECTION";
 
 impl EnvironmentConfig {
     pub fn new() -> Result<Self, Error> {
@@ -56,6 +60,7 @@ impl EnvironmentConfig {
             seed: Vec::new(),
             batch_size: DEFAULT_BATCH_SIZE,
             status_interval: DEFAULT_STATUS_INTERVAL,
+            key_protection: KeyProtection::Plaintext,
         };
 
         if let Ok(port) = env::var(ROUGHENOUGH_PORT) {
@@ -122,5 +127,9 @@ impl ServerConfig for EnvironmentConfig {
             Ok(v) => Ok(v),
             Err(_) => Err(Error::InvalidConfiguration(addr)),
         }
+    }
+
+    fn key_protection(&self) -> KeyProtection {
+        self.key_protection
     }
 }

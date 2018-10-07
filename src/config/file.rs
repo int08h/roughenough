@@ -23,6 +23,7 @@ use yaml_rust::YamlLoader;
 use config::ServerConfig;
 use config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
 use Error;
+use KeyProtection;
 
 ///
 /// Read a Roughenough server configuration ([ServerConfig](trait.ServerConfig.html))
@@ -42,6 +43,7 @@ pub struct FileConfig {
     seed: Vec<u8>,
     batch_size: u8,
     status_interval: Duration,
+    key_protection: KeyProtection,
 }
 
 impl FileConfig {
@@ -67,6 +69,7 @@ impl FileConfig {
             seed: Vec::new(),
             batch_size: DEFAULT_BATCH_SIZE,
             status_interval: DEFAULT_STATUS_INTERVAL,
+            key_protection: KeyProtection::Plaintext,
         };
 
         for (key, value) in cfg[0].as_hash().unwrap() {
@@ -123,5 +126,9 @@ impl ServerConfig for FileConfig {
             Ok(v) => Ok(v),
             Err(_) => Err(Error::InvalidConfiguration(addr)),
         }
+    }
+
+    fn key_protection(&self) -> KeyProtection {
+        KeyProtection::Plaintext
     }
 }

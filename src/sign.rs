@@ -20,10 +20,10 @@ extern crate hex;
 extern crate ring;
 extern crate untrusted;
 
-use self::ring::signature;
-use self::ring::signature::Ed25519KeyPair;
 use self::ring::rand;
 use self::ring::rand::SecureRandom;
+use self::ring::signature;
+use self::ring::signature::Ed25519KeyPair;
 
 use self::untrusted::Input;
 

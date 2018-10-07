@@ -55,7 +55,7 @@ use byteorder::{LittleEndian, WriteBytesExt};
 
 use roughenough::config;
 use roughenough::config::ServerConfig;
-use roughenough::keys::{LongTermKey, OnlineKey};
+use roughenough::key::{LongTermKey, OnlineKey};
 use roughenough::merkle::MerkleTree;
 use roughenough::{Error, RtMessage, Tag};
 use roughenough::{MIN_REQUEST_LENGTH, VERSION};
@@ -256,7 +256,7 @@ pub fn main() {
         Err(e) => {
             error!("{:?}", e);
             process::exit(1)
-        },
+        }
         Ok(ref cfg) if !config::is_valid_config(&cfg) => process::exit(1),
         Ok(cfg) => cfg,
     };
@@ -268,8 +268,15 @@ pub fn main() {
     info!("Long-term public key    : {}", long_term_key);
     info!("Online public key       : {}", online_key);
     info!("Max response batch size : {}", config.batch_size());
-    info!("Status updates every    : {} seconds", config.status_interval().as_secs());
-    info!("Server listening on     : {}:{}", config.interface(), config.port());
+    info!(
+        "Status updates every    : {} seconds",
+        config.status_interval().as_secs()
+    );
+    info!(
+        "Server listening on     : {}:{}",
+        config.interface(),
+        config.port()
+    );
 
     polling_loop(&config, &mut online_key, &cert_bytes);
 

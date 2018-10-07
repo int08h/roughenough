@@ -35,7 +35,9 @@ mod environment;
 
 pub use self::environment::EnvironmentConfig;
 
+use key;
 use Error;
+use KeyProtection;
 
 /// Maximum number of requests to process in one batch and include the the Merkle tree.
 pub const DEFAULT_BATCH_SIZE: u8 = 64;
@@ -85,6 +87,9 @@ pub trait ServerConfig {
 
     /// Convenience function to create a `SocketAddr` from the provided `interface` and `port`
     fn socket_addr(&self) -> Result<SocketAddr, Error>;
+
+    /// Method used to protect the long-term key pair.
+    fn key_protection(&self) -> KeyProtection;
 }
 
 ///
@@ -127,14 +132,22 @@ pub fn is_valid_config(cfg: &Box<ServerConfig>) -> bool {
         is_valid = false;
     }
     if cfg.batch_size() < 1 || cfg.batch_size() > 64 {
-        error!("batch_size {} is invalid; valid range 1-64", cfg.batch_size());
+        error!(
+            "batch_size {} is invalid; valid range 1-64",
+            cfg.batch_size()
+        );
         is_valid = false;
     }
 
     if is_valid {
         match cfg.socket_addr() {
             Err(e) => {
-                error!("failed to create socket {}:{} {:?}", cfg.interface(), cfg.port(), e);
+                error!(
+                    "failed to create socket {}:{} {:?}",
+                    cfg.interface(),
+                    cfg.port(),
+                    e
+                );
                 is_valid = false;
             }
             _ => (),
