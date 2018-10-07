@@ -70,7 +70,7 @@ pub use message::RtMessage;
 pub use tag::Tag;
 
 /// Version of Roughenough
-pub const VERSION: &str = "1.0.5";
+pub const VERSION: &str = "1.0.6";
 
 //  Constants and magic numbers of the Roughtime protocol
 

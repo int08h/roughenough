@@ -29,17 +29,17 @@ Requires the latest stable Rust to build.
 $ cargo build --release
 ```
 
-The client binary is `target/release/client`. After building you can copy the 
+The client binary is `target/release/roughenough-client`. After building you can copy the 
 binary and run on its own (no `cargo` needed) if you wish.
 
 ```bash
-$ cp target/release/server /usr/local/bin 
+$ cp target/release/roughenough-server /usr/local/bin 
 ```
 
 ### Using the Client to Query a Roughtime Server 
 
 ```bash
-$ target/release/client roughtime.int08h.com 2002
+$ target/release/roughenough-client roughtime.int08h.com 2002
 Requesting time from: "roughtime.int08h.com":2002
 Received time from server: midpoint="Jul 28 2018 15:21:31", radius=1000000 (merkle_index=0, verified=false)
 ```
@@ -54,7 +54,7 @@ $ host -t TXT roughtime.int08h.com
 roughtime.int08h.com descriptive text "016e6e0284d24c37c6e4d7d8d5b4e1d3c1949ceaa545bf875616c9dce0c9bec1"
 
 # Validate the server response using its public key
-$ target/release/client roughtime.int08h.com 2002 -p 016e6e0284d24c37c6e4d7d8d5b4e1d3c1949ceaa545bf875616c9dce0c9bec1
+$ target/release/roughenough-client roughtime.int08h.com 2002 -p 016e6e0284d24c37c6e4d7d8d5b4e1d3c1949ceaa545bf875616c9dce0c9bec1
 Requesting time from: "roughtime.int08h.com":2002
 Received time from server: midpoint="Jul 28 2018 15:26:54", radius=1000000 (merkle_index=0, verified=true)
 ```
@@ -91,7 +91,7 @@ seed: f61075c988feb9cb700a4a6a3291bfbc9cab11b9c9eca8c802468eb38a43d7d3
 Provide the config file as the single command-line argument to the Roughenough server binary:
 
 ```bash
-$ /path/to/server /path/to/config.yaml
+$ /path/to/roughenough-server /path/to/config.yaml
 ```
 
 #### Environment Configuration
@@ -104,7 +104,7 @@ from the environment. Example:
 $ export ROUGHENOUGH_INTERFACE=127.0.0.1
 $ export ROUGHENOUGH_PORT=8686
 $ export ROUGHENOUGH_SEED=f61075c988feb9cb700a4a6a3291bfbc9cab11b9c9eca8c802468eb38a43d7d3
-$ /path/to/server ENV
+$ /path/to/roughenough-server ENV
 ```
 
 ### Starting the Server
@@ -113,7 +113,7 @@ $ /path/to/server ENV
 $ cargo build --release
 
 # Via a config file
-$ target/release/server example.cfg
+$ target/release/roughenough-server example.cfg
 2018-07-25 00:05:09 INFO  [server] Roughenough server v1.0.5 starting
 2018-07-25 00:05:09 INFO  [server] Long-term public key: d0756ee69ff5fe96cbcf9273208fec53124b1dd3a24d3910e07c7c54e2473012
 2018-07-25 00:05:09 INFO  [server] Ephemeral public key: 25fd5dc31ceee241aed3e643534e95ed0609e9a20982a45ac0312a5f55e2cc66
@@ -123,18 +123,18 @@ $ target/release/server example.cfg
 $ export ROUGHENOUGH_INTERFACE=127.0.0.1
 $ export ROUGHENOUGH_PORT=8686
 $ export ROUGHENOUGH_SEED=f61075c988feb9cb700a4a6a3291bfbc9cab11b9c9eca8c802468eb38a43d7d3
-$ target/release/server ENV
+$ target/release/roughenough-server ENV
 2018-07-25 00:05:09 INFO  [server] Roughenough server v1.0.5 starting
 2018-07-25 00:05:09 INFO  [server] Long-term public key: d0756ee69ff5fe96cbcf9273208fec53124b1dd3a24d3910e07c7c54e2473012
 2018-07-25 00:05:09 INFO  [server] Ephemeral public key: 25fd5dc31ceee241aed3e643534e95ed0609e9a20982a45ac0312a5f55e2cc66
 2018-07-25 00:05:09 INFO  [server] Server listening on 127.0.0.1:8686
 ```
 
-The resulting binary is `target/release/server`. After building you can copy the 
+The resulting binary is `target/release/roughenough-server`. After building you can copy the 
 binary and run on its own (no `cargo` needed):
 
 ```bash
-$ cp target/release/server /usr/local/bin 
+$ cp target/release/roughenough-server /usr/local/bin 
 ```
 
 ### Stopping the Server
