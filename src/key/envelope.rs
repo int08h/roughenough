@@ -12,31 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//!
-//! Representations and management of Roughtime's online and long-term Ed25519 keys
-//!
-
 extern crate hex;
-extern crate log;
 
-mod longterm;
-mod online;
-mod envelope;
+use ring::rand;
+use ring::rand::SecureRandom;
+use ring::aead::AES_256_GCM;
+use key::awskms::AwsKms;
 
-pub use self::longterm::LongTermKey;
-pub use self::online::OnlineKey;
+pub struct EnvelopeEncryption;
 
-#[cfg(feature = "kms")]
-pub mod awskms;
-
-#[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Clone, Copy)]
-pub enum KeyProtection {
-    /// No protection, seed is in plaintext
-    Plaintext,
-
-    /// Envelope encryption of seed by AWS Key Management Service
-    AwsKmsEnvelope,
-
-    /// Envelope encryption of seed by Google Cloud Key Management Service
-    GoogleKmsEnvelope,
+impl EnvelopeEncryption {
+    pub fn encrypt(kms: &AwsKms, plaintext: &[u8]) -> Vec<u8> {
+        let rng = rand::SystemRandom::new();
+        let mut dek = [0u8; 16];
+        rng.fill(&mut dek).unwrap();
+        
+    }
 }

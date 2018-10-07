@@ -55,6 +55,7 @@ extern crate yaml_rust;
 
 #[macro_use]
 extern crate log;
+extern crate ring;
 
 mod error;
 mod message;
