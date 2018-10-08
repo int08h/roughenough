@@ -46,9 +46,10 @@ impl AwsKms {
         let parts: Vec<&str> = arn.split(':').collect();
 
         if parts.len() != 6 {
-            return Err(KmsError::InvalidConfiguration(
-                format!("invalid KMS arn: too few parts {}", parts.len())
-            ));
+            return Err(KmsError::InvalidConfiguration(format!(
+                "invalid KMS arn: too few parts {}",
+                parts.len()
+            )));
         }
 
         let region_part = parts.get(3).expect("region is missing");
@@ -67,9 +68,10 @@ impl AwsKms {
 impl KmsProvider for AwsKms {
     fn encrypt_dek(&self, plaintext_dek: &PlaintextDEK) -> Result<EncryptedDEK, KmsError> {
         if plaintext_dek.len() != DEK_SIZE_BYTES {
-            return Err(KmsError::InvalidKey(
-                format!("provided DEK wrong length: {}", plaintext_dek.len()),
-            ));
+            return Err(KmsError::InvalidKey(format!(
+                "provided DEK wrong length: {}",
+                plaintext_dek.len()
+            )));
         }
 
         let mut encrypt_req: EncryptRequest = Default::default();
@@ -81,12 +83,12 @@ impl KmsProvider for AwsKms {
                 if let Some(ciphertext) = result.ciphertext_blob {
                     Ok(ciphertext)
                 } else {
-                    Err(KmsError::EncryptionFailed(
+                    Err(KmsError::OperationFailed(
                         "no ciphertext despite successful response".to_string(),
                     ))
                 }
             }
-            Err(e) => Err(KmsError::EncryptionFailed(e.description().to_string())),
+            Err(e) => Err(KmsError::OperationFailed(e.description().to_string())),
         }
     }
 
@@ -100,17 +102,18 @@ impl KmsProvider for AwsKms {
                     if plaintext_dek.len() == DEK_SIZE_BYTES {
                         Ok(plaintext_dek)
                     } else {
-                        Err(KmsError::InvalidKey(
-                            format!("decrypted DEK wrong length: {}", plaintext_dek.len())
-                        ))
+                        Err(KmsError::InvalidKey(format!(
+                            "decrypted DEK wrong length: {}",
+                            plaintext_dek.len()
+                        )))
                     }
                 } else {
-                    Err(KmsError::DecryptionFailed(
+                    Err(KmsError::OperationFailed(
                         "decrypted payload is empty".to_string(),
                     ))
                 }
             }
-            Err(e) => Err(KmsError::DecryptionFailed(e.description().to_string())),
+            Err(e) => Err(KmsError::OperationFailed(e.description().to_string())),
         }
     }
 }

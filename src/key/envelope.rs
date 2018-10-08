@@ -14,22 +14,123 @@
 
 extern crate hex;
 
-use ring::aead::AES_256_GCM;
+use std::io::{Cursor, Read, Write};
+
+use ring::aead::{open_in_place, seal_in_place, OpeningKey, SealingKey, AES_256_GCM};
 use ring::rand;
 use ring::rand::SecureRandom;
 
-use key::KmsProvider;
+use super::super::MIN_SEED_LENGTH;
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use key::{KmsError, KmsProvider, DEK_SIZE_BYTES, NONCE_SIZE_BYTES, TAG_SIZE_BYTES};
 
-///
 /// 2 bytes - encrypted DEK length
+/// 2 bytes - nonce length
 /// n bytes - encrypted DEK
-/// 2 bytes - encrypted 
+/// n bytes - nonce
+/// n bytes - opaque (encrypted seed + tag)
 pub struct EnvelopeEncryption;
 
+static AD: &[u8; 11] = b"roughenough";
+
+const DEK_LEN_FIELD: usize = 2;
+const NONCE_LEN_FIELD: usize = 2;
+
+fn zero_filled(len: usize) -> Vec<u8> {
+    let mut v = Vec::with_capacity(len);
+    for _ in 0..len {
+        v.push(0);
+    }
+    return v;
+}
+
 impl EnvelopeEncryption {
-    pub fn encrypt(kms: &KmsProvider, plaintext: &[u8]) -> Vec<u8> {
+    pub fn decrypt_seed(kms: &KmsProvider, ciphertext_blob: &[u8]) -> Result<Vec<u8>, KmsError> {
+        let min_size = DEK_LEN_FIELD
+            + NONCE_LEN_FIELD
+            + DEK_SIZE_BYTES
+            + NONCE_SIZE_BYTES
+            + TAG_SIZE_BYTES
+            + MIN_SEED_LENGTH as usize;
+
+        if ciphertext_blob.len() < min_size {
+            return Err(KmsError::InvalidData(
+                format!("ciphertext too short: min {}, found {}", min_size, ciphertext_blob.len())
+            ));
+        }
+        /// 2 bytes - encrypted DEK length
+        /// 2 bytes - nonce length
+        /// n bytes - encrypted DEK
+        /// n bytes - nonce
+        /// n bytes - encrypted seed
+
+        let mut tmp = Cursor::new(ciphertext_blob.clone());
+        let dek_len = tmp.read_u16::<LittleEndian>()?;
+        let nonce_len = tmp.read_u16::<LittleEndian>()?;
+
+        let mut encrypted_dek = zero_filled(usize::from(dek_len));
+        tmp.read_exact(&mut encrypted_dek)?;
+
+        let mut nonce = zero_filled(usize::from(nonce_len));
+        tmp.read_exact(&mut nonce)?;
+
+        let mut encrypted_blob = zero_filled(ciphertext_blob.len() - tmp.position() as usize);
+        tmp.read_to_end(&mut encrypted_blob)?;
+
+        info!("dek len   {}", dek_len);
+        info!("nonce len {}", nonce_len);
+        info!("enc dec   {}", hex::encode(encrypted_dek));
+        info!("nonce     {}", hex::encode(nonce));
+        info!("blob      {}", hex::encode(encrypted_blob));
+
+        Ok(Vec::new())
+    }
+
+    pub fn encrypt_seed(kms: &KmsProvider, plaintext_seed: &[u8]) -> Result<Vec<u8>, KmsError> {
+        // Generate random DEK and nonce
         let rng = rand::SystemRandom::new();
-        let mut dek = [0u8; 16];
-        rng.fill(&mut dek).unwrap();
+        let mut dek = [0u8; DEK_SIZE_BYTES];
+        let mut nonce = [0u8; NONCE_SIZE_BYTES];
+        rng.fill(&mut dek)?;
+        rng.fill(&mut nonce)?;
+
+        // ring will overwrite plaintext with ciphertext in this buffer
+        let mut plaintext_buf = plaintext_seed.to_vec();
+
+        // reserve space for the authentication tag which will be appended after the ciphertext
+        plaintext_buf.reserve(TAG_SIZE_BYTES);
+        for _ in 0..TAG_SIZE_BYTES {
+            plaintext_buf.push(0);
+        }
+
+        // Encrypt the plaintext seed
+        let dek_seal_key = SealingKey::new(&AES_256_GCM, &dek)?;
+        let encrypted_seed =
+            match seal_in_place(&dek_seal_key, &nonce, AD, &mut plaintext_buf, TAG_SIZE_BYTES) {
+                Ok(enc_len) => plaintext_buf[..enc_len].to_vec(),
+                Err(e) => {
+                    return Err(KmsError::OperationFailed(
+                        "failed to encrypt plaintext seed".to_string(),
+                    ))
+                }
+            };
+
+        // Wrap the DEK
+        let wrapped_dek = kms.encrypt_dek(&dek.to_vec())?;
+
+        // And coalesce everything together
+        let mut output = Vec::new();
+        output.write_u16::<LittleEndian>(wrapped_dek.len() as u16)?;
+        output.write_u16::<LittleEndian>(nonce.len() as u16)?;
+        output.write_all(&wrapped_dek)?;
+        output.write_all(&nonce)?;
+        output.write_all(&encrypted_seed)?;
+
+        info!("dek     {}", hex::encode(&dek));
+        info!("enc dek {}", hex::encode(&wrapped_dek));
+        info!("nonce   {}", hex::encode(&nonce));
+        info!("blob    {}", hex::encode(&encrypted_seed));
+
+        Ok(output)
     }
 }

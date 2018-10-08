@@ -49,7 +49,6 @@
 //!
 
 extern crate byteorder;
-extern crate clear_on_drop;
 extern crate core;
 extern crate time;
 extern crate yaml_rust;

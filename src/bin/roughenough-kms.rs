@@ -20,18 +20,40 @@
 extern crate clap;
 #[macro_use]
 extern crate log;
+extern crate hex;
 extern crate ring;
 extern crate roughenough;
 extern crate simple_logger;
 extern crate untrusted;
 
-#[cfg(feature = "kms")]
-use roughenough::key::awskms::AwsKms;
-
 use std::default::Default;
 
 use clap::{App, Arg};
+use roughenough::key::{EnvelopeEncryption, KmsProvider};
 use roughenough::VERSION;
+
+#[cfg(feature = "kms")]
+use roughenough::key::awskms::AwsKms;
+
+#[cfg(feature = "kms")]
+fn aws_kms() {
+    let client = AwsKms::from_arn(
+        "arn:aws:kms:us-east-2:927891522318:key/1c96fb2c-d417-48f4-bf24-8e7173a587f5",
+    ).unwrap();
+
+    let plaintext_seed = [b'a'; 32];
+    match EnvelopeEncryption::encrypt_seed(&client, &plaintext_seed) {
+        Ok(bundle) => {
+            info!("Bundle len={}", bundle.len());
+            info!("{}", hex::encode(&bundle));
+
+            EnvelopeEncryption::decrypt_seed(&client, &bundle);
+        }
+        Err(e) => {
+            error!("Error: {:?}", e);
+        }
+    }
+}
 
 pub fn main() {
     use log::Level;
@@ -49,15 +71,10 @@ pub fn main() {
 
     if cfg!(feature = "kms") {
         info!("KMS feature enabled");
-        let client = AwsKms::from_arn(
-            "arn:aws:kms:us-east-2:927891522318:key/1c96fb2c-d417-48f4-bf24-8e7173a587f5",
-        ).unwrap();
-
-        let ciphertext = client.encrypt("This is a test".as_ref()).unwrap();
-        info!("Ciphertext: {:?}", ciphertext);
-
-        let plaintext = String::from_utf8(client.decrypt(ciphertext.as_ref()).unwrap()).unwrap();
-        info!("Plaintext : {:?}", plaintext);
+        #[cfg(feature = "kms")]
+        {
+            aws_kms();
+        }
     }
 
     info!("Done");

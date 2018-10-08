@@ -18,11 +18,16 @@
 
 extern crate hex;
 extern crate log;
+extern crate ring;
+extern crate std;
 
 mod envelope;
 mod longterm;
 mod online;
 
+use std::error::Error;
+
+pub use self::envelope::EnvelopeEncryption;
 pub use self::longterm::LongTermKey;
 pub use self::online::OnlineKey;
 
@@ -41,16 +46,34 @@ pub enum KeyProtection {
     GoogleKmsEnvelope,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Clone)]
 pub enum KmsError {
-    DecryptionFailed(String),
-    EncryptionFailed(String),
+    OperationFailed(String),
     InvalidConfiguration(String),
+    InvalidData(String),
     InvalidKey(String),
+}
+
+impl From<std::io::Error> for KmsError {
+    fn from(error: std::io::Error) -> Self {
+        KmsError::OperationFailed(error.description().to_string())
+    }
+}
+
+impl From<ring::error::Unspecified> for KmsError {
+    fn from(error: ring::error::Unspecified) -> Self {
+        KmsError::OperationFailed("unspecified ring cryptographic failure".to_string())
+    }
 }
 
 /// Size of the Data Encryption Key (DEK) in bytes
 pub const DEK_SIZE_BYTES: usize = 32;
+
+/// Size of the AEAD nonce in bytes
+pub const NONCE_SIZE_BYTES: usize = 12;
+
+/// Size of the AEAD authentication tag in bytes
+pub const TAG_SIZE_BYTES: usize = 16;
 
 /// An unencrypted (plaintext) 256-bit Data Encryption Key (DEK).
 type PlaintextDEK = Vec<u8>;
