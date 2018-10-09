@@ -24,18 +24,25 @@ use super::super::MIN_SEED_LENGTH;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use key::{KmsError, KmsProvider, DEK_SIZE_BYTES, NONCE_SIZE_BYTES, TAG_SIZE_BYTES};
 
-/// 2 bytes - encrypted DEK length
-/// 2 bytes - nonce length
-/// n bytes - encrypted DEK
-/// n bytes - nonce
-/// n bytes - opaque (encrypted seed + tag)
-pub struct EnvelopeEncryption;
-
-static AD: &[u8; 11] = b"roughenough";
-
 const DEK_LEN_FIELD: usize = 2;
 const NONCE_LEN_FIELD: usize = 2;
 
+// 2 bytes - encrypted DEK length
+// 2 bytes - nonce length
+// n bytes - encrypted DEK
+// n bytes - nonce
+// n bytes - opaque (AEAD encrypted seed + tag)
+const MIN_PAYLOAD_SIZE: usize = DEK_LEN_FIELD
+    + NONCE_LEN_FIELD
+    + DEK_SIZE_BYTES
+    + NONCE_SIZE_BYTES
+    + MIN_SEED_LENGTH as usize
+    + TAG_SIZE_BYTES;
+
+// Domain separation in case KMS key is reused
+static AD: &[u8; 11] = b"roughenough";
+
+// Convenience function to create zero-filled Vec of given size
 fn zero_filled(len: usize) -> Vec<u8> {
     let mut v = Vec::with_capacity(len);
     for _ in 0..len {
@@ -44,46 +51,48 @@ fn zero_filled(len: usize) -> Vec<u8> {
     return v;
 }
 
+pub struct EnvelopeEncryption;
+
 impl EnvelopeEncryption {
     pub fn decrypt_seed(kms: &KmsProvider, ciphertext_blob: &[u8]) -> Result<Vec<u8>, KmsError> {
-        let min_size = DEK_LEN_FIELD
-            + NONCE_LEN_FIELD
-            + DEK_SIZE_BYTES
-            + NONCE_SIZE_BYTES
-            + TAG_SIZE_BYTES
-            + MIN_SEED_LENGTH as usize;
-
-        if ciphertext_blob.len() < min_size {
-            return Err(KmsError::InvalidData(
-                format!("ciphertext too short: min {}, found {}", min_size, ciphertext_blob.len())
-            ));
+        if ciphertext_blob.len() < MIN_PAYLOAD_SIZE {
+            return Err(KmsError::InvalidData(format!(
+                "ciphertext too short: min {}, found {}",
+                MIN_PAYLOAD_SIZE,
+                ciphertext_blob.len()
+            )));
         }
-        /// 2 bytes - encrypted DEK length
-        /// 2 bytes - nonce length
-        /// n bytes - encrypted DEK
-        /// n bytes - nonce
-        /// n bytes - encrypted seed
 
-        let mut tmp = Cursor::new(ciphertext_blob.clone());
+        info!("--- decrypt ---");
+        info!("blob     {}", hex::encode(ciphertext_blob));
+        let mut tmp = Cursor::new(ciphertext_blob);
         let dek_len = tmp.read_u16::<LittleEndian>()?;
         let nonce_len = tmp.read_u16::<LittleEndian>()?;
 
-        let mut encrypted_dek = zero_filled(usize::from(dek_len));
+        let mut encrypted_dek = zero_filled(dek_len as usize);
         tmp.read_exact(&mut encrypted_dek)?;
 
-        let mut nonce = zero_filled(usize::from(nonce_len));
+        let mut nonce = zero_filled(nonce_len as usize);
         tmp.read_exact(&mut nonce)?;
 
-        let mut encrypted_blob = zero_filled(ciphertext_blob.len() - tmp.position() as usize);
-        tmp.read_to_end(&mut encrypted_blob)?;
+        let mut encrypted_seed = Vec::new();
+        tmp.read_to_end(&mut encrypted_seed)?;
 
         info!("dek len   {}", dek_len);
         info!("nonce len {}", nonce_len);
-        info!("enc dec   {}", hex::encode(encrypted_dek));
-        info!("nonce     {}", hex::encode(nonce));
-        info!("blob      {}", hex::encode(encrypted_blob));
+        info!("enc dec   {}", hex::encode(&encrypted_dek));
+        info!("nonce     {}", hex::encode(&nonce));
+        info!("blob      {}", hex::encode(&encrypted_seed));
 
-        Ok(Vec::new())
+        let dek = kms.decrypt_dek(&encrypted_dek)?;
+        let dek_open_key = OpeningKey::new(&AES_256_GCM, &dek)?;
+
+        match open_in_place(&dek_open_key, &nonce, AD, 0, &mut encrypted_seed) {
+            Ok(plaintext_seed) => Ok(plaintext_seed.to_vec()),
+            Err(e) => Err(KmsError::OperationFailed(
+                "failed to decrypt plaintext seed".to_string(),
+            )),
+        }
     }
 
     pub fn encrypt_seed(kms: &KmsProvider, plaintext_seed: &[u8]) -> Result<Vec<u8>, KmsError> {
@@ -94,10 +103,10 @@ impl EnvelopeEncryption {
         rng.fill(&mut dek)?;
         rng.fill(&mut nonce)?;
 
-        // ring will overwrite plaintext with ciphertext in this buffer
+        // Ring will overwrite plaintext with ciphertext in this buffer
         let mut plaintext_buf = plaintext_seed.to_vec();
 
-        // reserve space for the authentication tag which will be appended after the ciphertext
+        // Reserve space for the authentication tag which will be appended after the ciphertext
         plaintext_buf.reserve(TAG_SIZE_BYTES);
         for _ in 0..TAG_SIZE_BYTES {
             plaintext_buf.push(0);
@@ -105,15 +114,20 @@ impl EnvelopeEncryption {
 
         // Encrypt the plaintext seed
         let dek_seal_key = SealingKey::new(&AES_256_GCM, &dek)?;
-        let encrypted_seed =
-            match seal_in_place(&dek_seal_key, &nonce, AD, &mut plaintext_buf, TAG_SIZE_BYTES) {
-                Ok(enc_len) => plaintext_buf[..enc_len].to_vec(),
-                Err(e) => {
-                    return Err(KmsError::OperationFailed(
-                        "failed to encrypt plaintext seed".to_string(),
-                    ))
-                }
-            };
+        let encrypted_seed = match seal_in_place(
+            &dek_seal_key,
+            &nonce,
+            AD,
+            &mut plaintext_buf,
+            TAG_SIZE_BYTES,
+        ) {
+            Ok(enc_len) => plaintext_buf[..enc_len].to_vec(),
+            Err(e) => {
+                return Err(KmsError::OperationFailed(
+                    "failed to encrypt plaintext seed".to_string(),
+                ))
+            }
+        };
 
         // Wrap the DEK
         let wrapped_dek = kms.encrypt_dek(&dek.to_vec())?;
@@ -126,6 +140,8 @@ impl EnvelopeEncryption {
         output.write_all(&nonce)?;
         output.write_all(&encrypted_seed)?;
 
+        info!("--- encrypt ---");
+        info!("seed    {}", hex::encode(plaintext_seed));
         info!("dek     {}", hex::encode(&dek));
         info!("enc dek {}", hex::encode(&wrapped_dek));
         info!("nonce   {}", hex::encode(&nonce));

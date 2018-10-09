@@ -47,7 +47,10 @@ fn aws_kms() {
             info!("Bundle len={}", bundle.len());
             info!("{}", hex::encode(&bundle));
 
-            EnvelopeEncryption::decrypt_seed(&client, &bundle);
+            match EnvelopeEncryption::decrypt_seed(&client, &bundle) {
+                Ok(plaintext) => info!("Result is {}", hex::encode(plaintext)),
+                Err(e) => error!("Nope, {:?}", e),
+            };
         }
         Err(e) => {
             error!("Error: {:?}", e);
@@ -75,6 +78,8 @@ pub fn main() {
         {
             aws_kms();
         }
+    } else {
+        warn!("KMS not enabled, nothing to do");
     }
 
     info!("Done");
