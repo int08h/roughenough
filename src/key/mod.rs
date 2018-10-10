@@ -26,6 +26,7 @@ mod longterm;
 mod online;
 
 use std::error::Error;
+use std::str::FromStr;
 
 pub use self::envelope::EnvelopeEncryption;
 pub use self::longterm::LongTermKey;
@@ -39,11 +40,24 @@ pub enum KeyProtection {
     /// No protection, seed is in plaintext
     Plaintext,
 
-    /// Envelope encryption with Key-Encrypting-Key (KEK) from AWS Key Management Service
-    AwsKmsEnvelope,
+    /// Envelope encryption using AWS Key Management Service
+    AwsKmsEnvelope(String),
 
-    /// Envelope encryption with Key-Encrypting-Key (KEK) from Google Cloud Key Management Service
-    GoogleKmsEnvelope,
+    /// Envelope encryption using Google Cloud Key Management Service
+    GoogleKmsEnvelope(String),
+}
+
+impl FromStr for KeyProtection {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<KeyProtection, ()> {
+        match s {
+            "plaintext" => Ok(KeyProtection::Plaintext),
+            s if s.starts_with("arn") => Ok(KeyProtection::AwsKmsEnvelope(s.to_string())),
+            s if s.starts_with("gcp") => Ok(KeyProtection::GoogleKmsEnvelope(s.to_string())),
+            _ => Err(())
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Clone)]

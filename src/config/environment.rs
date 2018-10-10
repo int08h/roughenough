@@ -74,12 +74,8 @@ impl EnvironmentConfig {
         };
 
         if let Ok(seed) = env::var(ROUGHENOUGH_SEED) {
-            cfg.seed = hex::decode(&seed).expect(
-                format!(
-                    "invalid seed value: {}\n'seed' should be 32 byte hex value",
-                    seed
-                ).as_ref(),
-            );
+            cfg.seed = hex::decode(&seed)
+                .expect("invalid seed value; 'seed' should be a hex value");
         };
 
         if let Ok(batch_size) = env::var(ROUGHENOUGH_BATCH_SIZE) {
@@ -95,6 +91,12 @@ impl EnvironmentConfig {
 
             cfg.status_interval = Duration::from_secs(val as u64);
         };
+
+        if let Ok(key_protection) = env::var(ROUGHENOUGH_KEY_PROTECTION) {
+            cfg.key_protection = key_protection
+                .parse()
+                .expect(format!("invalid key_protection value: {}", key_protection).as_ref());
+        }
 
         Ok(cfg)
     }

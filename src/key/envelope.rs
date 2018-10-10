@@ -39,11 +39,14 @@ const MIN_PAYLOAD_SIZE: usize = DEK_LEN_FIELD
     + MIN_SEED_LENGTH as usize
     + TAG_SIZE_BYTES;
 
-// Domain separation in case KMS key is reused
+// No input prefix to skip, consume entire buffer
+const IN_PREFIX_LEN: usize = 0;
+
+// Trivial domain separation to guard KMS key reuse
 static AD: &[u8; 11] = b"roughenough";
 
 // Convenience function to create zero-filled Vec of given size
-fn zero_filled(len: usize) -> Vec<u8> {
+fn vec_zero_filled(len: usize) -> Vec<u8> {
     let mut v = Vec::with_capacity(len);
     for _ in 0..len {
         v.push(0);
@@ -63,31 +66,30 @@ impl EnvelopeEncryption {
             )));
         }
 
-        info!("--- decrypt ---");
-        info!("blob     {}", hex::encode(ciphertext_blob));
         let mut tmp = Cursor::new(ciphertext_blob);
+
+        // Read the lengths of the wrapped DEK and of the nonce
         let dek_len = tmp.read_u16::<LittleEndian>()?;
         let nonce_len = tmp.read_u16::<LittleEndian>()?;
 
-        let mut encrypted_dek = zero_filled(dek_len as usize);
+        // Consume the wrapped DEK
+        let mut encrypted_dek = vec_zero_filled(dek_len as usize);
         tmp.read_exact(&mut encrypted_dek)?;
 
-        let mut nonce = zero_filled(nonce_len as usize);
+        // Consume the nonce
+        let mut nonce = vec_zero_filled(nonce_len as usize);
         tmp.read_exact(&mut nonce)?;
 
+        // Consume the encrypted seed + tag
         let mut encrypted_seed = Vec::new();
         tmp.read_to_end(&mut encrypted_seed)?;
 
-        info!("dek len   {}", dek_len);
-        info!("nonce len {}", nonce_len);
-        info!("enc dec   {}", hex::encode(&encrypted_dek));
-        info!("nonce     {}", hex::encode(&nonce));
-        info!("blob      {}", hex::encode(&encrypted_seed));
-
+        // Invoke KMS to decrypt the DEK
         let dek = kms.decrypt_dek(&encrypted_dek)?;
-        let dek_open_key = OpeningKey::new(&AES_256_GCM, &dek)?;
 
-        match open_in_place(&dek_open_key, &nonce, AD, 0, &mut encrypted_seed) {
+        // Decrypt the seed value using the DEK
+        let dek_open_key = OpeningKey::new(&AES_256_GCM, &dek)?;
+        match open_in_place(&dek_open_key, &nonce, AD, IN_PREFIX_LEN, &mut encrypted_seed) {
             Ok(plaintext_seed) => Ok(plaintext_seed.to_vec()),
             Err(e) => Err(KmsError::OperationFailed(
                 "failed to decrypt plaintext seed".to_string(),
@@ -112,7 +114,7 @@ impl EnvelopeEncryption {
             plaintext_buf.push(0);
         }
 
-        // Encrypt the plaintext seed
+        // Encrypt the plaintext seed using the DEK
         let dek_seal_key = SealingKey::new(&AES_256_GCM, &dek)?;
         let encrypted_seed = match seal_in_place(
             &dek_seal_key,
@@ -129,7 +131,7 @@ impl EnvelopeEncryption {
             }
         };
 
-        // Wrap the DEK
+        // Use the KMS to wrap the DEK
         let wrapped_dek = kms.encrypt_dek(&dek.to_vec())?;
 
         // And coalesce everything together
@@ -139,13 +141,6 @@ impl EnvelopeEncryption {
         output.write_all(&wrapped_dek)?;
         output.write_all(&nonce)?;
         output.write_all(&encrypted_seed)?;
-
-        info!("--- encrypt ---");
-        info!("seed    {}", hex::encode(plaintext_seed));
-        info!("dek     {}", hex::encode(&dek));
-        info!("enc dek {}", hex::encode(&wrapped_dek));
-        info!("nonce   {}", hex::encode(&nonce));
-        info!("blob    {}", hex::encode(&encrypted_seed));
 
         Ok(output)
     }
