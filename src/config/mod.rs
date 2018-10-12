@@ -28,14 +28,11 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 mod file;
-
 pub use self::file::FileConfig;
 
 mod environment;
-
 pub use self::environment::EnvironmentConfig;
 
-use key;
 use Error;
 use KeyProtection;
 
@@ -74,7 +71,7 @@ pub trait ServerConfig {
     /// [Required] A 32-byte hexadecimal value used to generate the server's
     /// long-term key pair. **This is a secret value and must be un-guessable**,
     /// treat it with care.
-    fn seed(&self) -> &[u8];
+    fn seed(&self) -> Vec<u8>;
 
     /// [Optional] The maximum number of requests to process in one batch. All
     /// nonces in a batch are used to build a Merkle tree, the root of which is signed.
@@ -89,7 +86,7 @@ pub trait ServerConfig {
     fn socket_addr(&self) -> Result<SocketAddr, Error>;
 
     /// Method used to protect the long-term key pair.
-    fn key_protection(&self) -> KeyProtection;
+    fn key_protection(&self) -> &KeyProtection;
 }
 
 ///
@@ -127,27 +124,19 @@ pub fn is_valid_config(cfg: &Box<ServerConfig>) -> bool {
         error!("seed value is missing");
         is_valid = false;
     }
-    if !cfg.seed().is_empty() && cfg.seed().len() != 32 {
-        error!("seed value must be 32 characters long");
+    if *cfg.key_protection() == KeyProtection::Plaintext && cfg.seed().len() != 32 {
+        error!("plaintext seed value must be 32 characters long");
         is_valid = false;
     }
     if cfg.batch_size() < 1 || cfg.batch_size() > 64 {
-        error!(
-            "batch_size {} is invalid; valid range 1-64",
-            cfg.batch_size()
-        );
+        error!("batch_size {} is invalid; valid range 1-64", cfg.batch_size());
         is_valid = false;
     }
 
     if is_valid {
         match cfg.socket_addr() {
             Err(e) => {
-                error!(
-                    "failed to create socket {}:{} {:?}",
-                    cfg.interface(),
-                    cfg.port(),
-                    e
-                );
+                error!("failed to create socket {}:{} {:?}", cfg.interface(), cfg.port(), e);
                 is_valid = false;
             }
             _ => (),

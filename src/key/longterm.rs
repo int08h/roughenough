@@ -16,10 +16,6 @@
 //! Represents the server's long-term identity.
 //!
 
-use time::Timespec;
-
-use byteorder::{LittleEndian, WriteBytesExt};
-
 use std::fmt;
 use std::fmt::Formatter;
 
@@ -58,6 +54,11 @@ impl LongTermKey {
         cert_msg.add_field(Tag::DELE, &dele_bytes).unwrap();
 
         cert_msg
+    }
+
+    /// Return the public key for the provided seed
+    pub fn public_key(&self) -> &[u8] {
+        self.signer.public_key_bytes()
     }
 }
 

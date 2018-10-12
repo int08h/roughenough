@@ -55,6 +55,7 @@ use byteorder::{LittleEndian, WriteBytesExt};
 
 use roughenough::config;
 use roughenough::config::ServerConfig;
+use roughenough::key;
 use roughenough::key::{LongTermKey, OnlineKey};
 use roughenough::merkle::MerkleTree;
 use roughenough::{Error, RtMessage, Tag};
@@ -262,21 +263,21 @@ pub fn main() {
     };
 
     let mut online_key = OnlineKey::new();
-    let mut long_term_key = LongTermKey::new(config.seed());
-    let cert_bytes = long_term_key.make_cert(&online_key).encode().unwrap();
+    let public_key: String;
 
-    info!("Long-term public key    : {}", long_term_key);
+    let cert_bytes = {
+        let seed = key::load_seed(&config).unwrap();
+        let mut long_term_key = LongTermKey::new(&seed);
+        public_key = hex::encode(long_term_key.public_key());
+
+        long_term_key.make_cert(&online_key).encode().unwrap()
+    };
+
+    info!("Long-term public key    : {}", public_key);
     info!("Online public key       : {}", online_key);
     info!("Max response batch size : {}", config.batch_size());
-    info!(
-        "Status updates every    : {} seconds",
-        config.status_interval().as_secs()
-    );
-    info!(
-        "Server listening on     : {}:{}",
-        config.interface(),
-        config.port()
-    );
+    info!("Status updates every    : {} seconds", config.status_interval().as_secs());
+    info!("Server listening on     : {}:{}", config.interface(), config.port());
 
     polling_loop(&config, &mut online_key, &cert_bytes);
 

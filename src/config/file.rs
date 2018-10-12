@@ -86,6 +86,11 @@ impl FileConfig {
                     let val = value.as_i64().expect("status_interval value invalid");
                     config.status_interval = Duration::from_secs(val as u64)
                 }
+                "key_protection" => {
+                    let val = value.as_str().unwrap().parse()
+                        .expect(format!("invalid key_protection value: {:?}", value).as_ref());
+                    config.key_protection = val
+                }
                 unknown => {
                     return Err(Error::InvalidConfiguration(format!(
                         "unknown config key: {}",
@@ -108,8 +113,8 @@ impl ServerConfig for FileConfig {
         self.port
     }
 
-    fn seed(&self) -> &[u8] {
-        &self.seed
+    fn seed(&self) -> Vec<u8> {
+        self.seed.clone()
     }
 
     fn batch_size(&self) -> u8 {
@@ -128,7 +133,7 @@ impl ServerConfig for FileConfig {
         }
     }
 
-    fn key_protection(&self) -> KeyProtection {
-        KeyProtection::Plaintext
+    fn key_protection(&self) -> &KeyProtection {
+        &self.key_protection
     }
 }

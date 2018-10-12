@@ -32,10 +32,10 @@ pub use self::envelope::EnvelopeEncryption;
 pub use self::longterm::LongTermKey;
 pub use self::online::OnlineKey;
 
-#[cfg(feature = "kms")]
-pub mod awskms;
+use super::error;
+use super::config::ServerConfig;
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Clone)]
 pub enum KeyProtection {
     /// No protection, seed is in plaintext
     Plaintext,
@@ -45,6 +45,16 @@ pub enum KeyProtection {
 
     /// Envelope encryption using Google Cloud Key Management Service
     GoogleKmsEnvelope(String),
+}
+
+impl Display for KeyProtection {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), std::fmt::Error> {
+        match self {
+            KeyProtection::Plaintext => write!(f, "Plaintext"),
+            KeyProtection::AwsKmsEnvelope(key_id) => write!(f, "AwsKms({})", key_id),
+            KeyProtection::GoogleKmsEnvelope(key_id) => write!(f, "GoogleKms({})", key_id),
+        }
+    }
 }
 
 impl FromStr for KeyProtection {
@@ -75,7 +85,7 @@ impl From<std::io::Error> for KmsError {
 }
 
 impl From<ring::error::Unspecified> for KmsError {
-    fn from(error: ring::error::Unspecified) -> Self {
+    fn from(_: ring::error::Unspecified) -> Self {
         KmsError::OperationFailed("unspecified ring cryptographic failure".to_string())
     }
 }
@@ -100,4 +110,35 @@ type EncryptedDEK = Vec<u8>;
 pub trait KmsProvider {
     fn encrypt_dek(&self, plaintext_dek: &PlaintextDEK) -> Result<EncryptedDEK, KmsError>;
     fn decrypt_dek(&self, encrypted_dek: &EncryptedDEK) -> Result<PlaintextDEK, KmsError>;
+}
+
+#[cfg(feature = "kms")]
+pub mod awskms;
+
+#[cfg(feature = "kms")]
+use key::awskms::AwsKms;
+use std::fmt::Display;
+use std::fmt::Formatter;
+
+#[cfg(feature = "kms")]
+pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
+    match config.key_protection() {
+        KeyProtection::Plaintext => Ok(config.seed()),
+        KeyProtection::AwsKmsEnvelope(key_id) => {
+            info!("Unwrapping seed via AWS KMS key '{}'", key_id);
+            let kms = AwsKms::from_arn(key_id)?;
+            let seed = EnvelopeEncryption::decrypt_seed(&kms, &config.seed())?;
+            Ok(seed)
+        }
+        _ => Err(error::Error::InvalidConfiguration("Google KMS not supported".to_string()))
+    }
+}
+
+#[cfg(not(feature = "kms"))]
+pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
+    match config.key_protection() {
+        KeyProtection::Plaintext => Ok(config.seed()),
+        v => Err(error::Error::InvalidConfiguration(
+            format!("key_protection '{}' implies KMS but server was not compiled with KMS support", v)))
+    }
 }

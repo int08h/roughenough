@@ -42,7 +42,7 @@ const MIN_PAYLOAD_SIZE: usize = DEK_LEN_FIELD
 // No input prefix to skip, consume entire buffer
 const IN_PREFIX_LEN: usize = 0;
 
-// Trivial domain separation to guard KMS key reuse
+// Trivial domain separation to guard against KMS key reuse
 static AD: &[u8; 11] = b"roughenough";
 
 // Convenience function to create zero-filled Vec of given size
@@ -91,7 +91,7 @@ impl EnvelopeEncryption {
         let dek_open_key = OpeningKey::new(&AES_256_GCM, &dek)?;
         match open_in_place(&dek_open_key, &nonce, AD, IN_PREFIX_LEN, &mut encrypted_seed) {
             Ok(plaintext_seed) => Ok(plaintext_seed.to_vec()),
-            Err(e) => Err(KmsError::OperationFailed(
+            Err(_) => Err(KmsError::OperationFailed(
                 "failed to decrypt plaintext seed".to_string(),
             )),
         }
@@ -124,7 +124,7 @@ impl EnvelopeEncryption {
             TAG_SIZE_BYTES,
         ) {
             Ok(enc_len) => plaintext_buf[..enc_len].to_vec(),
-            Err(e) => {
+            Err(_) => {
                 return Err(KmsError::OperationFailed(
                     "failed to encrypt plaintext seed".to_string(),
                 ))

@@ -111,8 +111,8 @@ impl ServerConfig for EnvironmentConfig {
         self.port
     }
 
-    fn seed(&self) -> &[u8] {
-        &self.seed
+    fn seed(&self) -> Vec<u8> {
+        self.seed.clone()
     }
 
     fn batch_size(&self) -> u8 {
@@ -131,7 +131,7 @@ impl ServerConfig for EnvironmentConfig {
         }
     }
 
-    fn key_protection(&self) -> KeyProtection {
-        self.key_protection
+    fn key_protection(&self) -> &KeyProtection {
+        &self.key_protection
     }
 }

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+extern crate hex;
 extern crate log;
 
 #[cfg(feature = "kms")]
@@ -22,9 +23,7 @@ extern crate rusoto_kms;
 #[cfg(feature = "kms")]
 use self::rusoto_core::Region;
 #[cfg(feature = "kms")]
-use self::rusoto_kms::{
-    DecryptError, DecryptRequest, EncryptError, EncryptRequest, Kms, KmsClient,
-};
+use self::rusoto_kms::{DecryptRequest, EncryptRequest, Kms, KmsClient};
 
 use std::default::Default;
 use std::error::Error;
