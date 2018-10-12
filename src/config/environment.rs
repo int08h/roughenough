@@ -74,8 +74,8 @@ impl EnvironmentConfig {
         };
 
         if let Ok(seed) = env::var(ROUGHENOUGH_SEED) {
-            cfg.seed = hex::decode(&seed)
-                .expect("invalid seed value; 'seed' should be a hex value");
+            cfg.seed =
+                hex::decode(&seed).expect("invalid seed value; 'seed' should be a hex value");
         };
 
         if let Ok(batch_size) = env::var(ROUGHENOUGH_BATCH_SIZE) {

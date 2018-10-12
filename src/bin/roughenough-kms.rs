@@ -57,27 +57,33 @@ pub fn main() {
 
     let matches = App::new("Roughenough key management")
         .version(VERSION)
-        .arg(Arg::with_name("KEY_ID")
-            .short("k")
-            .long("kms-key")
-            .takes_value(true)
-            .required(true)
-            .help("Identity of the KMS key to be used"))
-        .arg(Arg::with_name("SEED")
-            .short("s")
-            .long("seed")
-            .takes_value(true)
-            .required(true)
-            .help("Seed for the server's long-term identity"))
-        .get_matches();
+        .arg(
+            Arg::with_name("KEY_ID")
+                .short("k")
+                .long("kms-key")
+                .takes_value(true)
+                .required(true)
+                .help("Identity of the KMS key to be used"),
+        ).arg(
+            Arg::with_name("SEED")
+                .short("s")
+                .long("seed")
+                .takes_value(true)
+                .required(true)
+                .help("Seed for the server's long-term identity"),
+        ).get_matches();
 
     let kms_key = matches.value_of("KEY_ID").unwrap();
-    let plaintext_seed = matches.value_of("SEED")
+    let plaintext_seed = matches
+        .value_of("SEED")
         .map(|seed| hex::decode(seed).expect("Error parsing seed value"))
         .unwrap();
 
     if plaintext_seed.len() != 32 {
-        error!("Seed must be 32 bytes long; provided seed is {}", plaintext_seed.len());
+        error!(
+            "Seed must be 32 bytes long; provided seed is {}",
+            plaintext_seed.len()
+        );
         return;
     }
 

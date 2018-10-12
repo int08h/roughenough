@@ -32,8 +32,8 @@ pub use self::envelope::EnvelopeEncryption;
 pub use self::longterm::LongTermKey;
 pub use self::online::OnlineKey;
 
-use super::error;
 use super::config::ServerConfig;
+use super::error;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Clone)]
 pub enum KeyProtection {
@@ -65,7 +65,7 @@ impl FromStr for KeyProtection {
             "plaintext" => Ok(KeyProtection::Plaintext),
             s if s.starts_with("arn") => Ok(KeyProtection::AwsKmsEnvelope(s.to_string())),
             s if s.starts_with("gcp") => Ok(KeyProtection::GoogleKmsEnvelope(s.to_string())),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
@@ -130,7 +130,9 @@ pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
             let seed = EnvelopeEncryption::decrypt_seed(&kms, &config.seed())?;
             Ok(seed)
         }
-        _ => Err(error::Error::InvalidConfiguration("Google KMS not supported".to_string()))
+        _ => Err(error::Error::InvalidConfiguration(
+            "Google KMS not supported".to_string(),
+        )),
     }
 }
 
@@ -138,7 +140,8 @@ pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
 pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
     match config.key_protection() {
         KeyProtection::Plaintext => Ok(config.seed()),
-        v => Err(error::Error::InvalidConfiguration(
-            format!("key_protection '{}' implies KMS but server was not compiled with KMS support", v)))
+        v => Err(error::Error::InvalidConfiguration(format!(
+            "key_protection '{}' implies KMS but server was not compiled with KMS support", v
+        ))),
     }
 }
