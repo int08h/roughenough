@@ -21,29 +21,26 @@ extern crate log;
 extern crate ring;
 extern crate std;
 
-mod envelope;
 mod longterm;
 mod online;
 
-use std::error::Error;
+use std::fmt::Display;
+use std::fmt::Formatter;
 use std::str::FromStr;
 
-pub use self::envelope::EnvelopeEncryption;
 pub use self::longterm::LongTermKey;
 pub use self::online::OnlineKey;
 
-use super::config::ServerConfig;
-use super::error;
-
+/// Methods for protecting the server's long-term identity
 #[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Clone)]
 pub enum KeyProtection {
     /// No protection, seed is in plaintext
     Plaintext,
 
-    /// Envelope encryption using AWS Key Management Service
+    /// Envelope encryption of the seed using AWS Key Management Service
     AwsKmsEnvelope(String),
 
-    /// Envelope encryption using Google Cloud Key Management Service
+    /// Envelope encryption of the seed using Google Cloud Key Management Service
     GoogleKmsEnvelope(String),
 }
 
@@ -70,78 +67,3 @@ impl FromStr for KeyProtection {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Clone)]
-pub enum KmsError {
-    OperationFailed(String),
-    InvalidConfiguration(String),
-    InvalidData(String),
-    InvalidKey(String),
-}
-
-impl From<std::io::Error> for KmsError {
-    fn from(error: std::io::Error) -> Self {
-        KmsError::OperationFailed(error.description().to_string())
-    }
-}
-
-impl From<ring::error::Unspecified> for KmsError {
-    fn from(_: ring::error::Unspecified) -> Self {
-        KmsError::OperationFailed("unspecified ring cryptographic failure".to_string())
-    }
-}
-
-/// Size of the Data Encryption Key (DEK) in bytes
-pub const DEK_SIZE_BYTES: usize = 32;
-
-/// Size of the AEAD nonce in bytes
-pub const NONCE_SIZE_BYTES: usize = 12;
-
-/// Size of the AEAD authentication tag in bytes
-pub const TAG_SIZE_BYTES: usize = 16;
-
-/// An unencrypted (plaintext) 256-bit Data Encryption Key (DEK).
-type PlaintextDEK = Vec<u8>;
-
-/// A Data Encryption Key (DEK) that has been encrypted (wrapped) by a Key Encryption Key (KEK).
-/// Size of the encrypted DEK is implementation specific (things like AEAD tag size, nonce size,
-/// provider metadata, and so on will cause it to vary).
-type EncryptedDEK = Vec<u8>;
-
-pub trait KmsProvider {
-    fn encrypt_dek(&self, plaintext_dek: &PlaintextDEK) -> Result<EncryptedDEK, KmsError>;
-    fn decrypt_dek(&self, encrypted_dek: &EncryptedDEK) -> Result<PlaintextDEK, KmsError>;
-}
-
-#[cfg(feature = "kms")]
-pub mod awskms;
-
-#[cfg(feature = "kms")]
-use key::awskms::AwsKms;
-use std::fmt::Display;
-use std::fmt::Formatter;
-
-#[cfg(feature = "kms")]
-pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
-    match config.key_protection() {
-        KeyProtection::Plaintext => Ok(config.seed()),
-        KeyProtection::AwsKmsEnvelope(key_id) => {
-            info!("Unwrapping seed via AWS KMS key '{}'", key_id);
-            let kms = AwsKms::from_arn(key_id)?;
-            let seed = EnvelopeEncryption::decrypt_seed(&kms, &config.seed())?;
-            Ok(seed)
-        }
-        _ => Err(error::Error::InvalidConfiguration(
-            "Google KMS not supported".to_string(),
-        )),
-    }
-}
-
-#[cfg(not(feature = "kms"))]
-pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
-    match config.key_protection() {
-        KeyProtection::Plaintext => Ok(config.seed()),
-        v => Err(error::Error::InvalidConfiguration(format!(
-            "key_protection '{}' implies KMS but server was not compiled with KMS support", v
-        ))),
-    }
-}

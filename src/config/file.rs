@@ -23,7 +23,7 @@ use yaml_rust::YamlLoader;
 use config::ServerConfig;
 use config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
 use Error;
-use KeyProtection;
+use key::KeyProtection;
 
 ///
 /// Read a Roughenough server configuration ([ServerConfig](trait.ServerConfig.html))

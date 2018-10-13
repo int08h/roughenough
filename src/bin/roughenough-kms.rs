@@ -28,14 +28,11 @@ extern crate untrusted;
 use clap::{App, Arg};
 use roughenough::VERSION;
 
-#[allow(unused_imports)]
-use roughenough::key::EnvelopeEncryption;
-
-#[cfg(feature = "kms")]
-use roughenough::key::awskms::AwsKms;
-
 #[cfg(feature = "kms")]
 fn aws_kms(kms_key: &str, plaintext_seed: &[u8]) {
+    use roughenough::kms::EnvelopeEncryption;
+    use roughenough::kms::AwsKms;
+
     let client = AwsKms::from_arn(kms_key).unwrap();
 
     match EnvelopeEncryption::encrypt_seed(&client, &plaintext_seed) {
@@ -55,8 +52,9 @@ pub fn main() {
 
     simple_logger::init_with_level(Level::Info).unwrap();
 
-    let matches = App::new("Roughenough key management")
+    let matches = App::new("roughenough-kms")
         .version(VERSION)
+        .long_about("Encrypt a Roughenough server's long-term seed using a KMS")
         .arg(
             Arg::with_name("KEY_ID")
                 .short("k")
@@ -70,7 +68,7 @@ pub fn main() {
                 .long("seed")
                 .takes_value(true)
                 .required(true)
-                .help("Seed for the server's long-term identity"),
+                .help("32 byte hex seed for the server's long-term identity"),
         ).get_matches();
 
     let kms_key = matches.value_of("KEY_ID").unwrap();

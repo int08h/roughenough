@@ -31,8 +31,9 @@ use std::fmt;
 use std::fmt::Formatter;
 use std::str::FromStr;
 
-use key::{EncryptedDEK, KmsError, KmsProvider, PlaintextDEK, DEK_SIZE_BYTES};
+use kms::{EncryptedDEK, KmsError, KmsProvider, PlaintextDEK, DEK_SIZE_BYTES};
 
+/// Amazon Key Management Service 
 #[cfg(feature = "kms")]
 pub struct AwsKms {
     kms_client: KmsClient,
@@ -41,6 +42,8 @@ pub struct AwsKms {
 
 #[cfg(feature = "kms")]
 impl AwsKms {
+
+    /// Create a new instance from the ARN of a AWS KMS key.
     pub fn from_arn(arn: &str) -> Result<Self, KmsError> {
         let parts: Vec<&str> = arn.split(':').collect();
 

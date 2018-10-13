@@ -22,7 +22,8 @@ use ring::rand::SecureRandom;
 
 use super::super::MIN_SEED_LENGTH;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use key::{KmsError, KmsProvider, DEK_SIZE_BYTES, NONCE_SIZE_BYTES, TAG_SIZE_BYTES};
+use kms::{KmsError, KmsProvider, DEK_SIZE_BYTES, NONCE_SIZE_BYTES, TAG_SIZE_BYTES};
+use std::string::ToString;
 
 const DEK_LEN_FIELD: usize = 2;
 const NONCE_LEN_FIELD: usize = 2;
@@ -54,9 +55,26 @@ fn vec_zero_filled(len: usize) -> Vec<u8> {
     return v;
 }
 
+///
+/// Envelope encryption of the long-term key seed value.
+///
+/// The seed is encrypted using AES-GCM-256 with:
+///
+///   * 32 byte (256 bit) random key
+///   * 12 byte (96 bit) random nonce
+///   * 16 byte (128 bit) authentication tag
+///
+/// Randomness obtained from
+/// [`ring::rand::SecureRandom`](https://briansmith.org/rustdoc/ring/rand/trait.SecureRandom.html).
+///
+/// The key used to encrypt the seed is wrapped (encrypted) using a
+/// [`KmsProvider`](trait.KmsProvider.html) implementation.
+///
 pub struct EnvelopeEncryption;
 
 impl EnvelopeEncryption {
+
+    /// Decrypt a seed previously encrypted with `encrypt_seed()`
     pub fn decrypt_seed(kms: &KmsProvider, ciphertext_blob: &[u8]) -> Result<Vec<u8>, KmsError> {
         if ciphertext_blob.len() < MIN_PAYLOAD_SIZE {
             return Err(KmsError::InvalidData(format!(
@@ -97,6 +115,12 @@ impl EnvelopeEncryption {
         }
     }
 
+    ///
+    /// Encrypt the seed value and protect the seed's encryption key using a
+    /// [KmsProvider](trait.KmsProvider.html).
+    ///
+    /// The returned encrypted byte blob is safe to store on unsecured media.
+    ///
     pub fn encrypt_seed(kms: &KmsProvider, plaintext_seed: &[u8]) -> Result<Vec<u8>, KmsError> {
         // Generate random DEK and nonce
         let rng = rand::SystemRandom::new();

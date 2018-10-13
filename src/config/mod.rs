@@ -18,7 +18,8 @@
 //! The [ServerConfig](trait.ServerConfig.html) trait specifies the required and optional
 //! parameters available for configuring a Roughenoguh server instance.
 //!
-//! Implementations of `ServerConfig` obtain configurations from different back-end sources.
+//! Implementations of `ServerConfig` obtain configurations from different back-end sources
+//! such as files or environment variables.
 //!
 
 extern crate hex;
@@ -34,7 +35,7 @@ mod environment;
 pub use self::environment::EnvironmentConfig;
 
 use Error;
-use KeyProtection;
+use key::KeyProtection;
 
 /// Maximum number of requests to process in one batch and include the the Merkle tree.
 pub const DEFAULT_BATCH_SIZE: u8 = 64;
@@ -55,6 +56,7 @@ pub const DEFAULT_STATUS_INTERVAL: Duration = Duration::from_secs(600);
 /// `seed` | `ROUGHENOUGH_SEED` | Required | A 32-byte hexadecimal value used to generate the server's long-term key pair. **This is a secret value and must be un-guessable**, treat it with care.
 /// `batch_size` | `ROUGHENOUGH_BATCH_SIZE` | Optional | The maximum number of requests to process in one batch. All nonces in a batch are used to build a Merkle tree, the root of which is signed. Defaults to [DEFAULT_BATCH_SIZE](constant.DEFAULT_BATCH_SIZE.html) requests per batch.
 /// `status_interval` | `ROUGHENOUGH_STATUS_INTERVAL` | Optional | Number of _seconds_ between each logged status update. Default value is [DEFAULT_STATUS_INTERVAL](constant.DEFAULT_STATUS_INTERVAL.html).
+/// `key_protection` | `ROUGHENOUGH_KEY_PROTECTION` | Optional | Encryption method (if any) applied to the `seed`.  Defaults to "`plaintext`" (no encryption, `seed` is in the clear).
 ///
 /// Implementations of this trait obtain a valid configuration from different back-end
 /// sources. See:
@@ -82,15 +84,19 @@ pub trait ServerConfig {
     /// Defaults to [DEFAULT_STATUS_INTERVAL](constant.DEFAULT_STATUS_INTERVAL.html)
     fn status_interval(&self) -> Duration;
 
+    /// [Optional] Method used to protect the seed for the server's long-term key pair.
+    /// Defaults to "`plaintext`" (no encryption, seed is in the clear).
+    fn key_protection(&self) -> &KeyProtection;
+
     /// Convenience function to create a `SocketAddr` from the provided `interface` and `port`
     fn socket_addr(&self) -> Result<SocketAddr, Error>;
-
-    /// Method used to protect the long-term key pair.
-    fn key_protection(&self) -> &KeyProtection;
 }
 
+/// Factory function to create a `ServerConfig` _trait object_ based on the value
+/// of the provided `arg`.
 ///
-/// Factory function to create a `ServerConfig` trait object based on the provided `arg`
+///   * `ENV` will return an [`EnvironmentConfig`](struct.EnvironmentConfig.html)
+///   * any other value returns a [`FileConfig`](struct.FileConfig.html)
 ///
 pub fn make_config(arg: &str) -> Result<Box<ServerConfig>, Error> {
     if arg == "ENV" {
@@ -107,7 +113,7 @@ pub fn make_config(arg: &str) -> Result<Box<ServerConfig>, Error> {
 }
 
 ///
-/// Validate configuration settings
+/// Validate configuration settings. Returns `true` if the config is valid, `false` otherwise.
 ///
 pub fn is_valid_config(cfg: &Box<ServerConfig>) -> bool {
     let mut is_valid = true;

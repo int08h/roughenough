@@ -25,6 +25,16 @@
 //! Roughtime messages are represented by [`RtMessage`](struct.RtMessage.html) which
 //! implements the mapping of Roughtime `u32` [`tags`](enum.Tag.html) to byte-strings.
 //!
+//! # Keys and Signing
+//!
+//! Roughtime uses an [Ed25519](https://ed25519.cr.yp.to/) key pair as the server's
+//! long-term identity and a second key pair (signed by the long-term key) as a
+//! delegated on-line (ephemeral) key.
+//!
+//! [`LongTermKey`](key/struct.LongTermKey.html) and [`OnlineKey`](key/struct.OnlineKey.html)
+//! implement these elements of the protocol. The [`sign`](sign/index.html) module provides
+//! signing and verification operations.
+//!
 //! # Client
 //!
 //! A Roughtime client can be found in `src/bin/client.rs`. To run the client:
@@ -37,11 +47,10 @@
 //!
 //! # Server
 //!
-//! The Roughtime server implementation is in `src/bin/server.rs`. The server is
-//! configured via a YAML config file. See [FileConfig](config/struct.FileConfig.html)
-//! for details of the configuration parameters.
+//! The Roughtime server implementation is in `src/bin/server.rs`. The server has multiple
+//! ways it can be configured, see [ServerConfig](config/trait.ServerConfig.html) for details.
 //!
-//! To run the server:
+//! To run the server with a config file:
 //!
 //! ```bash
 //! $ cargo run --release --bin server /path/to/config.file
@@ -63,11 +72,11 @@ mod tag;
 
 pub mod config;
 pub mod key;
+pub mod kms;
 pub mod merkle;
 pub mod sign;
 
 pub use error::Error;
-pub use key::KeyProtection;
 pub use message::RtMessage;
 pub use tag::Tag;
 

@@ -55,7 +55,7 @@ use byteorder::{LittleEndian, WriteBytesExt};
 
 use roughenough::config;
 use roughenough::config::ServerConfig;
-use roughenough::key;
+use roughenough::kms;
 use roughenough::key::{LongTermKey, OnlineKey};
 use roughenough::merkle::MerkleTree;
 use roughenough::{Error, RtMessage, Tag};
@@ -266,7 +266,7 @@ pub fn main() {
     let public_key: String;
 
     let cert_bytes = {
-        let seed = key::load_seed(&config).unwrap();
+        let seed = kms::load_seed(&config).unwrap();
         let mut long_term_key = LongTermKey::new(&seed);
         public_key = hex::encode(long_term_key.public_key());
 
