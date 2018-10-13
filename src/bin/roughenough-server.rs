@@ -278,6 +278,10 @@ impl Server {
         }
         false
     }
+
+    fn send_to_self(&mut self, data: &[u8]) {
+        self.socket.send_to(data, &self.socket.local_addr().unwrap());
+    }
 }
 
 fn polling_loop(config: Box<ServerConfig>, online_key: OnlineKey, cert_bytes: Vec<u8>) -> bool {
@@ -315,7 +319,6 @@ fn polling_loop(config: Box<ServerConfig>, online_key: OnlineKey, cert_bytes: Ve
 
     ctrlc::set_handler(move || kr.store(false, Ordering::Release))
         .expect("failed setting Ctrl-C handler");
-
 
 
     loop {
