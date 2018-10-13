@@ -32,19 +32,21 @@
 //!
 //! ## Encrypting the seed
 //!
-//! Using envelope encryption the seed is protected by encrypting it with a locally generated
-//! Data Encryption Key (DEK) and then encrypting the DEK using a cloud key management system
-//! (KMS). See [`EnvelopeEncryption`](struct.EnvelopeEncryption.html) for the implementation.
+//! Envelope encryption protects the seed by encrypting it with a locally generated 256-bit
+//! Data Encryption Key (DEK). The DEK itself is then encrypted using a cloud key management
+//! system (KMS). The resulting opaque encrypted "blob" (encrypted seed + encrypted DEK) is safe
+//! to store in the Roughenough configuration.
 //!
-//! The resulting opaque encrypted "blob" (encrypted seed + encrypted DEK) is safely stored
-//! in the Roughenough configuration. At server start-up the KMS is used to decrypt the DEK,
-//! and the DEK is used to (temporarily in memory) decrypt the seed. The seed is used to
-//! generate the [delegated on-line key](../key/struct.OnlineKey.html) after which the seed
-//! is erased.
+//! At server start-up the KMS is used to decrypt the DEK, which is then used to (in memory)
+//! decrypt the seed. The seed is used to generate the
+//! [delegated on-line key](../key/struct.OnlineKey.html) after which the seed and DEK are erased
+//! from memory.
 //!
-//! For details see explanations from
-//! [Google](https://cloud.google.com/kms/docs/envelope-encryption) or
-//! [Amazon](https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html#enveloping).
+//! See
+//!   * [`EnvelopeEncryption`](struct.EnvelopeEncryption.html) for Roughenough's implementation.
+//!   * [Google](https://cloud.google.com/kms/docs/envelope-encryption) or
+//!     [Amazon](https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html#enveloping)
+//!     for more in-depth explanations of envelope encryption.
 //!
 
 mod envelope;
@@ -94,9 +96,9 @@ pub type PlaintextDEK = Vec<u8>;
 
 /// A Data Encryption Key (DEK) that has been encrypted (wrapped) by a Key Management System (KMS).
 ///
-/// This is an opaque value and the size of the encrypted DEK is implementation specific.
-/// Things like AEAD tag size, nonce size, provider metadata, and so on will vary between
-/// [`KmsProvider`](trait.KmsProvider.html) implementations.
+/// This is an opaque, implementation-specific value. AEAD tag size, nonce size,
+/// provider metadata, and so on will vary between [`KmsProvider`](trait.KmsProvider.html)
+/// implementations.
 pub type EncryptedDEK = Vec<u8>;
 
 ///
@@ -116,6 +118,18 @@ mod awskms;
 #[cfg(feature = "kms")]
 pub use kms::awskms::AwsKms;
 
+/// Load the seed value for the long-term key.
+///
+/// Loading behavior depends on the value of `config.key_protection()`:
+///
+///  * If `config.key_protection() == Plaintext` then the value returned from `config.seed()`
+///    is used as-is and assumed to be a 32-byte hexadecimal value.
+///
+///  * Otherwise `config.seed()` is assumed to be an encrypted opaque blob generated from
+///    a prior `EnvelopeEncryption::encrypt_seed` call. The value of `config.key_protection()`
+///    is parsed as a KMS key id and `EnvelopeEncryption::decrypt_seed` is called to obtain
+///    the plaintext seed value.
+///
 #[cfg(feature = "kms")]
 pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
     use kms::envelope::EnvelopeEncryption;
@@ -134,6 +148,12 @@ pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
     }
 }
 
+///
+/// Load the seed value for the long-term key.
+///
+/// The KMS feature was disabled in this build of Roughenough. The only supported `key_protection`
+/// value is `plaintext`. Any other value is an error.
+///
 #[cfg(not(feature = "kms"))]
 pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
     match config.key_protection() {
