@@ -38,7 +38,10 @@ const STATUS: Token = Token(1);
 
 
 
-
+/// The main server instance.
+/// A Server is initialiezd from a Server Config
+/// and processes incoming messages in
+/// 'process_events'
 pub struct Server {
     config: Box<ServerConfig>,
     online_key: OnlineKey,
@@ -85,7 +88,7 @@ impl Server {
         let poll_duration = Some(Duration::from_millis(100));
 
         let mut timer: Timer<()> = Timer::default();
-        //timer.set_timeout(config.status_interval(), ());
+        timer.set_timeout(config.status_interval(), ());
 
         let poll = Poll::new().unwrap();
         poll.register(&socket, MESSAGE, Ready::readable(), PollOpt::edge())
@@ -126,7 +129,7 @@ impl Server {
 
 
     // extract the client's nonce from its request
-    fn nonce_from_request(buf: &[u8], num_bytes: usize) -> Result<&[u8], Error> {
+    fn nonce_from_request<'a>(&self, buf: &'a [u8], num_bytes: usize) -> Result<&'a [u8], Error> {
         if num_bytes < MIN_REQUEST_LENGTH as usize {
             return Err(Error::RequestTooShort);
         }
@@ -146,7 +149,7 @@ impl Server {
         }
     }
 
-    fn make_response(srep: &RtMessage, cert_bytes: &[u8], path: &[u8], idx: u32) -> RtMessage {
+    fn make_response(&self, srep: &RtMessage, cert_bytes: &[u8], path: &[u8], idx: u32) -> RtMessage {
         let mut index = [0; 4];
         (&mut index as &mut [u8])
             .write_u32::<LittleEndian>(idx)
@@ -165,6 +168,10 @@ impl Server {
         response
     }
 
+    /// The main processing function for incoming connections.
+    /// This method should be called repeatedly in a loop
+    /// to process requests. It returns 'true' when the server
+    /// has shutdown (due to keep_running being set to 'false')
     pub fn process_events(&mut self) -> bool {
         self.poll.poll(&mut self.events, self.poll_duration).expect("poll failed");
 
@@ -182,7 +189,6 @@ impl Server {
                         for i in 0..self.config.batch_size() {
                             match self.socket.recv_from(&mut self.buf) {
                                 Ok((num_bytes, src_addr)) => {
-                                    info!("Read bytes: {}", num_bytes);
                                     match self.nonce_from_request(&self.buf, num_bytes) {
                                         Ok(nonce) => {
                                             self.requests.push((Vec::from(nonce), src_addr));
@@ -225,7 +231,7 @@ impl Server {
                         for (i, &(ref nonce, ref src_addr)) in self.requests.iter().enumerate() {
                             let paths = self.merkle.get_paths(i);
 
-                            let resp = make_response(&srep, &self.cert_bytes, &paths, i as u32);
+                            let resp = self.make_response(&srep, &self.cert_bytes, &paths, i as u32);
                             let resp_bytes = resp.encode().unwrap();
 
                             let bytes_sent = self.socket
