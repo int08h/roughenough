@@ -79,34 +79,6 @@ macro_rules! check_ctrlc {
 
 
 fn polling_loop(config: Box<ServerConfig>) {
-/*    let response_counter = AtomicUsize::new(0);
-    let keep_running = Arc::new(AtomicBool::new(true));
-    let kr = keep_running.clone();
-
-    ctrlc::set_handler(move || kr.store(false, Ordering::Release))
-        .expect("failed setting Ctrl-C handler");
-
-    let sock_addr = config.socket_addr().expect("");
-    let socket = UdpSocket::bind(&sock_addr).expect("failed to bind to socket");
-    let poll_duration = Some(Duration::from_millis(100));
-
-    let mut timer: Timer<()> = Timer::default();
-    timer.set_timeout(config.status_interval(), ());
-
-    let mut buf = [0u8; 65_536];
-    let mut events = Events::with_capacity(32);
-    let mut num_bad_requests = 0u64;
-
-    let poll = Poll::new().unwrap();
-    poll.register(&socket, MESSAGE, Ready::readable(), PollOpt::edge())
-        .unwrap();
-    poll.register(&timer, STATUS, Ready::readable(), PollOpt::edge())
-        .unwrap();
-
-    let mut merkle = MerkleTree::new();
-    let mut requests = Vec::with_capacity(config.batch_size() as usize);*/
-
-
     let mut server = Server::new(config);
 
     info!("Long-term public key    : {}", server.get_public_key());
@@ -164,7 +136,6 @@ pub fn main() {
         Ok(ref cfg) if !config::is_valid_config(&cfg) => process::exit(1),
         Ok(cfg) => cfg,
     };
-
 
     polling_loop(config);
 
