@@ -63,11 +63,13 @@ use roughenough::{Error, RtMessage, Tag};
 use roughenough::{MIN_REQUEST_LENGTH, VERSION};
 use roughenough::server::Server;
 
+
+
 macro_rules! check_ctrlc {
     ($keep_running:expr) => {
         if !$keep_running.load(Ordering::Acquire) {
             warn!("Ctrl-C caught, exiting...");
-            return true;
+            return;
         }
     }
 }
@@ -76,9 +78,7 @@ macro_rules! check_ctrlc {
 
 
 
-
-
-fn polling_loop(config: Box<ServerConfig>, online_key: OnlineKey, cert_bytes: Vec<u8>) -> bool {
+fn polling_loop(config: Box<ServerConfig>) {
 /*    let response_counter = AtomicUsize::new(0);
     let keep_running = Arc::new(AtomicBool::new(true));
     let kr = keep_running.clone();
@@ -107,7 +107,15 @@ fn polling_loop(config: Box<ServerConfig>, online_key: OnlineKey, cert_bytes: Ve
     let mut requests = Vec::with_capacity(config.batch_size() as usize);*/
 
 
-    let mut server = Server::new(config, online_key, cert_bytes);
+    let mut server = Server::new(config);
+
+    info!("Long-term public key    : {}", server.get_public_key());
+    info!("Online public key       : {}", server.get_online_key());
+    info!("Max response batch size : {}", server.get_config().batch_size());
+    info!("Status updates every    : {} seconds", server.get_config().status_interval().as_secs());
+    info!("Server listening on     : {}:{}", server.get_config().interface(), server.get_config().port());
+
+
     let kr = server.get_keep_running();
     let kr_new = kr.clone();
 
@@ -118,7 +126,7 @@ fn polling_loop(config: Box<ServerConfig>, online_key: OnlineKey, cert_bytes: Ve
     loop {
         check_ctrlc!(kr_new);
         if server.process_events() {
-            return true;
+            return;
         }
  
     }
@@ -157,30 +165,8 @@ pub fn main() {
         Ok(cfg) => cfg,
     };
 
-    let mut online_key = OnlineKey::new();
-    let public_key: String;
 
-    let cert_bytes = {
-        let seed = match kms::load_seed(&config) {
-            Ok(seed) => seed,
-            Err(e) => {
-                error!("Failed to load seed: {:#?}", e);
-                process::exit(1);
-            }
-        };
-        let mut long_term_key = LongTermKey::new(&seed);
-        public_key = hex::encode(long_term_key.public_key());
-
-        long_term_key.make_cert(&online_key).encode().unwrap()
-    };
-
-    info!("Long-term public key    : {}", public_key);
-    info!("Online public key       : {}", online_key);
-    info!("Max response batch size : {}", config.batch_size());
-    info!("Status updates every    : {} seconds", config.status_interval().as_secs());
-    info!("Server listening on     : {}:{}", config.interface(), config.port());
-
-    polling_loop(config, online_key, cert_bytes);
+    polling_loop(config);
 
     info!("Done.");
     process::exit(0);

@@ -94,11 +94,23 @@ pub struct Server {
     requests: Vec<(Vec<u8>, SocketAddr)>,
     buf: [u8; 65_536],
 
-    
+    public_key: String,
 }
 
 impl Server {
-    pub fn new(config: Box<ServerConfig>, online_key: OnlineKey, cert_bytes: Vec<u8>) -> Server {
+    pub fn new(config: Box<ServerConfig>) -> Server {
+
+        let mut online_key = OnlineKey::new();
+        let public_key: String;
+
+        let cert_bytes = {
+            let seed = kms::load_seed(&config).unwrap();
+            let mut long_term_key = LongTermKey::new(&seed);
+            public_key = hex::encode(long_term_key.public_key());
+
+            long_term_key.make_cert(&online_key).encode().unwrap()
+        };
+
         let response_counter = AtomicUsize::new(0);
         let keep_running = Arc::new(AtomicBool::new(true));
 
@@ -134,7 +146,9 @@ impl Server {
             events: Events::with_capacity(32),
             merkle,
             requests,
-            buf: [0u8; 65_536]
+            buf: [0u8; 65_536],
+
+            public_key
         }
 
     }
@@ -239,7 +253,19 @@ impl Server {
         false
     }
 
-    fn send_to_self(&mut self, data: &[u8]) {
+    pub fn send_to_self(&mut self, data: &[u8]) {
         self.socket.send_to(data, &self.socket.local_addr().unwrap());
+    }
+
+    pub fn get_public_key(&self) -> &str {
+        return &self.public_key
+    }
+
+    pub fn get_online_key(&self) -> &OnlineKey {
+        return &self.online_key
+    }
+
+    pub fn get_config(&self) -> &Box<ServerConfig> {
+        return &self.config
     }
 }
