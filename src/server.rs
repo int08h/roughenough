@@ -105,6 +105,7 @@ impl Server {
 
         let cert_bytes = {
             let seed = kms::load_seed(&config).unwrap();
+            println!("Seed: {:?}", seed);
             let mut long_term_key = LongTermKey::new(&seed);
             public_key = hex::encode(long_term_key.public_key());
 

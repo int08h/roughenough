@@ -27,6 +27,8 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use chrono::offset::Utc;
 use chrono::TimeZone;
 
+use std::fs::File;
+use std::io::Write;
 use std::collections::HashMap;
 use std::iter::Iterator;
 use std::net::{ToSocketAddrs, UdpSocket};
@@ -265,10 +267,13 @@ fn main() {
 
     let mut requests = Vec::with_capacity(num_requests);
 
+    let mut file = File::create("requests.bin").unwrap();
+
     for _ in 0..num_requests {
         let nonce = create_nonce();
         let mut socket = UdpSocket::bind("0.0.0.0:0").expect("Couldn't open UDP socket");
         let request = make_request(&nonce);
+        file.write_all(&request);
 
         requests.push((nonce, request, socket));
     }

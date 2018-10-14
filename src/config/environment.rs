@@ -55,9 +55,9 @@ const ROUGHENOUGH_KEY_PROTECTION: &str = "ROUGHENOUGH_KEY_PROTECTION";
 impl EnvironmentConfig {
     pub fn new() -> Result<Self, Error> {
         let mut cfg = EnvironmentConfig {
-            port: 0,
-            interface: "".to_string(),
-            seed: Vec::new(),
+            port: 8686,
+            interface: "127.0.0.1".to_string(),
+            seed: hex::decode("a32049da0ffde0ded92ce10a0230d35fe615ec8461c14986baa63fe3b3bac3db").unwrap(),
             batch_size: DEFAULT_BATCH_SIZE,
             status_interval: DEFAULT_STATUS_INTERVAL,
             key_protection: KeyProtection::Plaintext,
