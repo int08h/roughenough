@@ -85,6 +85,7 @@ pub struct Server {
     num_bad_requests: u64,
 
     socket: UdpSocket,
+    fake_client_socket: UdpSocket,
     keep_running: Arc<AtomicBool>,
     poll_duration: Option<Duration>,
     timer: Timer<()>,
@@ -117,16 +118,18 @@ impl Server {
 
         let sock_addr = config.socket_addr().expect("");
         let socket = UdpSocket::bind(&sock_addr).expect("failed to bind to socket");
+        let fake_client_socket = UdpSocket::bind(&"127.0.0.1:0".parse().unwrap()).unwrap();
+
         let poll_duration = Some(Duration::from_millis(100));
 
         let mut timer: Timer<()> = Timer::default();
-        timer.set_timeout(config.status_interval(), ());
+        //timer.set_timeout(config.status_interval(), ());
 
         let poll = Poll::new().unwrap();
         poll.register(&socket, MESSAGE, Ready::readable(), PollOpt::edge())
             .unwrap();
-        poll.register(&timer, STATUS, Ready::readable(), PollOpt::edge())
-            .unwrap();
+        //poll.register(&timer, STATUS, Ready::readable(), PollOpt::edge())
+        //    .unwrap();
 
         let mut merkle = MerkleTree::new();
         let mut requests = Vec::with_capacity(config.batch_size() as usize);
@@ -140,6 +143,7 @@ impl Server {
             response_counter,
             num_bad_requests: 0,
             socket,
+            fake_client_socket,
             keep_running,
             poll_duration,
             timer,
@@ -169,25 +173,28 @@ impl Server {
                     'process_batch: loop {
                         check_ctrlc!(self.keep_running);
 
-                        self.merkle.reset();
-                        self.requests.clear();
 
                         let resp_start = self.response_counter.load(Ordering::SeqCst);
 
                         for i in 0..self.config.batch_size() {
                             match self.socket.recv_from(&mut self.buf) {
                                 Ok((num_bytes, src_addr)) => {
-                                    if let Ok(nonce) = nonce_from_request(&self.buf, num_bytes) {
-                                        self.requests.push((Vec::from(nonce), src_addr));
-                                        self.merkle.push_leaf(nonce);
-                                    } else {
-                                        self.num_bad_requests += 1;
-                                        info!(
-                                            "Invalid request ({} bytes) from {} (#{} in batch, resp #{})",
-                                            num_bytes, src_addr, i, resp_start + i as usize
-                                        );
+                                    info!("Read bytes: {}", num_bytes);
+                                    match nonce_from_request(&self.buf, num_bytes) {
+                                        Ok(nonce) => {
+                                            self.requests.push((Vec::from(nonce), src_addr));
+                                            self.merkle.push_leaf(nonce);
+                                        },
+                                        Err(e) => {
+                                           self.num_bad_requests += 1;
+
+                                             info!(
+                                                "Invalid request: '{:?}' ({} bytes) from {} (#{} in batch, resp #{})",
+                                                e, num_bytes, src_addr, i, resp_start + i as usize
+                                            );
+                                        }
                                     }
-                                }
+                                },
                                 Err(e) => match e.kind() {
                                     ErrorKind::WouldBlock => {
                                         done = true;
@@ -232,6 +239,10 @@ impl Server {
                                 num_responses
                             );
                         }
+
+                        self.merkle.reset();
+                        self.requests.clear();
+
                         if done {
                             break 'process_batch;
                         }
@@ -255,7 +266,10 @@ impl Server {
     }
 
     pub fn send_to_self(&mut self, data: &[u8]) {
-        self.socket.send_to(data, &self.socket.local_addr().unwrap());
+        self.response_counter.store(0,  Ordering::SeqCst);;
+        self.num_bad_requests = 0;
+        let res = self.fake_client_socket.send_to(data, &self.socket.local_addr().unwrap());
+        info!("Sent to self: {:?}", res);
     }
 
     pub fn get_public_key(&self) -> &str {
