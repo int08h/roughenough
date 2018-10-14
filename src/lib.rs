@@ -48,7 +48,7 @@
 //! # Server
 //!
 //! The Roughtime server implementation is in `src/bin/server.rs`. The server has multiple
-//! ways it can be configured, see [ServerConfig](config/trait.ServerConfig.html) for details.
+//! ways it can be configured, see [`ServerConfig`](config/trait.ServerConfig.html) for details.
 //!
 //! To run the server with a config file:
 //!
@@ -57,6 +57,7 @@
 //! ```
 //!
 
+extern crate base64;
 extern crate byteorder;
 extern crate core;
 extern crate time;

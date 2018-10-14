@@ -28,12 +28,30 @@ extern crate untrusted;
 use clap::{App, Arg};
 use roughenough::VERSION;
 
-#[cfg(feature = "kms")]
+#[cfg(feature = "awskms")]
 fn aws_kms(kms_key: &str, plaintext_seed: &[u8]) {
     use roughenough::kms::EnvelopeEncryption;
     use roughenough::kms::AwsKms;
 
     let client = AwsKms::from_arn(kms_key).unwrap();
+
+    match EnvelopeEncryption::encrypt_seed(&client, &plaintext_seed) {
+        Ok(encrypted_blob) => {
+            println!("key_protection: \"{}\"", kms_key);
+            println!("seed: {}", hex::encode(&encrypted_blob));
+        }
+        Err(e) => {
+            error!("Error: {:?}", e);
+        }
+    }
+}
+
+#[cfg(feature = "gcpkms")]
+fn gcp_kms(kms_key: &str, plaintext_seed: &[u8]) {
+    use roughenough::kms::EnvelopeEncryption;
+    use roughenough::kms::GcpKms;
+
+    let client = GcpKms::from_resource_id(kms_key).unwrap();
 
     match EnvelopeEncryption::encrypt_seed(&client, &plaintext_seed) {
         Ok(encrypted_blob) => {
@@ -85,9 +103,12 @@ pub fn main() {
         return;
     }
 
-    if cfg!(feature = "kms") {
-        #[cfg(feature = "kms")]
+    if cfg!(feature = "awskms") {
+        #[cfg(feature = "awskms")]
         aws_kms(kms_key, &plaintext_seed);
+    } else if cfg!(feature = "gcpkms") {
+        #[cfg(feature = "gcpkms")]
+        gcp_kms(kms_key, &plaintext_seed);
     } else {
         warn!("KMS not enabled, nothing to do");
     }

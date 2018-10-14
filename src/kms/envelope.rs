@@ -117,7 +117,7 @@ impl EnvelopeEncryption {
 
     ///
     /// Encrypt the seed value and protect the seed's encryption key using a
-    /// [KmsProvider](trait.KmsProvider.html).
+    /// [`KmsProvider`](trait.KmsProvider.html).
     ///
     /// The returned encrypted byte blob is safe to store on unsecured media.
     ///
