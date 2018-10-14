@@ -36,45 +36,8 @@ macro_rules! check_ctrlc {
 const MESSAGE: Token = Token(0);
 const STATUS: Token = Token(1);
 
-fn make_response(srep: &RtMessage, cert_bytes: &[u8], path: &[u8], idx: u32) -> RtMessage {
-    let mut index = [0; 4];
-    (&mut index as &mut [u8])
-        .write_u32::<LittleEndian>(idx)
-        .unwrap();
 
-    let sig_bytes = srep.get_field(Tag::SIG).unwrap();
-    let srep_bytes = srep.get_field(Tag::SREP).unwrap();
 
-    let mut response = RtMessage::new(5);
-    response.add_field(Tag::SIG, sig_bytes).unwrap();
-    response.add_field(Tag::PATH, path).unwrap();
-    response.add_field(Tag::SREP, srep_bytes).unwrap();
-    response.add_field(Tag::CERT, cert_bytes).unwrap();
-    response.add_field(Tag::INDX, &index).unwrap();
-
-    response
-}
-
-// extract the client's nonce from its request
-fn nonce_from_request(buf: &[u8], num_bytes: usize) -> Result<&[u8], Error> {
-    if num_bytes < MIN_REQUEST_LENGTH as usize {
-        return Err(Error::RequestTooShort);
-    }
-
-    let tag_count = &buf[..4];
-    let expected_nonc = &buf[8..12];
-    let expected_pad = &buf[12..16];
-
-    let tag_count_is_2 = tag_count == [0x02, 0x00, 0x00, 0x00];
-    let tag1_is_nonc = expected_nonc == Tag::NONC.wire_value();
-    let tag2_is_pad = expected_pad == Tag::PAD.wire_value();
-
-    if tag_count_is_2 && tag1_is_nonc && tag2_is_pad {
-        Ok(&buf[0x10..0x50])
-    } else {
-        Err(Error::InvalidRequest)
-    }
-}
 
 pub struct Server {
     config: Box<ServerConfig>,
@@ -161,6 +124,47 @@ impl Server {
         return self.keep_running.clone()
     }
 
+
+    // extract the client's nonce from its request
+    fn nonce_from_request(buf: &[u8], num_bytes: usize) -> Result<&[u8], Error> {
+        if num_bytes < MIN_REQUEST_LENGTH as usize {
+            return Err(Error::RequestTooShort);
+        }
+
+        let tag_count = &buf[..4];
+        let expected_nonc = &buf[8..12];
+        let expected_pad = &buf[12..16];
+
+        let tag_count_is_2 = tag_count == [0x02, 0x00, 0x00, 0x00];
+        let tag1_is_nonc = expected_nonc == Tag::NONC.wire_value();
+        let tag2_is_pad = expected_pad == Tag::PAD.wire_value();
+
+        if tag_count_is_2 && tag1_is_nonc && tag2_is_pad {
+            Ok(&buf[0x10..0x50])
+        } else {
+            Err(Error::InvalidRequest)
+        }
+    }
+
+    fn make_response(srep: &RtMessage, cert_bytes: &[u8], path: &[u8], idx: u32) -> RtMessage {
+        let mut index = [0; 4];
+        (&mut index as &mut [u8])
+            .write_u32::<LittleEndian>(idx)
+            .unwrap();
+
+        let sig_bytes = srep.get_field(Tag::SIG).unwrap();
+        let srep_bytes = srep.get_field(Tag::SREP).unwrap();
+
+        let mut response = RtMessage::new(5);
+        response.add_field(Tag::SIG, sig_bytes).unwrap();
+        response.add_field(Tag::PATH, path).unwrap();
+        response.add_field(Tag::SREP, srep_bytes).unwrap();
+        response.add_field(Tag::CERT, cert_bytes).unwrap();
+        response.add_field(Tag::INDX, &index).unwrap();
+
+        response
+    }
+
     pub fn process_events(&mut self) -> bool {
         self.poll.poll(&mut self.events, self.poll_duration).expect("poll failed");
 
@@ -179,7 +183,7 @@ impl Server {
                             match self.socket.recv_from(&mut self.buf) {
                                 Ok((num_bytes, src_addr)) => {
                                     info!("Read bytes: {}", num_bytes);
-                                    match nonce_from_request(&self.buf, num_bytes) {
+                                    match self.nonce_from_request(&self.buf, num_bytes) {
                                         Ok(nonce) => {
                                             self.requests.push((Vec::from(nonce), src_addr));
                                             self.merkle.push_leaf(nonce);
@@ -264,6 +268,7 @@ impl Server {
         false
     }
 
+    #[cfg(fuzzing)]
     pub fn send_to_self(&mut self, data: &[u8]) {
         self.response_counter.store(0,  Ordering::SeqCst);;
         self.num_bad_requests = 0;
