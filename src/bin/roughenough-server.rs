@@ -41,26 +41,13 @@ extern crate untrusted;
 extern crate yaml_rust;
 
 use std::env;
-use std::io::ErrorKind;
 use std::process;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
-use std::net::SocketAddr;
+use std::sync::atomic::Ordering;
 
-use mio::net::UdpSocket;
-use mio::{Events, Poll, PollOpt, Ready, Token};
-use mio_extras::timer::Timer;
-
-use byteorder::{LittleEndian, WriteBytesExt};
 
 use roughenough::config;
 use roughenough::config::ServerConfig;
-use roughenough::kms;
-use roughenough::key::{LongTermKey, OnlineKey};
-use roughenough::merkle::MerkleTree;
-use roughenough::{Error, RtMessage, Tag};
-use roughenough::{MIN_REQUEST_LENGTH, VERSION};
+use roughenough::VERSION;
 use roughenough::server::Server;
 
 
