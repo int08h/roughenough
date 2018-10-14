@@ -59,11 +59,14 @@
 
 extern crate base64;
 extern crate byteorder;
+extern crate hex;
 extern crate core;
 extern crate time;
 extern crate yaml_rust;
 #[macro_use]
 extern crate hyper;
+extern crate mio;
+extern crate mio_extras;
 
 #[macro_use]
 extern crate log;
@@ -77,6 +80,7 @@ pub mod config;
 pub mod key;
 pub mod kms;
 pub mod merkle;
+pub mod server;
 pub mod sign;
 
 pub use error::Error;
