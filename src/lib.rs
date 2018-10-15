@@ -59,14 +59,16 @@
 
 extern crate base64;
 extern crate byteorder;
-extern crate hex;
 extern crate core;
 extern crate time;
 extern crate yaml_rust;
 #[macro_use]
 extern crate hyper;
+extern crate hex;
 extern crate mio;
 extern crate mio_extras;
+extern crate time;
+extern crate yaml_rust;
 
 #[macro_use]
 extern crate log;

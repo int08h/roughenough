@@ -1,25 +1,23 @@
+use hex;
 use std::io::ErrorKind;
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use std::net::SocketAddr;
-use hex;
 use time;
 
 use byteorder::{LittleEndian, WriteBytesExt};
-
 
 use mio::net::UdpSocket;
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio_extras::timer::Timer;
 
 use config::ServerConfig;
-use kms;
 use key::{LongTermKey, OnlineKey};
+use kms;
 use merkle::MerkleTree;
-use {Error, RtMessage, Tag};
 use MIN_REQUEST_LENGTH;
-
+use {Error, RtMessage, Tag};
 
 macro_rules! check_ctrlc {
     ($keep_running:expr) => {
@@ -27,13 +25,11 @@ macro_rules! check_ctrlc {
             warn!("Ctrl-C caught, exiting...");
             return true;
         }
-    }
+    };
 }
 
 const MESSAGE: Token = Token(0);
 const STATUS: Token = Token(1);
-
-
 
 /// The main server instance.
 /// A Server is initialiezd from a Server Config
@@ -66,7 +62,6 @@ pub struct Server {
 
 impl Server {
     pub fn new(config: Box<ServerConfig>) -> Server {
-
         let online_key = OnlineKey::new();
         let public_key: String;
 
@@ -98,7 +93,6 @@ impl Server {
         let merkle = MerkleTree::new();
         let requests = Vec::with_capacity(config.batch_size() as usize);
 
-
         Server {
             config,
             online_key,
@@ -118,17 +112,14 @@ impl Server {
 
             public_key,
 
-
             #[cfg(fuzzing)]
-            fake_client_socket: UdpSocket::bind(&"127.0.0.1:0".parse().unwrap()).unwrap()
+            fake_client_socket: UdpSocket::bind(&"127.0.0.1:0".parse().unwrap()).unwrap(),
         }
-
     }
 
     pub fn get_keep_running(&self) -> Arc<AtomicBool> {
-        return self.keep_running.clone()
+        return self.keep_running.clone();
     }
-
 
     // extract the client's nonce from its request
     fn nonce_from_request<'a>(&self, buf: &'a [u8], num_bytes: usize) -> Result<&'a [u8], Error> {
@@ -151,7 +142,13 @@ impl Server {
         }
     }
 
-    fn make_response(&self, srep: &RtMessage, cert_bytes: &[u8], path: &[u8], idx: u32) -> RtMessage {
+    fn make_response(
+        &self,
+        srep: &RtMessage,
+        cert_bytes: &[u8],
+        path: &[u8],
+        idx: u32,
+    ) -> RtMessage {
         let mut index = [0; 4];
         (&mut index as &mut [u8])
             .write_u32::<LittleEndian>(idx)
@@ -175,7 +172,9 @@ impl Server {
     /// to process requests. It returns 'true' when the server
     /// has shutdown (due to keep_running being set to 'false')
     pub fn process_events(&mut self) -> bool {
-        self.poll.poll(&mut self.events, self.poll_duration).expect("poll failed");
+        self.poll
+            .poll(&mut self.events, self.poll_duration)
+            .expect("poll failed");
 
         for event in self.events.iter() {
             match event.token() {
@@ -184,7 +183,6 @@ impl Server {
 
                     'process_batch: loop {
                         check_ctrlc!(self.keep_running);
-
 
                         let resp_start = self.response_counter.load(Ordering::SeqCst);
 
@@ -195,17 +193,17 @@ impl Server {
                                         Ok(nonce) => {
                                             self.requests.push((Vec::from(nonce), src_addr));
                                             self.merkle.push_leaf(nonce);
-                                        },
+                                        }
                                         Err(e) => {
-                                           self.num_bad_requests += 1;
+                                            self.num_bad_requests += 1;
 
-                                             info!(
+                                            info!(
                                                 "Invalid request: '{:?}' ({} bytes) from {} (#{} in batch, resp #{})",
                                                 e, num_bytes, src_addr, i, resp_start + i as usize
                                             );
                                         }
                                     }
-                                },
+                                }
                                 Err(e) => match e.kind() {
                                     ErrorKind::WouldBlock => {
                                         done = true;
@@ -233,13 +231,16 @@ impl Server {
                         for (i, &(ref nonce, ref src_addr)) in self.requests.iter().enumerate() {
                             let paths = self.merkle.get_paths(i);
 
-                            let resp = self.make_response(&srep, &self.cert_bytes, &paths, i as u32);
+                            let resp =
+                                self.make_response(&srep, &self.cert_bytes, &paths, i as u32);
                             let resp_bytes = resp.encode().unwrap();
 
-                            let bytes_sent = self.socket
+                            let bytes_sent = self
+                                .socket
                                 .send_to(&resp_bytes, &src_addr)
                                 .expect("send_to failed");
-                            let num_responses = self.response_counter.fetch_add(1, Ordering::SeqCst);
+                            let num_responses =
+                                self.response_counter.fetch_add(1, Ordering::SeqCst);
 
                             info!(
                                 "Responded {} bytes to {} for '{}..' (#{} in batch, resp #{})",
@@ -278,21 +279,23 @@ impl Server {
 
     #[cfg(fuzzing)]
     pub fn send_to_self(&mut self, data: &[u8]) {
-        self.response_counter.store(0,  Ordering::SeqCst);;
+        self.response_counter.store(0, Ordering::SeqCst);;
         self.num_bad_requests = 0;
-        let res = self.fake_client_socket.send_to(data, &self.socket.local_addr().unwrap());
+        let res = self
+            .fake_client_socket
+            .send_to(data, &self.socket.local_addr().unwrap());
         info!("Sent to self: {:?}", res);
     }
 
     pub fn get_public_key(&self) -> &str {
-        return &self.public_key
+        return &self.public_key;
     }
 
     pub fn get_online_key(&self) -> &OnlineKey {
-        return &self.online_key
+        return &self.online_key;
     }
 
     pub fn get_config(&self) -> &Box<ServerConfig> {
-        return &self.config
+        return &self.config;
     }
 }

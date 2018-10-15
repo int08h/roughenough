@@ -1,10 +1,9 @@
-use std::time::Duration;
 use config::ServerConfig;
 use config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
 use key::KeyProtection;
+use std::time::Duration;
 
 use hex;
-
 
 /// A purely in-memory Roughenough config
 /// This is useful for fuzzing a server without the need
@@ -15,7 +14,7 @@ pub struct MemoryConfig {
     pub seed: Vec<u8>,
     pub batch_size: u8,
     pub status_interval: Duration,
-    pub key_protection: KeyProtection
+    pub key_protection: KeyProtection,
 }
 
 impl MemoryConfig {
@@ -23,10 +22,11 @@ impl MemoryConfig {
         MemoryConfig {
             port,
             interface: "127.0.0.1".to_string(),
-            seed: hex::decode("a32049da0ffde0ded92ce10a0230d35fe615ec8461c14986baa63fe3b3bac3db").unwrap(),
+            seed: hex::decode("a32049da0ffde0ded92ce10a0230d35fe615ec8461c14986baa63fe3b3bac3db")
+                .unwrap(),
             batch_size: DEFAULT_BATCH_SIZE,
             status_interval: DEFAULT_STATUS_INTERVAL,
-            key_protection: KeyProtection::Plaintext
+            key_protection: KeyProtection::Plaintext,
         }
     }
 }

@@ -52,9 +52,9 @@
 mod envelope;
 
 use base64;
+use ring;
 use std;
 use std::error::Error;
-use ring;
 
 use config::ServerConfig;
 use error;

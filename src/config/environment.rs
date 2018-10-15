@@ -19,8 +19,8 @@ use std::time::Duration;
 
 use config::ServerConfig;
 use config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
-use Error;
 use key::KeyProtection;
+use Error;
 
 ///
 /// Obtain a Roughenough server configuration ([ServerConfig](trait.ServerConfig.html))

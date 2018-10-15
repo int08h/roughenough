@@ -73,7 +73,6 @@ fn vec_zero_filled(len: usize) -> Vec<u8> {
 pub struct EnvelopeEncryption;
 
 impl EnvelopeEncryption {
-
     /// Decrypt a seed previously encrypted with `encrypt_seed()`
     pub fn decrypt_seed(kms: &KmsProvider, ciphertext_blob: &[u8]) -> Result<Vec<u8>, KmsError> {
         if ciphertext_blob.len() < MIN_PAYLOAD_SIZE {
@@ -107,7 +106,13 @@ impl EnvelopeEncryption {
 
         // Decrypt the seed value using the DEK
         let dek_open_key = OpeningKey::new(&AES_256_GCM, &dek)?;
-        match open_in_place(&dek_open_key, &nonce, AD, IN_PREFIX_LEN, &mut encrypted_seed) {
+        match open_in_place(
+            &dek_open_key,
+            &nonce,
+            AD,
+            IN_PREFIX_LEN,
+            &mut encrypted_seed,
+        ) {
             Ok(plaintext_seed) => Ok(plaintext_seed.to_vec()),
             Err(_) => Err(KmsError::OperationFailed(
                 "failed to decrypt plaintext seed".to_string(),

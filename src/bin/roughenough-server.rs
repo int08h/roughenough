@@ -44,13 +44,10 @@ use std::env;
 use std::process;
 use std::sync::atomic::Ordering;
 
-
 use roughenough::config;
 use roughenough::config::ServerConfig;
-use roughenough::VERSION;
 use roughenough::server::Server;
-
-
+use roughenough::VERSION;
 
 macro_rules! check_ctrlc {
     ($keep_running:expr) => {
@@ -58,22 +55,27 @@ macro_rules! check_ctrlc {
             warn!("Ctrl-C caught, exiting...");
             return;
         }
-    }
+    };
 }
-
-
-
-
 
 fn polling_loop(config: Box<ServerConfig>) {
     let mut server = Server::new(config);
 
     info!("Long-term public key    : {}", server.get_public_key());
     info!("Online public key       : {}", server.get_online_key());
-    info!("Max response batch size : {}", server.get_config().batch_size());
-    info!("Status updates every    : {} seconds", server.get_config().status_interval().as_secs());
-    info!("Server listening on     : {}:{}", server.get_config().interface(), server.get_config().port());
-
+    info!(
+        "Max response batch size : {}",
+        server.get_config().batch_size()
+    );
+    info!(
+        "Status updates every    : {} seconds",
+        server.get_config().status_interval().as_secs()
+    );
+    info!(
+        "Server listening on     : {}:{}",
+        server.get_config().interface(),
+        server.get_config().port()
+    );
 
     let kr = server.get_keep_running();
     let kr_new = kr.clone();
@@ -81,13 +83,11 @@ fn polling_loop(config: Box<ServerConfig>) {
     ctrlc::set_handler(move || kr.store(false, Ordering::Release))
         .expect("failed setting Ctrl-C handler");
 
-
     loop {
         check_ctrlc!(kr_new);
         if server.process_events() {
             return;
         }
- 
     }
 }
 
@@ -106,7 +106,11 @@ pub fn main() {
 
     simple_logger::init_with_level(Level::Info).unwrap();
 
-    info!("Roughenough server v{}{} starting", VERSION, kms_support_str());
+    info!(
+        "Roughenough server v{}{} starting",
+        VERSION,
+        kms_support_str()
+    );
 
     let mut args = env::args();
     if args.len() != 2 {

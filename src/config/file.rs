@@ -21,8 +21,8 @@ use yaml_rust::YamlLoader;
 
 use config::ServerConfig;
 use config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
-use Error;
 use key::KeyProtection;
+use Error;
 
 ///
 /// Read a Roughenough server configuration ([ServerConfig](trait.ServerConfig.html))
@@ -86,7 +86,9 @@ impl FileConfig {
                     config.status_interval = Duration::from_secs(val as u64)
                 }
                 "key_protection" => {
-                    let val = value.as_str().unwrap()
+                    let val = value
+                        .as_str()
+                        .unwrap()
                         .parse()
                         .expect(format!("invalid key_protection value: {:?}", value).as_ref());
                     config.key_protection = val
@@ -124,7 +126,6 @@ impl ServerConfig for FileConfig {
     fn status_interval(&self) -> Duration {
         self.status_interval
     }
-
 
     fn key_protection(&self) -> &KeyProtection {
         &self.key_protection
