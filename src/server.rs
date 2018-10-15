@@ -1,6 +1,4 @@
-use std::env;
 use std::io::ErrorKind;
-use std::process;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,13 +13,12 @@ use mio::net::UdpSocket;
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio_extras::timer::Timer;
 
-use config;
 use config::ServerConfig;
 use kms;
 use key::{LongTermKey, OnlineKey};
 use merkle::MerkleTree;
 use {Error, RtMessage, Tag};
-use {MIN_REQUEST_LENGTH, VERSION};
+use MIN_REQUEST_LENGTH;
 
 
 macro_rules! check_ctrlc {
@@ -51,7 +48,6 @@ pub struct Server {
     num_bad_requests: u64,
 
     socket: UdpSocket,
-    fake_client_socket: UdpSocket,
     keep_running: Arc<AtomicBool>,
     poll_duration: Option<Duration>,
     timer: Timer<()>,
@@ -62,12 +58,16 @@ pub struct Server {
     buf: [u8; 65_536],
 
     public_key: String,
+
+    // Used to send requests to outselves in fuzing mode
+    #[cfg(fuzzing)]
+    fake_client_socket: UdpSocket,
 }
 
 impl Server {
     pub fn new(config: Box<ServerConfig>) -> Server {
 
-        let mut online_key = OnlineKey::new();
+        let online_key = OnlineKey::new();
         let public_key: String;
 
         let cert_bytes = {
@@ -83,7 +83,6 @@ impl Server {
 
         let sock_addr = config.socket_addr().expect("");
         let socket = UdpSocket::bind(&sock_addr).expect("failed to bind to socket");
-        let fake_client_socket = UdpSocket::bind(&"127.0.0.1:0".parse().unwrap()).unwrap();
 
         let poll_duration = Some(Duration::from_millis(100));
 
@@ -96,8 +95,8 @@ impl Server {
         //poll.register(&timer, STATUS, Ready::readable(), PollOpt::edge())
         //    .unwrap();
 
-        let mut merkle = MerkleTree::new();
-        let mut requests = Vec::with_capacity(config.batch_size() as usize);
+        let merkle = MerkleTree::new();
+        let requests = Vec::with_capacity(config.batch_size() as usize);
 
 
         Server {
@@ -108,7 +107,6 @@ impl Server {
             response_counter,
             num_bad_requests: 0,
             socket,
-            fake_client_socket,
             keep_running,
             poll_duration,
             timer,
@@ -118,7 +116,11 @@ impl Server {
             requests,
             buf: [0u8; 65_536],
 
-            public_key
+            public_key,
+
+
+            #[cfg(fuzzing)]
+            fake_client_socket: UdpSocket::bind(&"127.0.0.1:0".parse().unwrap()).unwrap()
         }
 
     }
