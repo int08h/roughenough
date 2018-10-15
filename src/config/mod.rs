@@ -112,6 +112,21 @@ pub fn make_config(arg: &str) -> Result<Box<ServerConfig>, Error> {
     }
 }
 
+/// Creates a config suitable for fuzzing a server instance
+/// This is intended to create a minimal useable config
+/// that allows a server to respond to requests.
+#[cfg(fuzzing)]
+pub fn make_fuzzing_config(port: u16) -> Box<ServerConfig> {
+    return Box(EnvironmentConfig {
+        port, 
+        interface: "127.0.0.1".to_string(),
+        seed: hex::decode("a32049da0ffde0ded92ce10a0230d35fe615ec8461c14986baa63fe3b3bac3db").unwrap(),
+        batch_size: DEFAULT_BATCH_SIZE,
+        status_interval: DEFAULT_STATUS_INTERVAL,
+        key_protection: KeyProtection::Plaintext
+    })
+}
+
 ///
 /// Validate configuration settings. Returns `true` if the config is valid, `false` otherwise.
 ///
