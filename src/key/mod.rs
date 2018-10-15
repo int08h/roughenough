@@ -60,8 +60,8 @@ impl FromStr for KeyProtection {
     fn from_str(s: &str) -> Result<KeyProtection, ()> {
         match s {
             "plaintext" => Ok(KeyProtection::Plaintext),
-            s if s.starts_with("arn") => Ok(KeyProtection::AwsKmsEnvelope(s.to_string())),
-            s if s.starts_with("gcp") => Ok(KeyProtection::GoogleKmsEnvelope(s.to_string())),
+            s if s.starts_with("arn:") => Ok(KeyProtection::AwsKmsEnvelope(s.to_string())),
+            s if s.starts_with("projects/") => Ok(KeyProtection::GoogleKmsEnvelope(s.to_string())),
             _ => Err(()),
         }
     }

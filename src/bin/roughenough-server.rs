@@ -276,7 +276,13 @@ pub fn main() {
     let public_key: String;
 
     let cert_bytes = {
-        let seed = kms::load_seed(&config).unwrap();
+        let seed = match kms::load_seed(&config) {
+            Ok(seed) => seed,
+            Err(e) => {
+                error!("Failed to load seed: {:#?}", e);
+                process::exit(1);
+            }
+        };
         let mut long_term_key = LongTermKey::new(&seed);
         public_key = hex::encode(long_term_key.public_key());
 

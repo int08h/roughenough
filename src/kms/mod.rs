@@ -95,8 +95,8 @@ const NONCE_SIZE_BYTES: usize = 12;
 // Size of the AEAD authentication tag in bytes.
 const TAG_SIZE_BYTES: usize = 16;
 
-/// Size of the 256-bit Data Encryption Key (DEK) in bytes.
-pub const DEK_SIZE_BYTES: usize = 32;
+// Size of the 256-bit Data Encryption Key (DEK) in bytes.
+const DEK_SIZE_BYTES: usize = 32;
 
 /// An unencrypted (plaintext) 256-bit Data Encryption Key (DEK).
 pub type PlaintextDEK = Vec<u8>;
@@ -118,12 +118,6 @@ pub trait KmsProvider {
     /// Make a blocking request to decrypt (unwrap) a previously encrypted data encryption key.
     fn decrypt_dek(&self, encrypted_dek: &EncryptedDEK) -> Result<PlaintextDEK, KmsError>;
 }
-
-#[cfg(feature = "gcpkms")]
-mod gcpkms;
-
-#[cfg(feature = "gcpkms")]
-pub use kms::gcpkms::inner::GcpKms;
 
 #[cfg(feature = "awskms")]
 mod awskms;
@@ -161,18 +155,54 @@ pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
     }
 }
 
+#[cfg(feature = "gcpkms")]
+mod gcpkms;
+
+#[cfg(feature = "gcpkms")]
+pub use kms::gcpkms::inner::GcpKms;
+
+/// Load the seed value for the long-term key.
+///
+/// Loading behavior depends on the value of `config.key_protection()`:
+///
+///  * If `config.key_protection() == Plaintext` then the value returned from `config.seed()`
+///    is used as-is and assumed to be a 32-byte hexadecimal value.
+///
+///  * Otherwise `config.seed()` is assumed to be an encrypted opaque blob generated from
+///    a prior `EnvelopeEncryption::encrypt_seed` call. The value of `config.key_protection()`
+///    is parsed as a KMS key id and `EnvelopeEncryption::decrypt_seed` is called to obtain
+///    the plaintext seed value.
+///
+#[cfg(feature = "gcpkms")]
+pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
+    use kms::envelope::EnvelopeEncryption;
+
+    match config.key_protection() {
+        KeyProtection::Plaintext => Ok(config.seed()),
+        KeyProtection::GoogleKmsEnvelope(resource_id) => {
+            info!("Unwrapping seed via Google KMS key '{}'", resource_id);
+            let kms = GcpKms::from_resource_id(resource_id)?;
+            let seed = EnvelopeEncryption::decrypt_seed(&kms, &config.seed())?;
+            Ok(seed)
+        }
+        _ => Err(error::Error::InvalidConfiguration(
+            "AWS KMS not supported".to_string(),
+        )),
+    }
+}
+
 ///
 /// Load the seed value for the long-term key.
 ///
 /// The KMS feature was disabled in this build of Roughenough. The only supported `key_protection`
 /// value is `plaintext`. Any other value is an error.
 ///
-#[cfg(not(feature = "awskms"))]
+#[cfg(all(not(feature = "awskms"), not(feature = "gcpkms")))]
 pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
     match config.key_protection() {
         KeyProtection::Plaintext => Ok(config.seed()),
         v => Err(error::Error::InvalidConfiguration(format!(
-            "key_protection '{}' implies KMS but server was not compiled with KMS support", v
+            "key_protection '{}' requires KMS, but server was not compiled with KMS support", v
         ))),
     }
 }

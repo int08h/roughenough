@@ -87,7 +87,32 @@ pub mod inner {
         }
 
         fn decrypt_dek(&self, encrypted_dek: &EncryptedDEK) -> Result<PlaintextDEK, KmsError> {
-            Ok(Vec::new())
+            let client1 = hyper::Client::with_connector(HttpsConnector::new(TlsClient::new()));
+            let access = oauth2::ServiceAccountAccess::new(self.service_account.clone(), client1);
+
+            let client2 = hyper::Client::with_connector(HttpsConnector::new(TlsClient::new()));
+            let hub = CloudKMS::new(client2, access);
+
+            let mut request = DecryptRequest::default();
+            request.ciphertext = Some(base64::encode(encrypted_dek));
+
+            let result = hub
+                .projects()
+                .locations_key_rings_crypto_keys_decrypt(request, &self.key_resource_id)
+                .doit();
+
+            match result {
+                Ok((http_resp, enc_resp)) => {
+                    if http_resp.status == StatusCode::Ok {
+                        let plaintext = enc_resp.plaintext.unwrap();
+                        let ct = base64::decode(&plaintext)?;
+                        Ok(ct)
+                    } else {
+                        Err(KmsError::OperationFailed(format!("{:?}", http_resp)))
+                    }
+                }
+                Err(e) => Err(KmsError::OperationFailed(e.description().to_string()))
+            }
         }
     }
 }
