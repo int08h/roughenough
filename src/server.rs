@@ -87,8 +87,8 @@ impl Server {
         let poll = Poll::new().unwrap();
         poll.register(&socket, MESSAGE, Ready::readable(), PollOpt::edge())
             .unwrap();
-        //poll.register(&timer, STATUS, Ready::readable(), PollOpt::edge())
-        //    .unwrap();
+        poll.register(&timer, STATUS, Ready::readable(), PollOpt::edge())
+            .unwrap();
 
         let merkle = MerkleTree::new();
         let requests = Vec::with_capacity(config.batch_size() as usize);
