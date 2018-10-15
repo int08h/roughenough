@@ -16,7 +16,6 @@ extern crate hex;
 
 use std::fs::File;
 use std::io::Read;
-use std::net::SocketAddr;
 use std::time::Duration;
 use yaml_rust::YamlLoader;
 
@@ -126,13 +125,6 @@ impl ServerConfig for FileConfig {
         self.status_interval
     }
 
-    fn socket_addr(&self) -> Result<SocketAddr, Error> {
-        let addr = format!("{}:{}", self.interface, self.port);
-        match addr.parse() {
-            Ok(v) => Ok(v),
-            Err(_) => Err(Error::InvalidConfiguration(addr)),
-        }
-    }
 
     fn key_protection(&self) -> &KeyProtection {
         &self.key_protection
