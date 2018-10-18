@@ -17,23 +17,28 @@ extern crate log;
 
 #[cfg(feature = "gcpkms")]
 pub mod inner {
+
     extern crate base64;
     extern crate hyper;
     extern crate hyper_rustls;
     extern crate yup_oauth2 as oauth2;
     extern crate google_cloudkms1 as cloudkms1;
 
+    use std::fmt;
+    use std::env;
+    use std::fmt::Formatter;
+    use std::str::FromStr;
     use std::result::Result;
     use std::default::Default;
     use std::error::Error;
-    use std::fmt;
-    use std::fmt::Formatter;
-    use std::str::FromStr;
+    use std::path::Path;
+    use std::time::Duration;
 
     use self::oauth2::{service_account_key_from_file, ServiceAccountAccess, ServiceAccountKey};
     use self::cloudkms1::CloudKMS;
     use self::cloudkms1::{Result as CloudKmsResult, Error as CloudKmsError, EncryptRequest, DecryptRequest};
     use self::hyper::net::HttpsConnector;
+    use self::hyper::header::Headers;
     use self::hyper::status::StatusCode;
     use self::hyper_rustls::TlsClient;
 
@@ -46,27 +51,36 @@ pub mod inner {
 
     impl GcpKms {
         pub fn from_resource_id(resource_id: &str) -> Result<Self, KmsError> {
-            let client_secret = oauth2::service_account_key_from_file(&"creds.json".to_string())
-                .unwrap();
+            let svc_acct = load_gcp_credential()?;
 
             Ok(GcpKms {
                 key_resource_id: resource_id.to_string(),
-                service_account: client_secret
+                service_account: svc_acct
             })
+        }
+
+        fn new_hub(&self) -> CloudKMS<hyper::Client, ServiceAccountAccess<hyper::Client>> {
+            let client1 = hyper::Client::with_connector(HttpsConnector::new(TlsClient::new()));
+            let access = oauth2::ServiceAccountAccess::new(self.service_account.clone(), client1);
+
+            let client2 = hyper::Client::with_connector(HttpsConnector::new(TlsClient::new()));
+            CloudKMS::new(client2, access)
+        }
+
+        fn pretty_http_error(&self, resp: &hyper::client::Response) -> KmsError {
+            let code = resp.status;
+            let url = &resp.url;
+
+            KmsError::OperationFailed(format!("Response {} from {}", code, url))
         }
     }
 
     impl KmsProvider for GcpKms {
         fn encrypt_dek(&self, plaintext_dek: &PlaintextDEK) -> Result<EncryptedDEK, KmsError> {
-            let client1 = hyper::Client::with_connector(HttpsConnector::new(TlsClient::new()));
-            let access = oauth2::ServiceAccountAccess::new(self.service_account.clone(), client1);
-
-            let client2 = hyper::Client::with_connector(HttpsConnector::new(TlsClient::new()));
-            let hub = CloudKMS::new(client2, access);
-
             let mut request = EncryptRequest::default();
             request.plaintext = Some(base64::encode(plaintext_dek));
 
+            let hub = self.new_hub();
             let result = hub
                 .projects()
                 .locations_key_rings_crypto_keys_encrypt(request, &self.key_resource_id)
@@ -79,23 +93,18 @@ pub mod inner {
                         let ct = base64::decode(&ciphertext)?;
                         Ok(ct)
                     } else {
-                        Err(KmsError::OperationFailed(format!("{:?}", http_resp)))
+                        Err(self.pretty_http_error(&http_resp))
                     }
                 }
-                Err(e) => Err(KmsError::OperationFailed(e.description().to_string()))
+                Err(e) => Err(KmsError::OperationFailed(format!("encrypt_dek() {:?}", e)))
             }
         }
 
         fn decrypt_dek(&self, encrypted_dek: &EncryptedDEK) -> Result<PlaintextDEK, KmsError> {
-            let client1 = hyper::Client::with_connector(HttpsConnector::new(TlsClient::new()));
-            let access = oauth2::ServiceAccountAccess::new(self.service_account.clone(), client1);
-
-            let client2 = hyper::Client::with_connector(HttpsConnector::new(TlsClient::new()));
-            let hub = CloudKMS::new(client2, access);
-
             let mut request = DecryptRequest::default();
             request.ciphertext = Some(base64::encode(encrypted_dek));
 
+            let hub = self.new_hub();
             let result = hub
                 .projects()
                 .locations_key_rings_crypto_keys_decrypt(request, &self.key_resource_id)
@@ -108,12 +117,43 @@ pub mod inner {
                         let ct = base64::decode(&plaintext)?;
                         Ok(ct)
                     } else {
-                        Err(KmsError::OperationFailed(format!("{:?}", http_resp)))
+                        Err(self.pretty_http_error(&http_resp))
                     }
                 }
-                Err(e) => Err(KmsError::OperationFailed(e.description().to_string()))
+                Err(e) => Err(KmsError::OperationFailed(format!("decrypt_dek() {:?}", e)))
             }
         }
+
+    }
+
+    /// Minimal implementation of Application Default Credentials.
+    /// https://cloud.google.com/docs/authentication/production
+    ///
+    ///   1. Look for GOOGLE_APPLICATION_CREDENTIALS and load service account
+    ///      credentials if found.
+    ///   2. If not, error
+
+    fn load_gcp_credential() -> Result<ServiceAccountKey, KmsError> {
+        if let Ok(gac) = env::var("GOOGLE_APPLICATION_CREDENTIALS") {
+            if Path::new(&gac).exists() {
+                match oauth2::service_account_key_from_file(&gac) {
+                    Ok(svc_acct_key) => return Ok(svc_acct_key),
+                    Err(e) => {
+                        return Err(KmsError::InvalidConfiguration(
+                            format!("Can't load service account credential '{}': {:?}", gac, e)))
+                    }
+                }
+            } else {
+                return Err(KmsError::InvalidConfiguration(
+                    format!("GOOGLE_APPLICATION_CREDENTIALS='{}' does not exist", gac)))
+            }
+
+        }
+
+        // TODO: call to metadata service to get default credential from
+        // http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token
+
+        panic!("Failed to load service account credential. Is GOOGLE_APPLICATION_CREDENTIALS set?");
     }
 }
 

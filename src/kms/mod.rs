@@ -73,7 +73,7 @@ pub enum KmsError {
 
 impl From<std::io::Error> for KmsError {
     fn from(error: std::io::Error) -> Self {
-        KmsError::OperationFailed(error.description().to_string())
+        KmsError::OperationFailed(format!("{:?}", error))
     }
 }
 
