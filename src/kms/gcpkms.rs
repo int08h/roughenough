@@ -28,7 +28,6 @@ pub mod inner {
     use std::fmt;
     use std::env;
     use std::fmt::Formatter;
-    use std::result::Result;
     use std::str::FromStr;
     use std::result::Result;
     use std::default::Default;
