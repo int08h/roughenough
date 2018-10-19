@@ -15,13 +15,12 @@
 extern crate hex;
 
 use std::env;
-use std::net::SocketAddr;
 use std::time::Duration;
 
 use config::ServerConfig;
 use config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
-use Error;
 use key::KeyProtection;
+use Error;
 
 ///
 /// Obtain a Roughenough server configuration ([ServerConfig](trait.ServerConfig.html))
@@ -121,14 +120,6 @@ impl ServerConfig for EnvironmentConfig {
 
     fn status_interval(&self) -> Duration {
         self.status_interval
-    }
-
-    fn socket_addr(&self) -> Result<SocketAddr, Error> {
-        let addr = format!("{}:{}", self.interface, self.port);
-        match addr.parse() {
-            Ok(v) => Ok(v),
-            Err(_) => Err(Error::InvalidConfiguration(addr)),
-        }
     }
 
     fn key_protection(&self) -> &KeyProtection {

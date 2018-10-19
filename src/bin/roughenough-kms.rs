@@ -30,8 +30,8 @@ use roughenough::VERSION;
 
 #[cfg(feature = "awskms")]
 fn aws_kms(kms_key: &str, plaintext_seed: &[u8]) {
-    use roughenough::kms::EnvelopeEncryption;
     use roughenough::kms::AwsKms;
+    use roughenough::kms::EnvelopeEncryption;
 
     let client = AwsKms::from_arn(kms_key).unwrap();
 

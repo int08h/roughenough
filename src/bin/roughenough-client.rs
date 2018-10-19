@@ -28,6 +28,8 @@ use chrono::offset::Utc;
 use chrono::TimeZone;
 
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::Write;
 use std::iter::Iterator;
 use std::net::{ToSocketAddrs, UdpSocket};
 
@@ -228,6 +230,12 @@ fn main() {
       .long("stress")
       .help("Stress-tests the server by sending the same request as fast as possible. Please only use this on your own server")
     )
+    .arg(Arg::with_name("output")
+      .short("o")
+      .long("output")
+      .takes_value(true)
+      .help("Writes all requsts to the specified file, in addition to sending them to the server. Useful for generating fuzer inputs")
+    )
     .get_matches();
 
     let host = matches.value_of("host").unwrap();
@@ -238,6 +246,7 @@ fn main() {
     let pub_key = matches
         .value_of("public-key")
         .map(|pkey| hex::decode(pkey).expect("Error parsing public key!"));
+    let out = matches.value_of("output");
 
     println!("Requesting time from: {:?}:{:?}", host, port);
 
@@ -264,11 +273,14 @@ fn main() {
     }
 
     let mut requests = Vec::with_capacity(num_requests);
+    let mut file = out.map(|o| File::create(o).expect("Failed to create file!"));
 
     for _ in 0..num_requests {
         let nonce = create_nonce();
         let mut socket = UdpSocket::bind("0.0.0.0:0").expect("Couldn't open UDP socket");
         let request = make_request(&nonce);
+        file.as_mut()
+            .map(|f| f.write_all(&request).expect("Failed to write to file!"));
 
         requests.push((nonce, request, socket));
     }

@@ -19,14 +19,16 @@ extern crate log;
 pub mod inner {
 
     extern crate base64;
+    extern crate google_cloudkms1 as cloudkms1;
     extern crate hyper;
     extern crate hyper_rustls;
     extern crate yup_oauth2 as oauth2;
-    extern crate google_cloudkms1 as cloudkms1;
+
 
     use std::fmt;
     use std::env;
     use std::fmt::Formatter;
+    use std::result::Result;
     use std::str::FromStr;
     use std::result::Result;
     use std::default::Default;
@@ -34,13 +36,15 @@ pub mod inner {
     use std::path::Path;
     use std::time::Duration;
 
-    use self::oauth2::{service_account_key_from_file, ServiceAccountAccess, ServiceAccountKey};
     use self::cloudkms1::CloudKMS;
-    use self::cloudkms1::{Result as CloudKmsResult, Error as CloudKmsError, EncryptRequest, DecryptRequest};
+    use self::cloudkms1::{
+        DecryptRequest, EncryptRequest, Error as CloudKmsError, Result as CloudKmsResult,
+    };
     use self::hyper::net::HttpsConnector;
     use self::hyper::header::Headers;
     use self::hyper::status::StatusCode;
     use self::hyper_rustls::TlsClient;
+    use self::oauth2::{service_account_key_from_file, ServiceAccountAccess, ServiceAccountKey};
 
     use kms::{EncryptedDEK, KmsError, KmsProvider, PlaintextDEK};
 
@@ -156,5 +160,3 @@ pub mod inner {
         panic!("Failed to load service account credential. Is GOOGLE_APPLICATION_CREDENTIALS set?");
     }
 }
-
-

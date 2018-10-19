@@ -66,4 +66,3 @@ impl FromStr for KeyProtection {
         }
     }
 }
-
