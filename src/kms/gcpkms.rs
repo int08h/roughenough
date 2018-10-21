@@ -82,6 +82,7 @@ pub mod inner {
         fn encrypt_dek(&self, plaintext_dek: &PlaintextDEK) -> Result<EncryptedDEK, KmsError> {
             let mut request = EncryptRequest::default();
             request.plaintext = Some(base64::encode(plaintext_dek));
+            request.additional_authenticated_data = Some(base64::encode(AD));
 
             let hub = self.new_hub();
             let result = hub
@@ -99,13 +100,14 @@ pub mod inner {
                         Err(self.pretty_http_error(&http_resp))
                     }
                 }
-                Err(e) => Err(KmsError::OperationFailed(format!("encrypt_dek() {:?}", e)))
+                Err(e) => Err(KmsError::OperationFailed(format!("encrypt_dek() {:?}", e))),
             }
         }
 
         fn decrypt_dek(&self, encrypted_dek: &EncryptedDEK) -> Result<PlaintextDEK, KmsError> {
             let mut request = DecryptRequest::default();
             request.ciphertext = Some(base64::encode(encrypted_dek));
+            request.additional_authenticated_data = Some(base64::encode(AD));
 
             let hub = self.new_hub();
             let result = hub

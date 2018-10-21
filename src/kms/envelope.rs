@@ -15,15 +15,14 @@
 extern crate hex;
 
 use std::io::{Cursor, Read, Write};
+use std::str::FromStr;
 
 use ring::aead::{open_in_place, seal_in_place, OpeningKey, SealingKey, AES_256_GCM};
-use ring::rand;
-use ring::rand::SecureRandom;
+use ring::rand::{SecureRandom, SystemRandom};
 
 use super::super::MIN_SEED_LENGTH;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use kms::{KmsError, KmsProvider, DEK_SIZE_BYTES, NONCE_SIZE_BYTES, TAG_SIZE_BYTES};
-use std::string::ToString;
+use kms::{KmsError, KmsProvider, AD, DEK_SIZE_BYTES, NONCE_SIZE_BYTES, TAG_SIZE_BYTES};
 
 const DEK_LEN_FIELD: usize = 2;
 const NONCE_LEN_FIELD: usize = 2;
@@ -43,19 +42,11 @@ const MIN_PAYLOAD_SIZE: usize = DEK_LEN_FIELD
 // No input prefix to skip, consume entire buffer
 const IN_PREFIX_LEN: usize = 0;
 
-// Trivial domain separation to guard against KMS key reuse
-static AD: &[u8; 11] = b"roughenough";
-
 // Convenience function to create zero-filled Vec of given size
 fn vec_zero_filled(len: usize) -> Vec<u8> {
-    let mut v = Vec::with_capacity(len);
-    for _ in 0..len {
-        v.push(0);
-    }
-    return v;
+    (0..len).into_iter().map(|_| 0).collect()
 }
 
-///
 /// Envelope encryption of the long-term key seed value.
 ///
 /// The seed is encrypted using AES-GCM-256 with:
@@ -86,15 +77,22 @@ impl EnvelopeEncryption {
         let mut tmp = Cursor::new(ciphertext_blob);
 
         // Read the lengths of the wrapped DEK and of the nonce
-        let dek_len = tmp.read_u16::<LittleEndian>()?;
-        let nonce_len = tmp.read_u16::<LittleEndian>()?;
+        let dek_len = tmp.read_u16::<LittleEndian>()? as usize;
+        let nonce_len = tmp.read_u16::<LittleEndian>()? as usize;
+
+        if dek_len != DEK_SIZE_BYTES || nonce_len != NONCE_SIZE_BYTES {
+            return Err(KmsError::InvalidData(format!(
+                "invalid DEK ({}) or nonce ({}) length",
+                dek_len, nonce_len
+            )));
+        }
 
         // Consume the wrapped DEK
-        let mut encrypted_dek = vec_zero_filled(dek_len as usize);
+        let mut encrypted_dek = vec_zero_filled(dek_len);
         tmp.read_exact(&mut encrypted_dek)?;
 
         // Consume the nonce
-        let mut nonce = vec_zero_filled(nonce_len as usize);
+        let mut nonce = vec_zero_filled(nonce_len);
         tmp.read_exact(&mut nonce)?;
 
         // Consume the encrypted seed + tag
@@ -109,7 +107,7 @@ impl EnvelopeEncryption {
         match open_in_place(
             &dek_open_key,
             &nonce,
-            AD,
+            AD.as_bytes(),
             IN_PREFIX_LEN,
             &mut encrypted_seed,
         ) {
@@ -148,7 +146,7 @@ impl EnvelopeEncryption {
         let encrypted_seed = match seal_in_place(
             &dek_seal_key,
             &nonce,
-            AD,
+            AD.as_bytes(),
             &mut plaintext_buf,
             TAG_SIZE_BYTES,
         ) {

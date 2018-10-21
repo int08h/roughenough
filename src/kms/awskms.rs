@@ -20,6 +20,7 @@ pub mod inner {
     extern crate rusoto_core;
     extern crate rusoto_kms;
 
+    use std::collections::HashMap;
     use std::default::Default;
     use std::error::Error;
     use std::fmt;
@@ -28,16 +29,18 @@ pub mod inner {
 
     use self::rusoto_core::Region;
     use self::rusoto_kms::{DecryptRequest, EncryptRequest, Kms, KmsClient};
-    use kms::{EncryptedDEK, KmsError, KmsProvider, PlaintextDEK, DEK_SIZE_BYTES};
+    use kms::{EncryptedDEK, KmsError, KmsProvider, PlaintextDEK, AD, DEK_SIZE_BYTES};
 
-    /// Amazon Key Management Service
+    /// Amazon Web Services Key Management Service
+    /// https://aws.amazon.com/kms/
     pub struct AwsKms {
         kms_client: KmsClient,
         key_id: String,
     }
 
     impl AwsKms {
-        /// Create a new instance from the ARN of a AWS KMS key.
+        /// Create a new instance from the full ARN of a AWS KMS key. The ARN is expected
+        /// to be of the form `arn:aws:kms:some-aws-region:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab`
         pub fn from_arn(arn: &str) -> Result<Self, KmsError> {
             let parts: Vec<&str> = arn.split(':').collect();
 
@@ -73,6 +76,10 @@ pub mod inner {
             let mut encrypt_req: EncryptRequest = Default::default();
             encrypt_req.key_id = self.key_id.clone();
             encrypt_req.plaintext = plaintext_dek.clone();
+
+            let mut enc_context = HashMap::new();
+            enc_context.insert("AD".to_string(), AD.to_string());
+            encrypt_req.encryption_context = Some(enc_context);
 
             match self.kms_client.encrypt(encrypt_req).sync() {
                 Ok(result) => {

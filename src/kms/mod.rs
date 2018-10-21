@@ -98,6 +98,9 @@ const TAG_SIZE_BYTES: usize = 16;
 // Size of the 256-bit Data Encryption Key (DEK) in bytes.
 const DEK_SIZE_BYTES: usize = 32;
 
+// Trivial domain separation to guard against KMS key reuse
+const AD: &str = "roughenough";
+
 /// An unencrypted (plaintext) 256-bit Data Encryption Key (DEK).
 pub type PlaintextDEK = Vec<u8>;
 
