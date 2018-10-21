@@ -126,7 +126,7 @@ impl EnvelopeEncryption {
     ///
     pub fn encrypt_seed(kms: &KmsProvider, plaintext_seed: &[u8]) -> Result<Vec<u8>, KmsError> {
         // Generate random DEK and nonce
-        let rng = rand::SystemRandom::new();
+        let rng = SystemRandom::new();
         let mut dek = [0u8; DEK_SIZE_BYTES];
         let mut nonce = [0u8; NONCE_SIZE_BYTES];
         rng.fill(&mut dek)?;
@@ -170,5 +170,124 @@ impl EnvelopeEncryption {
         output.write_all(&encrypted_seed)?;
 
         Ok(output)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use hex;
+    use kms::envelope::{DEK_LEN_FIELD, MIN_PAYLOAD_SIZE, NONCE_LEN_FIELD};
+    use kms::EnvelopeEncryption;
+    use kms::{KmsError, KmsProvider};
+    use std::str::FromStr;
+    use std::string::ToString;
+
+    struct MockKmsProvider {}
+
+    // Mock provider that returns a copy of the input
+    impl KmsProvider for MockKmsProvider {
+        fn encrypt_dek(&self, plaintext_dek: &Vec<u8>) -> Result<Vec<u8>, KmsError> {
+            Ok(plaintext_dek.to_vec())
+        }
+
+        fn decrypt_dek(&self, encrypted_dek: &Vec<u8>) -> Result<Vec<u8>, KmsError> {
+            Ok(encrypted_dek.to_vec())
+        }
+    }
+
+    #[test]
+    fn decryption_reject_input_too_short() {
+        let ciphertext_blob = "1234567890";
+        assert!(ciphertext_blob.len() < MIN_PAYLOAD_SIZE);
+
+        let kms = MockKmsProvider {};
+        let result = EnvelopeEncryption::decrypt_seed(&kms, ciphertext_blob.as_bytes());
+
+        match result.expect_err("expected KmsError") {
+            KmsError::InvalidData(msg) => assert!(msg.contains("ciphertext too short")),
+            e => panic!("Unexpected error {:?}", e),
+        }
+    }
+
+    #[test]
+    fn encrypt_decrypt_round_trip() {
+        let kms = MockKmsProvider {};
+        let plaintext = Vec::from("This is the plaintext used for this test 1");
+
+        let enc_result = EnvelopeEncryption::encrypt_seed(&kms, &plaintext);
+        assert_eq!(enc_result.is_ok(), true);
+
+        let ciphertext = enc_result.unwrap();
+        assert_ne!(plaintext, ciphertext);
+
+        let dec_result = EnvelopeEncryption::decrypt_seed(&kms, &ciphertext);
+        assert_eq!(dec_result.is_ok(), true);
+
+        let new_plaintext = dec_result.unwrap();
+        assert_eq!(plaintext, new_plaintext);
+    }
+
+    #[test]
+    fn invalid_dek_length_detected() {
+        let kms = MockKmsProvider {};
+        let plaintext = Vec::from("This is the plaintext used for this test 2");
+
+        let enc_result = EnvelopeEncryption::encrypt_seed(&kms, &plaintext);
+        assert_eq!(enc_result.is_ok(), true);
+
+        let ciphertext = enc_result.unwrap();
+        let mut ciphertext_copy = ciphertext.clone();
+
+        ciphertext_copy[0] = 1;
+        let dec_result = EnvelopeEncryption::decrypt_seed(&kms, &ciphertext_copy);
+        match dec_result.expect_err("expected an error") {
+            KmsError::InvalidData(msg) => assert!(msg.contains("invalid DEK")),
+            e => panic!("unexpected error {:?}", e),
+        }
+    }
+
+    #[test]
+    fn invalid_nonce_length_detected() {
+        let kms = MockKmsProvider {};
+        let plaintext = Vec::from("This is the plaintext used for this test 3");
+
+        let enc_result = EnvelopeEncryption::encrypt_seed(&kms, &plaintext);
+        assert_eq!(enc_result.is_ok(), true);
+
+        let ciphertext = enc_result.unwrap();
+        let mut ciphertext_copy = ciphertext.clone();
+
+        ciphertext_copy[2] = 1;
+        let dec_result = EnvelopeEncryption::decrypt_seed(&kms, &ciphertext_copy);
+        match dec_result.expect_err("expected an error") {
+            KmsError::InvalidData(msg) => assert!(msg.contains("nonce (1)")),
+            e => panic!("unexpected error {:?}", e),
+        }
+    }
+
+    #[test]
+    fn modified_ciphertext_is_detected() {
+        let kms = MockKmsProvider {};
+        let plaintext = Vec::from("This is the plaintext used for this test 4");
+
+        let enc_result = EnvelopeEncryption::encrypt_seed(&kms, &plaintext);
+        assert_eq!(enc_result.is_ok(), true);
+
+        let ciphertext = enc_result.unwrap();
+        assert_ne!(plaintext, ciphertext);
+
+        // start corruption 4 bytes in, after the DEK and NONCE length fields
+        for i in (DEK_LEN_FIELD + NONCE_LEN_FIELD)..ciphertext.len() {
+            let mut ciphertext_copy = ciphertext.clone();
+            // flip some bits
+            ciphertext_copy[i] = ciphertext[i].wrapping_add(1);
+
+            let dec_result = EnvelopeEncryption::decrypt_seed(&kms, &ciphertext_copy);
+
+            match dec_result.expect_err("Expected a KmsError error here") {
+                KmsError::OperationFailed(msg) => assert!(msg.contains("failed to decrypt")),
+                e => panic!("unexpected result {:?}", e),
+            }
+        }
     }
 }

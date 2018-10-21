@@ -50,21 +50,15 @@
 //! The Roughtime server implementation is in `src/bin/server.rs`. The server has multiple
 //! ways it can be configured, see [`ServerConfig`](config/trait.ServerConfig.html) for details.
 //!
-//! To run the server with a config file:
-//!
-//! ```bash
-//! $ cargo run --release --bin server /path/to/config.file
-//! ```
-//!
 
 extern crate base64;
 extern crate byteorder;
 extern crate core;
-extern crate time;
-extern crate yaml_rust;
 extern crate hex;
 extern crate mio;
 extern crate mio_extras;
+extern crate time;
+extern crate yaml_rust;
 
 #[macro_use]
 extern crate log;

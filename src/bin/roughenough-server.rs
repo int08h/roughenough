@@ -16,14 +16,8 @@
 //! Roughtime server
 //!
 //! # Configuration
-//! The `roughenough` server is configured via a YAML config file. See the documentation
-//! for [FileConfig](struct.FileConfig.html) for details.
-//!
-//! To run the server:
-//!
-//! ```bash
-//! $ cargo run --release --bin server /path/to/config.file
-//! ```
+//! The server has multiple ways it can be configured, see
+//! [`ServerConfig`](config/trait.ServerConfig.html) for details.
 //!
 
 extern crate byteorder;

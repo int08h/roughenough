@@ -54,7 +54,6 @@ mod envelope;
 use base64;
 use ring;
 use std;
-use std::error::Error;
 
 use config::ServerConfig;
 use error;
@@ -205,7 +204,8 @@ pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
     match config.key_protection() {
         KeyProtection::Plaintext => Ok(config.seed()),
         v => Err(error::Error::InvalidConfiguration(format!(
-            "key_protection '{}' requires KMS, but server was not compiled with KMS support", v
+            "key_protection '{}' requires KMS, but server was not compiled with KMS support",
+            v
         ))),
     }
 }

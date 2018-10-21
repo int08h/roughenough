@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //!
-//! Work with Roughenough long-term key
+//! CLI used to encrypt the Roughenough long-term key using one of the KMS implementations
 //!
 
 extern crate clap;
@@ -30,8 +30,7 @@ use roughenough::VERSION;
 
 #[cfg(feature = "awskms")]
 fn aws_kms(kms_key: &str, plaintext_seed: &[u8]) {
-    use roughenough::kms::AwsKms;
-    use roughenough::kms::EnvelopeEncryption;
+    use roughenough::kms::{AwsKms, EnvelopeEncryption};
 
     let client = AwsKms::from_arn(kms_key).unwrap();
 
@@ -48,8 +47,7 @@ fn aws_kms(kms_key: &str, plaintext_seed: &[u8]) {
 
 #[cfg(feature = "gcpkms")]
 fn gcp_kms(kms_key: &str, plaintext_seed: &[u8]) {
-    use roughenough::kms::EnvelopeEncryption;
-    use roughenough::kms::GcpKms;
+    use roughenough::kms::{EnvelopeEncryption, GcpKms};
 
     let client = GcpKms::from_resource_id(kms_key).unwrap();
 
@@ -110,6 +108,6 @@ pub fn main() {
         #[cfg(feature = "gcpkms")]
         gcp_kms(kms_key, &plaintext_seed);
     } else {
-        warn!("KMS not enabled, nothing to do");
+        warn!("KMS support is not enabled, nothing to do");
     }
 }

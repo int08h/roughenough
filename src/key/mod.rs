@@ -55,14 +55,45 @@ impl Display for KeyProtection {
 }
 
 impl FromStr for KeyProtection {
-    type Err = ();
+    type Err = String;
 
-    fn from_str(s: &str) -> Result<KeyProtection, ()> {
+    fn from_str(s: &str) -> Result<KeyProtection, String> {
         match s {
             "plaintext" => Ok(KeyProtection::Plaintext),
             s if s.starts_with("arn:") => Ok(KeyProtection::AwsKmsEnvelope(s.to_string())),
             s if s.starts_with("projects/") => Ok(KeyProtection::GoogleKmsEnvelope(s.to_string())),
-            _ => Err(()),
+            s => Err(format!("unknown KeyProtection '{}'", s)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use key::KeyProtection;
+    use std::str::FromStr;
+
+    #[test]
+    fn convert_from_string() {
+        let arn =
+            "arn:aws:kms:some-aws-region:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab";
+        let resource_id =
+            "projects/key-project/locations/global/keyRings/key-ring/cryptoKeys/my-key";
+
+        match KeyProtection::from_str("plaintext") {
+            Ok(KeyProtection::Plaintext) => (),
+            e => panic!("unexpected result {:?}", e),
+        };
+        match KeyProtection::from_str(arn) {
+            Ok(KeyProtection::AwsKmsEnvelope(msg)) => assert_eq!(msg, arn),
+            e => panic!("unexpected result {:?}", e),
+        }
+        match KeyProtection::from_str(resource_id) {
+            Ok(KeyProtection::GoogleKmsEnvelope(msg)) => assert_eq!(msg, resource_id),
+            e => panic!("unexpected result {:?}", e),
+        }
+        match KeyProtection::from_str("frobble") {
+            Err(msg) => assert!(msg.contains("unknown KeyProtection")),
+            e => panic!("unexpected result {:?}", e),
         }
     }
 }
