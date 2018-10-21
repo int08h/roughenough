@@ -19,9 +19,9 @@ use std::time::Duration;
 
 use hex;
 
-/// A purely in-memory Roughenough config
-/// This is useful for fuzzing a server without the need
-/// to create additioanl files.
+/// A purely in-memory Roughenough config for testing purposes.
+///
+/// This is useful for testing or fuzzing a server without the need to create additional files.
 pub struct MemoryConfig {
     pub port: u16,
     pub interface: String,

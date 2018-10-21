@@ -193,11 +193,23 @@ pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
     }
 }
 
-///
+
 /// Load the seed value for the long-term key.
 ///
-/// The KMS feature was disabled in this build of Roughenough. The only supported `key_protection`
-/// value is `plaintext`. Any other value is an error.
+/// Loading behavior depends on the value of `config.key_protection()`:
+///
+///  * If `config.key_protection() == Plaintext` then the value returned from `config.seed()`
+///    is used as-is and assumed to be a 32-byte hexadecimal value.
+///
+///  * Otherwise `config.seed()` is assumed to be an encrypted opaque blob generated from
+///    a prior `EnvelopeEncryption::encrypt_seed` call. The value of `config.key_protection()`
+///    is parsed as a KMS key id and `EnvelopeEncryption::decrypt_seed` is called to obtain
+///    the plaintext seed value.
+///
+/// ## KMS Disabled
+///
+/// The KMS feature is *disabled* in this build of Roughenough. The only
+/// supported `key_protection` value is `plaintext`. Any other value is an error.
 ///
 #[cfg(all(not(feature = "awskms"), not(feature = "gcpkms")))]
 pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {

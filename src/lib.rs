@@ -47,8 +47,12 @@
 //!
 //! # Server
 //!
-//! The Roughtime server implementation is in `src/bin/server.rs`. The server has multiple
-//! ways it can be configured, see [`ServerConfig`](config/trait.ServerConfig.html) for details.
+//! The core Roughtime server implementation is in `src/server.rs` and the server's CLI can
+//! be found in `src/bin/roughenough-server.rs`.
+//!
+//! The server has multiple ways it can be configured,
+//! see [`ServerConfig`](config/trait.ServerConfig.html) for the configuration trait and
+//!
 //!
 
 extern crate base64;

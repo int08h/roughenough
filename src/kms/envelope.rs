@@ -15,7 +15,6 @@
 extern crate hex;
 
 use std::io::{Cursor, Read, Write};
-use std::str::FromStr;
 
 use ring::aead::{open_in_place, seal_in_place, OpeningKey, SealingKey, AES_256_GCM};
 use ring::rand::{SecureRandom, SystemRandom};
@@ -175,12 +174,9 @@ impl EnvelopeEncryption {
 
 #[cfg(test)]
 mod test {
-    use hex;
     use kms::envelope::{DEK_LEN_FIELD, MIN_PAYLOAD_SIZE, NONCE_LEN_FIELD};
     use kms::EnvelopeEncryption;
     use kms::{KmsError, KmsProvider};
-    use std::str::FromStr;
-    use std::string::ToString;
 
     struct MockKmsProvider {}
 

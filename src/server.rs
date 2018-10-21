@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//!
+//! Implements the Roughenough server functionality.
+//!
+
 use hex;
 use std::io::ErrorKind;
 use std::net::SocketAddr;
@@ -46,10 +50,16 @@ macro_rules! check_ctrlc {
 const MESSAGE: Token = Token(0);
 const STATUS: Token = Token(1);
 
-/// The main server instance.
-/// A Server is initialiezd from a Server Config
-/// and processes incoming messages in
-/// 'process_events'
+/// The main Roughenough server instance.
+///
+/// The [ServerConfig](../config/trait.ServerConfig.html) trait specifies the required and optional
+/// parameters available for configuring a Roughenoguh server instance.
+///
+/// Implementations of `ServerConfig` obtain configurations from different back-end sources
+/// such as files or environment variables.
+///
+/// See [the config module](../config/index.html) for more information.
+///
 pub struct Server {
     config: Box<ServerConfig>,
     online_key: OnlineKey,
@@ -70,12 +80,17 @@ pub struct Server {
 
     public_key: String,
 
-    // Used to send requests to outselves in fuzing mode
+    // Used to send requests to ourselves in fuzzing mode
     #[cfg(fuzzing)]
     fake_client_socket: UdpSocket,
 }
 
 impl Server {
+
+    ///
+    /// Create a new server instance from the provided
+    /// [`ServerConfig`](../config/trait.ServerConfig.html) trait object instance.
+    ///
     pub fn new(config: Box<ServerConfig>) -> Server {
         let online_key = OnlineKey::new();
         let public_key: String;
@@ -138,6 +153,7 @@ impl Server {
         }
     }
 
+    /// Returns a reference counted pointer the this server's `keep_running` value.
     pub fn get_keep_running(&self) -> Arc<AtomicBool> {
         return self.keep_running.clone();
     }
@@ -188,10 +204,10 @@ impl Server {
         response
     }
 
-    /// The main processing function for incoming connections.
-    /// This method should be called repeatedly in a loop
-    /// to process requests. It returns 'true' when the server
-    /// has shutdown (due to keep_running being set to 'false')
+    /// The main processing function for incoming connections. This method should be
+    /// called repeatedly in a loop to process requests. It returns 'true' when the
+    /// server has shutdown (due to keep_running being set to 'false').
+    ///
     pub fn process_events(&mut self) -> bool {
         self.poll
             .poll(&mut self.events, self.poll_duration)
@@ -298,6 +314,21 @@ impl Server {
         false
     }
 
+    /// Returns a reference to the server's long-term public key
+    pub fn get_public_key(&self) -> &str {
+        return &self.public_key;
+    }
+
+    /// Returns a reference to the server's on-line (delegated) key
+    pub fn get_online_key(&self) -> &OnlineKey {
+        return &self.online_key;
+    }
+
+    /// Returns a reference to the `ServerConfig` this server was configured with
+    pub fn get_config(&self) -> &Box<ServerConfig> {
+        return &self.config;
+    }
+
     #[cfg(fuzzing)]
     pub fn send_to_self(&mut self, data: &[u8]) {
         self.response_counter.store(0, Ordering::SeqCst);;
@@ -306,17 +337,5 @@ impl Server {
             .fake_client_socket
             .send_to(data, &self.socket.local_addr().unwrap());
         info!("Sent to self: {:?}", res);
-    }
-
-    pub fn get_public_key(&self) -> &str {
-        return &self.public_key;
-    }
-
-    pub fn get_online_key(&self) -> &OnlineKey {
-        return &self.online_key;
-    }
-
-    pub fn get_config(&self) -> &Box<ServerConfig> {
-        return &self.config;
     }
 }
