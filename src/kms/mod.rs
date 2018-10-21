@@ -211,7 +211,7 @@ pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
 /// The KMS feature is *disabled* in this build of Roughenough. The only
 /// supported `key_protection` value is `plaintext`. Any other value is an error.
 ///
-#[cfg(all(not(feature = "awskms"), not(feature = "gcpkms")))]
+#[cfg(not(any(feature = "awskms", feature = "gcpkms")))]
 pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
     match config.key_protection() {
         KeyProtection::Plaintext => Ok(config.seed()),
