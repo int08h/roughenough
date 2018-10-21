@@ -62,7 +62,7 @@ impl MerkleTree {
 
     pub fn compute_root(&mut self) -> Hash {
         assert!(
-            self.levels[0].len() > 0,
+            !self.levels[0].is_empty(),
             "Must have at least one leaf to hash!"
         );
 

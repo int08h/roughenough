@@ -108,6 +108,7 @@ pub fn main() {
         #[cfg(feature = "gcpkms")]
         gcp_kms(kms_key, &plaintext_seed);
     } else {
-        warn!("KMS support is not enabled, nothing to do");
+        warn!("KMS support was not compiled, nothing to do.");
+        warn!("For information on KMS support see the Roughenough documentation.");
     }
 }

@@ -90,7 +90,7 @@ impl FileConfig {
                         .as_str()
                         .unwrap()
                         .parse()
-                        .expect(format!("invalid key_protection value: {:?}", value).as_ref());
+                        .unwrap_or_else(|_| panic!("invalid key_protection value: {:?}", value));
                     config.key_protection = val
                 }
                 unknown => {

@@ -108,15 +108,16 @@ impl ResponseHandler {
             .as_slice()
             .read_u32::<LittleEndian>()
             .unwrap();
-        let mut verified = false;
 
-        if self.pub_key.is_some() {
+        let verified = if self.pub_key.is_some() {
             self.validate_dele();
             self.validate_srep();
             self.validate_merkle();
             self.validate_midpoint(midpoint);
-            verified = true;
-        }
+            true
+        } else {
+            false
+        };
 
         ParsedResponse {
             verified,
@@ -161,11 +162,7 @@ impl ResponseHandler {
 
         let hash = root_from_paths(index as usize, &self.nonce, paths);
 
-        assert_eq!(
-            Vec::from(hash),
-            srep[&Tag::ROOT],
-            "Nonce not in merkle tree!"
-        );
+        assert_eq!(hash, srep[&Tag::ROOT], "Nonce not in merkle tree!");
     }
 
     fn validate_midpoint(&self, midpoint: u64) {
@@ -180,11 +177,13 @@ impl ResponseHandler {
 
         assert!(
             midpoint >= mint,
-            "Response midpoint {} lies before delegation span ({}, {})"
+            "Response midpoint {} lies before delegation span ({}, {})",
+            midpoint, mint, maxt
         );
         assert!(
             midpoint <= maxt,
-            "Response midpoint {} lies after delegation span ({}, {})"
+            "Response midpoint {} lies after delegation span ({}, {})",
+            midpoint, mint, maxt
         );
     }
 
@@ -279,13 +278,15 @@ fn main() {
         let nonce = create_nonce();
         let mut socket = UdpSocket::bind("0.0.0.0:0").expect("Couldn't open UDP socket");
         let request = make_request(&nonce);
-        file.as_mut()
-            .map(|f| f.write_all(&request).expect("Failed to write to file!"));
+
+        if let Some(f) = file.as_mut() {
+            f.write_all(&request).expect("Failed to write to file!")
+        }
 
         requests.push((nonce, request, socket));
     }
 
-    for &mut (_, ref request, ref mut socket) in requests.iter_mut() {
+    for &mut (_, ref request, ref mut socket) in &mut requests {
         socket.send_to(request, addr).unwrap();
     }
 

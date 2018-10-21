@@ -40,8 +40,8 @@ pub enum Tag {
 
 impl Tag {
     /// Translates a tag into its on-the-wire representation
-    pub fn wire_value(&self) -> &'static [u8] {
-        match *self {
+    pub fn wire_value(self) -> &'static [u8] {
+        match self {
             Tag::CERT => b"CERT",
             Tag::DELE => b"DELE",
             Tag::INDX => b"INDX",

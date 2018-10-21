@@ -65,7 +65,7 @@ impl EnvironmentConfig {
         if let Ok(port) = env::var(ROUGHENOUGH_PORT) {
             cfg.port = port
                 .parse()
-                .expect(format!("invalid port: {}", port).as_ref());
+                .unwrap_or_else(|_| panic!("invalid port: {}", port));
         };
 
         if let Ok(interface) = env::var(ROUGHENOUGH_INTERFACE) {
@@ -80,21 +80,21 @@ impl EnvironmentConfig {
         if let Ok(batch_size) = env::var(ROUGHENOUGH_BATCH_SIZE) {
             cfg.batch_size = batch_size
                 .parse()
-                .expect(format!("invalid batch_size: {}", batch_size).as_ref());
+                .unwrap_or_else(|_| panic!("invalid batch_size: {}", batch_size));
         };
 
         if let Ok(status_interval) = env::var(ROUGHENOUGH_STATUS_INTERVAL) {
             let val: u16 = status_interval
                 .parse()
-                .expect(format!("invalid status_interval: {}", status_interval).as_ref());
+                .unwrap_or_else(|_| panic!("invalid status_interval: {}", status_interval));
 
-            cfg.status_interval = Duration::from_secs(val as u64);
+            cfg.status_interval = Duration::from_secs(u64::from(val));
         };
 
         if let Ok(key_protection) = env::var(ROUGHENOUGH_KEY_PROTECTION) {
             cfg.key_protection = key_protection
                 .parse()
-                .expect(format!("invalid key_protection value: {}", key_protection).as_ref());
+                .unwrap_or_else(|_| panic!("invalid key_protection value: {}", key_protection));
         }
 
         Ok(cfg)

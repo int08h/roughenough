@@ -155,7 +155,7 @@ impl Server {
 
     /// Returns a reference counted pointer the this server's `keep_running` value.
     pub fn get_keep_running(&self) -> Arc<AtomicBool> {
-        return self.keep_running.clone();
+        self.keep_running.clone()
     }
 
     // extract the client's nonce from its request
@@ -316,17 +316,17 @@ impl Server {
 
     /// Returns a reference to the server's long-term public key
     pub fn get_public_key(&self) -> &str {
-        return &self.public_key;
+        &self.public_key
     }
 
     /// Returns a reference to the server's on-line (delegated) key
     pub fn get_online_key(&self) -> &OnlineKey {
-        return &self.online_key;
+        &self.online_key
     }
 
     /// Returns a reference to the `ServerConfig` this server was configured with
     pub fn get_config(&self) -> &Box<ServerConfig> {
-        return &self.config;
+        &self.config
     }
 
     #[cfg(fuzzing)]

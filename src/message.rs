@@ -192,7 +192,8 @@ impl RtMessage {
                 return Some(&self.values[i]);
             }
         }
-        return None;
+
+        None
     }
 
     /// Returns the number of tag/value pairs in the message
