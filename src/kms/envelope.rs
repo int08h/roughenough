@@ -79,7 +79,7 @@ impl EnvelopeEncryption {
         let dek_len = tmp.read_u16::<LittleEndian>()? as usize;
         let nonce_len = tmp.read_u16::<LittleEndian>()? as usize;
 
-        if dek_len != DEK_SIZE_BYTES || nonce_len != NONCE_SIZE_BYTES {
+        if nonce_len != NONCE_SIZE_BYTES || dek_len > ciphertext_blob.len() {
             return Err(KmsError::InvalidData(format!(
                 "invalid DEK ({}) or nonce ({}) length",
                 dek_len, nonce_len
@@ -234,7 +234,7 @@ mod test {
         let ciphertext = enc_result.unwrap();
         let mut ciphertext_copy = ciphertext.clone();
 
-        ciphertext_copy[0] = 1;
+        ciphertext_copy[1] = 99;
         let dec_result = EnvelopeEncryption::decrypt_seed(&kms, &ciphertext_copy);
         match dec_result.expect_err("expected an error") {
             KmsError::InvalidData(msg) => assert!(msg.contains("invalid DEK")),
