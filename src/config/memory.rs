@@ -29,6 +29,7 @@ pub struct MemoryConfig {
     pub batch_size: u8,
     pub status_interval: Duration,
     pub key_protection: KeyProtection,
+    pub health_check_port: Option<u16>,
 }
 
 impl MemoryConfig {
@@ -41,6 +42,7 @@ impl MemoryConfig {
             batch_size: DEFAULT_BATCH_SIZE,
             status_interval: DEFAULT_STATUS_INTERVAL,
             key_protection: KeyProtection::Plaintext,
+            health_check_port: None
         }
     }
 }
@@ -68,5 +70,9 @@ impl ServerConfig for MemoryConfig {
 
     fn key_protection(&self) -> &KeyProtection {
         &self.key_protection
+    }
+
+    fn health_check_port(&self) -> Option<u16> {
+        self.health_check_port
     }
 }

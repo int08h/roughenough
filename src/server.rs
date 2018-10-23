@@ -112,7 +112,7 @@ impl Server {
         let response_counter = AtomicUsize::new(0);
         let keep_running = Arc::new(AtomicBool::new(true));
 
-        let sock_addr = config.socket_addr().expect("");
+        let sock_addr = config.udp_socket_addr().expect("");
         let socket = UdpSocket::bind(&sock_addr).expect("failed to bind to socket");
 
         let poll_duration = Some(Duration::from_millis(100));

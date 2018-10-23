@@ -60,6 +60,7 @@ pub const DEFAULT_STATUS_INTERVAL: Duration = Duration::from_secs(600);
 /// `batch_size` | `ROUGHENOUGH_BATCH_SIZE` | Optional | The maximum number of requests to process in one batch. All nonces in a batch are used to build a Merkle tree, the root of which is signed. Defaults to [DEFAULT_BATCH_SIZE](constant.DEFAULT_BATCH_SIZE.html) requests per batch.
 /// `status_interval` | `ROUGHENOUGH_STATUS_INTERVAL` | Optional | Number of _seconds_ between each logged status update. Default value is [DEFAULT_STATUS_INTERVAL](constant.DEFAULT_STATUS_INTERVAL.html).
 /// `key_protection` | `ROUGHENOUGH_KEY_PROTECTION` | Optional | Encryption method (if any) applied to the `seed`.  Defaults to "`plaintext`" (no encryption, `seed` is in the clear).
+/// `health_check_port` | `ROUGHENOUGH_HEALTH_CHECK_PORT` | Optional | If present, the TCP port to respond to Google-style HTTP "legacy health check".
 ///
 /// Implementations of this trait obtain a valid configuration from different back-end
 /// sources. See:
@@ -91,8 +92,13 @@ pub trait ServerConfig {
     /// Defaults to "`plaintext`" (no encryption, seed is in the clear).
     fn key_protection(&self) -> &KeyProtection;
 
+    /// [Optional] If present, the TCP port to respond to Google-style HTTP "legacy health check".
+    /// This is a *very* simplistic check, it emits a fixed HTTP response to all TCP connections.
+    /// https://cloud.google.com/load-balancing/docs/health-checks#legacy-health-checks
+    fn health_check_port(&self) -> Option<u16>;
+
     /// Convenience function to create a `SocketAddr` from the provided `interface` and `port`
-    fn socket_addr(&self) -> Result<SocketAddr, Error> {
+    fn udp_socket_addr(&self) -> Result<SocketAddr, Error> {
         let addr = format!("{}:{}", self.interface(), self.port());
         match addr.parse() {
             Ok(v) => Ok(v),
@@ -152,10 +158,10 @@ pub fn is_valid_config(cfg: &Box<ServerConfig>) -> bool {
     }
 
     if is_valid {
-        match cfg.socket_addr() {
+        match cfg.udp_socket_addr() {
             Err(e) => {
                 error!(
-                    "failed to create socket {}:{} {:?}",
+                    "failed to create UDP socket {}:{} {:?}",
                     cfg.interface(),
                     cfg.port(),
                     e

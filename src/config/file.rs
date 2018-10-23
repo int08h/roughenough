@@ -43,6 +43,7 @@ pub struct FileConfig {
     batch_size: u8,
     status_interval: Duration,
     key_protection: KeyProtection,
+    health_check_port: Option<u16>,
 }
 
 impl FileConfig {
@@ -69,6 +70,7 @@ impl FileConfig {
             batch_size: DEFAULT_BATCH_SIZE,
             status_interval: DEFAULT_STATUS_INTERVAL,
             key_protection: KeyProtection::Plaintext,
+            health_check_port: None,
         };
 
         for (key, value) in cfg[0].as_hash().unwrap() {
@@ -92,6 +94,10 @@ impl FileConfig {
                         .parse()
                         .unwrap_or_else(|_| panic!("invalid key_protection value: {:?}", value));
                     config.key_protection = val
+                }
+                "health_check_port" => {
+                    let val = value.as_i64().unwrap() as u16;
+                    config.health_check_port = Some(val);
                 }
                 unknown => {
                     return Err(Error::InvalidConfiguration(format!(
@@ -129,5 +135,9 @@ impl ServerConfig for FileConfig {
 
     fn key_protection(&self) -> &KeyProtection {
         &self.key_protection
+    }
+
+    fn health_check_port(&self) -> Option<u16> {
+        self.health_check_port
     }
 }

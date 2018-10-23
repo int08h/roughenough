@@ -26,14 +26,15 @@ use Error;
 /// Obtain a Roughenough server configuration ([ServerConfig](trait.ServerConfig.html))
 /// from environment variables.
 ///
-///   Config parameter | Environment Variable
-///   ---------------- | --------------------
-///   port             | `ROUGHENOUGH_PORT`
-///   interface        | `ROUGHENOUGH_INTERFACE`
-///   seed             | `ROUGHENOUGH_SEED`
-///   batch_size       | `ROUGHENOUGH_BATCH_SIZE`
-///   status_interval  | `ROUGHENOUGH_STATUS_INTERVAL`
-///   key_protection   | `ROUGHENOUGH_KEY_PROTECTION`
+///   Config parameter  | Environment Variable
+///   ----------------  | --------------------
+///   port              | `ROUGHENOUGH_PORT`
+///   interface         | `ROUGHENOUGH_INTERFACE`
+///   seed              | `ROUGHENOUGH_SEED`
+///   batch_size        | `ROUGHENOUGH_BATCH_SIZE`
+///   status_interval   | `ROUGHENOUGH_STATUS_INTERVAL`
+///   key_protection    | `ROUGHENOUGH_KEY_PROTECTION`
+///   health_check_port | `ROUGHENOUGH_HEALTH_CHECK_PORT`
 ///
 pub struct EnvironmentConfig {
     port: u16,
@@ -42,6 +43,7 @@ pub struct EnvironmentConfig {
     batch_size: u8,
     status_interval: Duration,
     key_protection: KeyProtection,
+    health_check_port: Option<u16>,
 }
 
 const ROUGHENOUGH_PORT: &str = "ROUGHENOUGH_PORT";
@@ -50,6 +52,7 @@ const ROUGHENOUGH_SEED: &str = "ROUGHENOUGH_SEED";
 const ROUGHENOUGH_BATCH_SIZE: &str = "ROUGHENOUGH_BATCH_SIZE";
 const ROUGHENOUGH_STATUS_INTERVAL: &str = "ROUGHENOUGH_STATUS_INTERVAL";
 const ROUGHENOUGH_KEY_PROTECTION: &str = "ROUGHENOUGH_KEY_PROTECTION";
+const ROUGHENOUGH_HEALTH_CHECK_PORT: &str = "ROUGHENOUGH_HEALTH_CHECK_PORT";
 
 impl EnvironmentConfig {
     pub fn new() -> Result<Self, Error> {
@@ -60,6 +63,7 @@ impl EnvironmentConfig {
             batch_size: DEFAULT_BATCH_SIZE,
             status_interval: DEFAULT_STATUS_INTERVAL,
             key_protection: KeyProtection::Plaintext,
+            health_check_port: None,
         };
 
         if let Ok(port) = env::var(ROUGHENOUGH_PORT) {
@@ -97,6 +101,14 @@ impl EnvironmentConfig {
                 .unwrap_or_else(|_| panic!("invalid key_protection value: {}", key_protection));
         }
 
+        if let Ok(health_check_port) = env::var(ROUGHENOUGH_HEALTH_CHECK_PORT) {
+            let val: u16 = health_check_port
+                .parse()
+                .unwrap_or_else(|_| panic!("invalid health_check_port: {}", health_check_port));
+
+            cfg.health_check_port = Some(val);
+        };
+
         Ok(cfg)
     }
 }
@@ -124,5 +136,9 @@ impl ServerConfig for EnvironmentConfig {
 
     fn key_protection(&self) -> &KeyProtection {
         &self.key_protection
+    }
+
+    fn health_check_port(&self) -> Option<u16> {
+        self.health_check_port
     }
 }
