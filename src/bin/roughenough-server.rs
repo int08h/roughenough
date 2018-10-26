@@ -71,6 +71,14 @@ fn polling_loop(config: Box<ServerConfig>) {
         server.get_config().port()
     );
 
+    if let Some(hc_port) = server.get_config().health_check_port() {
+        info!(
+            "TCP health check        : {}:{}",
+            server.get_config().interface(),
+            hc_port
+        );
+    }
+
     let kr = server.get_keep_running();
     let kr_new = kr.clone();
 
