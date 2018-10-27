@@ -15,6 +15,10 @@
 //!
 //! Protect the server's long-term key with envelope encryption and a key management system.
 //!
+//! Note: KMS support must be enabled at compile time, see the Roughenough's [documentation
+//! on optional features](https://github.com/int08h/roughenough/blob/doc/OPTIONAL-FEATURES.md#key-management-system-kms-support)
+//! for instructions.
+//!
 //! ## Motivation
 //!
 //! The seed for the server's [long-term key](../key/struct.LongTermKey.html) is subject to
@@ -57,7 +61,7 @@ use std;
 
 use config::ServerConfig;
 use error;
-use key::KeyProtection;
+use key::KmsProtection;
 
 pub use self::envelope::EnvelopeEncryption;
 
@@ -129,13 +133,13 @@ pub use kms::awskms::inner::AwsKms;
 
 /// Load the seed value for the long-term key.
 ///
-/// Loading behavior depends on the value of `config.key_protection()`:
+/// Loading behavior depends on the value of `config.kms_protection()`:
 ///
-///  * If `config.key_protection() == Plaintext` then the value returned from `config.seed()`
+///  * If `config.kms_protection() == Plaintext` then the value returned from `config.seed()`
 ///    is used as-is and assumed to be a 32-byte hexadecimal value.
 ///
 ///  * Otherwise `config.seed()` is assumed to be an encrypted opaque blob generated from
-///    a prior `EnvelopeEncryption::encrypt_seed` call. The value of `config.key_protection()`
+///    a prior `EnvelopeEncryption::encrypt_seed` call. The value of `config.kms_protection()`
 ///    is parsed as a KMS key id and `EnvelopeEncryption::decrypt_seed` is called to obtain
 ///    the plaintext seed value.
 ///
@@ -143,9 +147,9 @@ pub use kms::awskms::inner::AwsKms;
 pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
     use kms::envelope::EnvelopeEncryption;
 
-    match config.key_protection() {
-        KeyProtection::Plaintext => Ok(config.seed()),
-        KeyProtection::AwsKmsEnvelope(key_id) => {
+    match config.kms_protection() {
+        KmsProtection::Plaintext => Ok(config.seed()),
+        KmsProtection::AwsKmsEnvelope(key_id) => {
             info!("Unwrapping seed via AWS KMS key '{}'", key_id);
             let kms = AwsKms::from_arn(key_id)?;
             let seed = EnvelopeEncryption::decrypt_seed(&kms, &config.seed())?;
@@ -165,13 +169,13 @@ pub use kms::gcpkms::inner::GcpKms;
 
 /// Load the seed value for the long-term key.
 ///
-/// Loading behavior depends on the value of `config.key_protection()`:
+/// Loading behavior depends on the value of `config.kms_protection()`:
 ///
-///  * If `config.key_protection() == Plaintext` then the value returned from `config.seed()`
+///  * If `config.kms_protection() == Plaintext` then the value returned from `config.seed()`
 ///    is used as-is and assumed to be a 32-byte hexadecimal value.
 ///
 ///  * Otherwise `config.seed()` is assumed to be an encrypted opaque blob generated from
-///    a prior `EnvelopeEncryption::encrypt_seed` call. The value of `config.key_protection()`
+///    a prior `EnvelopeEncryption::encrypt_seed` call. The value of `config.kms_protection()`
 ///    is parsed as a KMS key id and `EnvelopeEncryption::decrypt_seed` is called to obtain
 ///    the plaintext seed value.
 ///
@@ -179,9 +183,9 @@ pub use kms::gcpkms::inner::GcpKms;
 pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
     use kms::envelope::EnvelopeEncryption;
 
-    match config.key_protection() {
-        KeyProtection::Plaintext => Ok(config.seed()),
-        KeyProtection::GoogleKmsEnvelope(resource_id) => {
+    match config.kms_protection() {
+        KmsProtection::Plaintext => Ok(config.seed()),
+        KmsProtection::GoogleKmsEnvelope(resource_id) => {
             info!("Unwrapping seed via Google KMS key '{}'", resource_id);
             let kms = GcpKms::from_resource_id(resource_id)?;
             let seed = EnvelopeEncryption::decrypt_seed(&kms, &config.seed())?;
@@ -193,30 +197,29 @@ pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
     }
 }
 
-
 /// Load the seed value for the long-term key.
 ///
-/// Loading behavior depends on the value of `config.key_protection()`:
+/// Loading behavior depends on the value of `config.kms_protection()`:
 ///
-///  * If `config.key_protection() == Plaintext` then the value returned from `config.seed()`
+///  * If `config.kms_protection() == Plaintext` then the value returned from `config.seed()`
 ///    is used as-is and assumed to be a 32-byte hexadecimal value.
 ///
 ///  * Otherwise `config.seed()` is assumed to be an encrypted opaque blob generated from
-///    a prior `EnvelopeEncryption::encrypt_seed` call. The value of `config.key_protection()`
+///    a prior `EnvelopeEncryption::encrypt_seed` call. The value of `config.kms_protection()`
 ///    is parsed as a KMS key id and `EnvelopeEncryption::decrypt_seed` is called to obtain
 ///    the plaintext seed value.
 ///
 /// ## KMS Disabled
 ///
 /// The KMS feature is *disabled* in this build of Roughenough. The only
-/// supported `key_protection` value is `plaintext`. Any other value is an error.
+/// supported `kms_protection` value is `plaintext`. Any other value is an error.
 ///
 #[cfg(not(any(feature = "awskms", feature = "gcpkms")))]
 pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
-    match config.key_protection() {
-        KeyProtection::Plaintext => Ok(config.seed()),
+    match config.kms_protection() {
+        KmsProtection::Plaintext => Ok(config.seed()),
         v => Err(error::Error::InvalidConfiguration(format!(
-            "key_protection '{}' requires KMS, but server was not compiled with KMS support",
+            "kms_protection '{}' requires KMS, but server was not compiled with KMS support",
             v
         ))),
     }

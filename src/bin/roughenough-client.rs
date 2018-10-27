@@ -31,12 +31,14 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::iter::Iterator;
-use std::net::{ToSocketAddrs, UdpSocket};
+use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 
 use clap::{App, Arg};
 use roughenough::merkle::root_from_paths;
 use roughenough::sign::Verifier;
-use roughenough::{RtMessage, Tag, CERTIFICATE_CONTEXT, SIGNED_RESPONSE_CONTEXT, roughenough_version};
+use roughenough::{
+    roughenough_version, RtMessage, Tag, CERTIFICATE_CONTEXT, SIGNED_RESPONSE_CONTEXT,
+};
 
 fn create_nonce() -> [u8; 64] {
     let rng = rand::SystemRandom::new();
@@ -59,6 +61,21 @@ fn receive_response(sock: &mut UdpSocket) -> RtMessage {
     let resp_len = sock.recv_from(&mut buf).unwrap().0;
 
     RtMessage::from_bytes(&buf[0..resp_len]).unwrap()
+}
+
+fn stress_test_forever(addr: &SocketAddr) -> ! {
+    if !addr.ip().is_loopback() {
+        panic!("Cannot use non-loopback address {} for stress testing", addr.ip());
+    }
+
+    println!("Stress testing!");
+
+    let nonce = create_nonce();
+    let socket = UdpSocket::bind("0.0.0.0:0").expect("Couldn't open UDP socket");
+    let request = make_request(&nonce);
+    loop {
+        socket.send_to(&request, addr).unwrap();
+    }
 }
 
 struct ResponseHandler {
@@ -162,7 +179,10 @@ impl ResponseHandler {
 
         let hash = root_from_paths(index as usize, &self.nonce, paths);
 
-        assert_eq!(hash, srep[&Tag::ROOT], "Nonce is not present in the response's merkle tree");
+        assert_eq!(
+            hash, srep[&Tag::ROOT],
+            "Nonce is not present in the response's merkle tree"
+        );
     }
 
     fn validate_midpoint(&self, midpoint: u64) {
@@ -252,23 +272,7 @@ fn main() {
     let addr = (host, port).to_socket_addrs().unwrap().next().unwrap();
 
     if stress {
-        if !addr.ip().is_loopback() {
-            println!(
-                "ERROR: Cannot use non-loopback address {} for stress testing",
-                addr.ip()
-            );
-            return;
-        }
-
-        println!("Stress-testing!");
-
-        let nonce = create_nonce();
-        let socket = UdpSocket::bind("0.0.0.0:0").expect("Couldn't open UDP socket");
-        let request = make_request(&nonce);
-
-        loop {
-            socket.send_to(&request, addr).unwrap();
-        }
+        stress_test_forever(&addr)
     }
 
     let mut requests = Vec::with_capacity(num_requests);
@@ -317,3 +321,4 @@ fn main() {
         );
     }
 }
+

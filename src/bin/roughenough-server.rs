@@ -40,8 +40,8 @@ use std::sync::atomic::Ordering;
 
 use roughenough::config;
 use roughenough::config::ServerConfig;
-use roughenough::server::Server;
 use roughenough::roughenough_version;
+use roughenough::server::Server;
 
 macro_rules! check_ctrlc {
     ($keep_running:expr) => {

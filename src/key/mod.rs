@@ -33,7 +33,7 @@ pub use self::online::OnlineKey;
 
 /// Methods for protecting the server's long-term identity
 #[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Clone)]
-pub enum KeyProtection {
+pub enum KmsProtection {
     /// No protection, seed is in plaintext
     Plaintext,
 
@@ -44,32 +44,32 @@ pub enum KeyProtection {
     GoogleKmsEnvelope(String),
 }
 
-impl Display for KeyProtection {
+impl Display for KmsProtection {
     fn fmt(&self, f: &mut Formatter) -> Result<(), std::fmt::Error> {
         match self {
-            KeyProtection::Plaintext => write!(f, "Plaintext"),
-            KeyProtection::AwsKmsEnvelope(key_id) => write!(f, "AwsKms({})", key_id),
-            KeyProtection::GoogleKmsEnvelope(key_id) => write!(f, "GoogleKms({})", key_id),
+            KmsProtection::Plaintext => write!(f, "Plaintext"),
+            KmsProtection::AwsKmsEnvelope(key_id) => write!(f, "AwsKms({})", key_id),
+            KmsProtection::GoogleKmsEnvelope(key_id) => write!(f, "GoogleKms({})", key_id),
         }
     }
 }
 
-impl FromStr for KeyProtection {
+impl FromStr for KmsProtection {
     type Err = String;
 
-    fn from_str(s: &str) -> Result<KeyProtection, String> {
+    fn from_str(s: &str) -> Result<KmsProtection, String> {
         match s {
-            "plaintext" => Ok(KeyProtection::Plaintext),
-            s if s.starts_with("arn:") => Ok(KeyProtection::AwsKmsEnvelope(s.to_string())),
-            s if s.starts_with("projects/") => Ok(KeyProtection::GoogleKmsEnvelope(s.to_string())),
-            s => Err(format!("unknown KeyProtection '{}'", s)),
+            "plaintext" => Ok(KmsProtection::Plaintext),
+            s if s.starts_with("arn:") => Ok(KmsProtection::AwsKmsEnvelope(s.to_string())),
+            s if s.starts_with("projects/") => Ok(KmsProtection::GoogleKmsEnvelope(s.to_string())),
+            s => Err(format!("unknown KmsProtection '{}'", s)),
         }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use key::KeyProtection;
+    use key::KmsProtection;
     use std::str::FromStr;
 
     #[test]
@@ -79,20 +79,20 @@ mod test {
         let resource_id =
             "projects/key-project/locations/global/keyRings/key-ring/cryptoKeys/my-key";
 
-        match KeyProtection::from_str("plaintext") {
-            Ok(KeyProtection::Plaintext) => (),
+        match KmsProtection::from_str("plaintext") {
+            Ok(KmsProtection::Plaintext) => (),
             e => panic!("unexpected result {:?}", e),
         };
-        match KeyProtection::from_str(arn) {
-            Ok(KeyProtection::AwsKmsEnvelope(msg)) => assert_eq!(msg, arn),
+        match KmsProtection::from_str(arn) {
+            Ok(KmsProtection::AwsKmsEnvelope(msg)) => assert_eq!(msg, arn),
             e => panic!("unexpected result {:?}", e),
         }
-        match KeyProtection::from_str(resource_id) {
-            Ok(KeyProtection::GoogleKmsEnvelope(msg)) => assert_eq!(msg, resource_id),
+        match KmsProtection::from_str(resource_id) {
+            Ok(KmsProtection::GoogleKmsEnvelope(msg)) => assert_eq!(msg, resource_id),
             e => panic!("unexpected result {:?}", e),
         }
-        match KeyProtection::from_str("frobble") {
-            Err(msg) => assert!(msg.contains("unknown KeyProtection")),
+        match KmsProtection::from_str("frobble") {
+            Err(msg) => assert!(msg.contains("unknown KmsProtection")),
             e => panic!("unexpected result {:?}", e),
         }
     }

@@ -35,9 +35,9 @@ use config::ServerConfig;
 use key::{LongTermKey, OnlineKey};
 use kms;
 use merkle::MerkleTree;
-use {Error, RtMessage, Tag, MIN_REQUEST_LENGTH};
-use std::io::Write;
 use mio::tcp::Shutdown;
+use std::io::Write;
+use {Error, RtMessage, Tag, MIN_REQUEST_LENGTH};
 
 macro_rules! check_ctrlc {
     ($keep_running:expr) => {
@@ -93,7 +93,6 @@ pub struct Server {
 }
 
 impl Server {
-
     ///
     /// Create a new server instance from the provided
     /// [`ServerConfig`](../config/trait.ServerConfig.html) trait object instance.
@@ -133,7 +132,8 @@ impl Server {
             .unwrap();
 
         let health_listener = if let Some(hc_port) = config.health_check_port() {
-            let hc_sock_addr: SocketAddr = format!("{}:{}", config.interface(), hc_port).parse()
+            let hc_sock_addr: SocketAddr = format!("{}:{}", config.interface(), hc_port)
+                .parse()
                 .unwrap();
 
             let tcp_listener = TcpListener::bind(&hc_sock_addr)
@@ -327,20 +327,20 @@ impl Server {
                     match listener.accept() {
                         Ok((ref mut stream, src_addr)) => {
                             info!("health check from {}", src_addr);
-                            
+
                             match stream.write(HTTP_RESPONSE.as_bytes()) {
                                 Ok(_) => (),
-                                Err(e) => warn!("error writing health check {}", e)
+                                Err(e) => warn!("error writing health check {}", e),
                             }
 
                             match stream.shutdown(Shutdown::Both) {
                                 Ok(_) => (),
-                                Err(e) => warn!("error in health check socket shutdown {}", e)
+                                Err(e) => warn!("error in health check socket shutdown {}", e),
                             }
                         }
                         Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                             debug!("blocking in TCP health check");
-                        },
+                        }
                         Err(e) => {
                             warn!("unexpected health check error {}", e);
                         }
@@ -350,8 +350,7 @@ impl Server {
                 STATUS => {
                     info!(
                         "responses {}, invalid requests {}",
-                        self.response_counter,
-                        self.num_bad_requests
+                        self.response_counter, self.num_bad_requests
                     );
 
                     self.timer.set_timeout(self.config.status_interval(), ());
@@ -380,7 +379,7 @@ impl Server {
 
     #[cfg(fuzzing)]
     pub fn send_to_self(&mut self, data: &[u8]) {
-        self.response_counter.store(0, Ordering::SeqCst);;
+        self.response_counter = 0;
         self.num_bad_requests = 0;
         let res = self
             .fake_client_socket

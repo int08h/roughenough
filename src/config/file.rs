@@ -21,7 +21,7 @@ use yaml_rust::YamlLoader;
 
 use config::ServerConfig;
 use config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
-use key::KeyProtection;
+use key::KmsProtection;
 use Error;
 
 ///
@@ -42,7 +42,7 @@ pub struct FileConfig {
     seed: Vec<u8>,
     batch_size: u8,
     status_interval: Duration,
-    key_protection: KeyProtection,
+    kms_protection: KmsProtection,
     health_check_port: Option<u16>,
 }
 
@@ -69,7 +69,7 @@ impl FileConfig {
             seed: Vec::new(),
             batch_size: DEFAULT_BATCH_SIZE,
             status_interval: DEFAULT_STATUS_INTERVAL,
-            key_protection: KeyProtection::Plaintext,
+            kms_protection: KmsProtection::Plaintext,
             health_check_port: None,
         };
 
@@ -87,13 +87,12 @@ impl FileConfig {
                     let val = value.as_i64().expect("status_interval value invalid");
                     config.status_interval = Duration::from_secs(val as u64)
                 }
-                "key_protection" => {
-                    let val = value
-                        .as_str()
-                        .unwrap()
-                        .parse()
-                        .unwrap_or_else(|_| panic!("invalid key_protection value: {:?}", value));
-                    config.key_protection = val
+                "kms_protection" => {
+                    let val =
+                        value.as_str().unwrap().parse().unwrap_or_else(|_| {
+                            panic!("invalid kms_protection value: {:?}", value)
+                        });
+                    config.kms_protection = val
                 }
                 "health_check_port" => {
                     let val = value.as_i64().unwrap() as u16;
@@ -133,8 +132,8 @@ impl ServerConfig for FileConfig {
         self.status_interval
     }
 
-    fn key_protection(&self) -> &KeyProtection {
-        &self.key_protection
+    fn kms_protection(&self) -> &KmsProtection {
+        &self.kms_protection
     }
 
     fn health_check_port(&self) -> Option<u16> {

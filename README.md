@@ -77,8 +77,8 @@ YAML Key | Environment Variable | Necessity | Description
 `seed` | `ROUGHENOUGH_SEED` | Required | A 32-byte hexadecimal value used to generate the server's long-term key pair. **This is a secret value and must be un-guessable**, treat it with care. (If compiled with KMS support, length will vary; see [Optional Features](#optional-features))
 `batch_size` | `ROUGHENOUGH_BATCH_SIZE` | Optional | The maximum number of requests to process in one batch. All nonces in a batch are used to build a Merkle tree, the root of which is signed. Default is `64` requests per batch.
 `status_interval` | `ROUGHENOUGH_STATUS_INTERVAL` | Optional | Number of _seconds_ between each logged status update. Default is `600` seconds (10 minutes).
-`health_check_port` | `ROUGHENOUGH_HEALTH_CHECK_PORT` | Optional | If present, enable an HTTP health check responder on the provided port. Be careful with this, see [Optional Features](#optional-features).
-`key_protection` | `ROUGHENOUGH_KEY_PROTECTION` | Optional | If compiled with KMS support, the ID of the KMS key used to protect the long-term identity. See [Optional Features](#optional-features).
+`health_check_port` | `ROUGHENOUGH_HEALTH_CHECK_PORT` | Optional | If present, enable an HTTP health check responder on the provided port. **Use with caution**, see [Optional Features](#optional-features).
+`kms_protection` | `ROUGHENOUGH_KMS_PROTECTION` | Optional | If compiled with KMS support, the ID of the KMS key used to protect the long-term identity. See [Optional Features](#optional-features).
 
 #### YAML Configuration 
 
@@ -147,14 +147,17 @@ Use Ctrl-C or `kill` the process.
 
 ## Optional Features
 
-Roughenough has opt-in features enabled either A) via a config setting, or B) at compile-time.
+Roughenough has two opt-in (disabled by default) features that are enabled either 
+A) via a config setting, or B) at compile-time.
 
-* A simple HTTP health-check responder to facilitate detection and replacement
-  of "sick" Roughenough servers.
-* Use of encryption and cloud Key Management Systems (KMS) to protect the 
-  long-term server identity.
+* [HTTP Health Check responder](doc/OPTIONAL-FEATURES.md#http-health-check) 
+  to facilitate detection and replacement of "sick" Roughenough servers.
+* [Key Management System (KMS) support](doc/OPTIONAL-FEATURES.md#key-management-system-kms-support)
+  to protect the long-term server identity using envelope encryption and 
+  AWS or Google KMS.
 
-See [OPTIONAL-FEATURES.md](doc/OPTIONAL-FEATURES.md) for details.
+See [OPTIONAL-FEATURES.md](doc/OPTIONAL-FEATURES.md) for details and instructions
+how to enable and use.
 
 
 ## Limitations

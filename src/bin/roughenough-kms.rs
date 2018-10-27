@@ -36,7 +36,7 @@ fn aws_kms(kms_key: &str, plaintext_seed: &[u8]) {
 
     match EnvelopeEncryption::encrypt_seed(&client, &plaintext_seed) {
         Ok(encrypted_blob) => {
-            println!("key_protection: \"{}\"", kms_key);
+            println!("kms_protection: \"{}\"", kms_key);
             println!("seed: {}", hex::encode(&encrypted_blob));
         }
         Err(e) => {
@@ -53,7 +53,7 @@ fn gcp_kms(kms_key: &str, plaintext_seed: &[u8]) {
 
     match EnvelopeEncryption::encrypt_seed(&client, &plaintext_seed) {
         Ok(encrypted_blob) => {
-            println!("key_protection: \"{}\"", kms_key);
+            println!("kms_protection: \"{}\"", kms_key);
             println!("seed: {}", hex::encode(&encrypted_blob));
         }
         Err(e) => {

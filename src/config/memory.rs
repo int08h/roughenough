@@ -14,7 +14,7 @@
 
 use config::ServerConfig;
 use config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
-use key::KeyProtection;
+use key::KmsProtection;
 use std::time::Duration;
 
 use hex;
@@ -28,7 +28,7 @@ pub struct MemoryConfig {
     pub seed: Vec<u8>,
     pub batch_size: u8,
     pub status_interval: Duration,
-    pub key_protection: KeyProtection,
+    pub kms_protection: KmsProtection,
     pub health_check_port: Option<u16>,
 }
 
@@ -41,8 +41,8 @@ impl MemoryConfig {
                 .unwrap(),
             batch_size: DEFAULT_BATCH_SIZE,
             status_interval: DEFAULT_STATUS_INTERVAL,
-            key_protection: KeyProtection::Plaintext,
-            health_check_port: None
+            kms_protection: KmsProtection::Plaintext,
+            health_check_port: None,
         }
     }
 }
@@ -68,8 +68,8 @@ impl ServerConfig for MemoryConfig {
         self.status_interval
     }
 
-    fn key_protection(&self) -> &KeyProtection {
-        &self.key_protection
+    fn kms_protection(&self) -> &KmsProtection {
+        &self.kms_protection
     }
 
     fn health_check_port(&self) -> Option<u16> {

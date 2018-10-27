@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use config::ServerConfig;
 use config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
-use key::KeyProtection;
+use key::KmsProtection;
 use Error;
 
 ///
@@ -33,7 +33,7 @@ use Error;
 ///   seed              | `ROUGHENOUGH_SEED`
 ///   batch_size        | `ROUGHENOUGH_BATCH_SIZE`
 ///   status_interval   | `ROUGHENOUGH_STATUS_INTERVAL`
-///   key_protection    | `ROUGHENOUGH_KEY_PROTECTION`
+///   kms_protection    | `ROUGHENOUGH_KMS_PROTECTION`
 ///   health_check_port | `ROUGHENOUGH_HEALTH_CHECK_PORT`
 ///
 pub struct EnvironmentConfig {
@@ -42,7 +42,7 @@ pub struct EnvironmentConfig {
     seed: Vec<u8>,
     batch_size: u8,
     status_interval: Duration,
-    key_protection: KeyProtection,
+    kms_protection: KmsProtection,
     health_check_port: Option<u16>,
 }
 
@@ -51,7 +51,7 @@ const ROUGHENOUGH_INTERFACE: &str = "ROUGHENOUGH_INTERFACE";
 const ROUGHENOUGH_SEED: &str = "ROUGHENOUGH_SEED";
 const ROUGHENOUGH_BATCH_SIZE: &str = "ROUGHENOUGH_BATCH_SIZE";
 const ROUGHENOUGH_STATUS_INTERVAL: &str = "ROUGHENOUGH_STATUS_INTERVAL";
-const ROUGHENOUGH_KEY_PROTECTION: &str = "ROUGHENOUGH_KEY_PROTECTION";
+const ROUGHENOUGH_KMS_PROTECTION: &str = "ROUGHENOUGH_KMS_PROTECTION";
 const ROUGHENOUGH_HEALTH_CHECK_PORT: &str = "ROUGHENOUGH_HEALTH_CHECK_PORT";
 
 impl EnvironmentConfig {
@@ -62,7 +62,7 @@ impl EnvironmentConfig {
             seed: Vec::new(),
             batch_size: DEFAULT_BATCH_SIZE,
             status_interval: DEFAULT_STATUS_INTERVAL,
-            key_protection: KeyProtection::Plaintext,
+            kms_protection: KmsProtection::Plaintext,
             health_check_port: None,
         };
 
@@ -95,10 +95,10 @@ impl EnvironmentConfig {
             cfg.status_interval = Duration::from_secs(u64::from(val));
         };
 
-        if let Ok(key_protection) = env::var(ROUGHENOUGH_KEY_PROTECTION) {
-            cfg.key_protection = key_protection
+        if let Ok(kms_protection) = env::var(ROUGHENOUGH_KMS_PROTECTION) {
+            cfg.kms_protection = kms_protection
                 .parse()
-                .unwrap_or_else(|_| panic!("invalid key_protection value: {}", key_protection));
+                .unwrap_or_else(|_| panic!("invalid kms_protection value: {}", kms_protection));
         }
 
         if let Ok(health_check_port) = env::var(ROUGHENOUGH_HEALTH_CHECK_PORT) {
@@ -134,8 +134,8 @@ impl ServerConfig for EnvironmentConfig {
         self.status_interval
     }
 
-    fn key_protection(&self) -> &KeyProtection {
-        &self.key_protection
+    fn kms_protection(&self) -> &KmsProtection {
+        &self.kms_protection
     }
 
     fn health_check_port(&self) -> Option<u16> {
