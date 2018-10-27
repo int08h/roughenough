@@ -1,9 +1,9 @@
 ## Version 1.1.0
 
 * Optional HTTP health check (requested in #8), see the
-  [feature's documentation](https://github.com/int08h/roughenough/blob/doc/OPTIONAL-FEATURES.md#http-health-check)
+  [feature's documentation](https://github.com/int08h/roughenough/blob/master/doc/OPTIONAL-FEATURES.md#http-health-check)
 * Support AWS and Google Key Management Systems (KMS) to protect the server's long-term key.
-  See the [KMS documentation](https://github.com/int08h/roughenough/blob/doc/OPTIONAL-FEATURES.md#key-management-system-kms-support).
+  See the [KMS documentation](https://github.com/int08h/roughenough/blob/master/doc/OPTIONAL-FEATURES.md#key-management-system-kms-support).
 * Numerous refactorings and clean ups to support fuzzing of 
   server components (b801eda, thanks to @Aaron1011)
 

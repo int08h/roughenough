@@ -16,7 +16,7 @@
 //! Protect the server's long-term key with envelope encryption and a key management system.
 //!
 //! Note: KMS support must be enabled at compile time, see the Roughenough's [documentation
-//! on optional features](https://github.com/int08h/roughenough/blob/doc/OPTIONAL-FEATURES.md#key-management-system-kms-support)
+//! on optional features](https://github.com/int08h/roughenough/blob/master/doc/OPTIONAL-FEATURES.md#key-management-system-kms-support)
 //! for instructions.
 //!
 //! ## Motivation
