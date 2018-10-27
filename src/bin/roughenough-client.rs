@@ -28,13 +28,17 @@ use chrono::offset::Utc;
 use chrono::TimeZone;
 
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::Write;
 use std::iter::Iterator;
-use std::net::{ToSocketAddrs, UdpSocket};
+use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 
 use clap::{App, Arg};
 use roughenough::merkle::root_from_paths;
 use roughenough::sign::Verifier;
-use roughenough::{RtMessage, Tag, CERTIFICATE_CONTEXT, SIGNED_RESPONSE_CONTEXT, VERSION};
+use roughenough::{
+    roughenough_version, RtMessage, Tag, CERTIFICATE_CONTEXT, SIGNED_RESPONSE_CONTEXT,
+};
 
 fn create_nonce() -> [u8; 64] {
     let rng = rand::SystemRandom::new();
@@ -57,6 +61,21 @@ fn receive_response(sock: &mut UdpSocket) -> RtMessage {
     let resp_len = sock.recv_from(&mut buf).unwrap().0;
 
     RtMessage::from_bytes(&buf[0..resp_len]).unwrap()
+}
+
+fn stress_test_forever(addr: &SocketAddr) -> ! {
+    if !addr.ip().is_loopback() {
+        panic!("Cannot use non-loopback address {} for stress testing", addr.ip());
+    }
+
+    println!("Stress testing!");
+
+    let nonce = create_nonce();
+    let socket = UdpSocket::bind("0.0.0.0:0").expect("Couldn't open UDP socket");
+    let request = make_request(&nonce);
+    loop {
+        socket.send_to(&request, addr).unwrap();
+    }
 }
 
 struct ResponseHandler {
@@ -106,15 +125,16 @@ impl ResponseHandler {
             .as_slice()
             .read_u32::<LittleEndian>()
             .unwrap();
-        let mut verified = false;
 
-        if self.pub_key.is_some() {
+        let verified = if self.pub_key.is_some() {
             self.validate_dele();
             self.validate_srep();
             self.validate_merkle();
             self.validate_midpoint(midpoint);
-            verified = true;
-        }
+            true
+        } else {
+            false
+        };
 
         ParsedResponse {
             verified,
@@ -133,7 +153,7 @@ impl ResponseHandler {
                 &self.cert[&Tag::SIG],
                 &full_cert
             ),
-            "Invalid signature on DELE tag!"
+            "Invalid signature on DELE tag, response may not be authentic"
         );
     }
 
@@ -143,7 +163,7 @@ impl ResponseHandler {
 
         assert!(
             self.validate_sig(&self.dele[&Tag::PUBK], &self.msg[&Tag::SIG], &full_srep),
-            "Invalid signature on SREP tag!"
+            "Invalid signature on SREP tag, response may not be authentic"
         );
     }
 
@@ -160,9 +180,8 @@ impl ResponseHandler {
         let hash = root_from_paths(index as usize, &self.nonce, paths);
 
         assert_eq!(
-            Vec::from(hash),
-            srep[&Tag::ROOT],
-            "Nonce not in merkle tree!"
+            hash, srep[&Tag::ROOT],
+            "Nonce is not present in the response's merkle tree"
         );
     }
 
@@ -178,11 +197,13 @@ impl ResponseHandler {
 
         assert!(
             midpoint >= mint,
-            "Response midpoint {} lies before delegation span ({}, {})"
+            "Response midpoint {} lies *before* delegation span ({}, {})",
+            midpoint, mint, maxt
         );
         assert!(
             midpoint <= maxt,
-            "Response midpoint {} lies after delegation span ({}, {})"
+            "Response midpoint {} lies *after* delegation span ({}, {})",
+            midpoint, mint, maxt
         );
     }
 
@@ -195,7 +216,7 @@ impl ResponseHandler {
 
 fn main() {
     let matches = App::new("roughenough client")
-    .version(VERSION)
+    .version(roughenough_version().as_ref())
     .arg(Arg::with_name("host")
       .required(true)
       .help("The Roughtime server to connect to")
@@ -228,6 +249,12 @@ fn main() {
       .long("stress")
       .help("Stress-tests the server by sending the same request as fast as possible. Please only use this on your own server")
     )
+    .arg(Arg::with_name("output")
+      .short("o")
+      .long("output")
+      .takes_value(true)
+      .help("Writes all requsts to the specified file, in addition to sending them to the server. Useful for generating fuzer inputs")
+    )
     .get_matches();
 
     let host = matches.value_of("host").unwrap();
@@ -238,42 +265,32 @@ fn main() {
     let pub_key = matches
         .value_of("public-key")
         .map(|pkey| hex::decode(pkey).expect("Error parsing public key!"));
+    let out = matches.value_of("output");
 
     println!("Requesting time from: {:?}:{:?}", host, port);
 
     let addr = (host, port).to_socket_addrs().unwrap().next().unwrap();
 
     if stress {
-        if !addr.ip().is_loopback() {
-            println!(
-                "ERROR: Cannot use non-loopback address {} for stress testing",
-                addr.ip()
-            );
-            return;
-        }
-
-        println!("Stress-testing!");
-
-        let nonce = create_nonce();
-        let socket = UdpSocket::bind("0.0.0.0:0").expect("Couldn't open UDP socket");
-        let request = make_request(&nonce);
-
-        loop {
-            socket.send_to(&request, addr).unwrap();
-        }
+        stress_test_forever(&addr)
     }
 
     let mut requests = Vec::with_capacity(num_requests);
+    let mut file = out.map(|o| File::create(o).expect("Failed to create file!"));
 
     for _ in 0..num_requests {
         let nonce = create_nonce();
         let mut socket = UdpSocket::bind("0.0.0.0:0").expect("Couldn't open UDP socket");
         let request = make_request(&nonce);
 
+        if let Some(f) = file.as_mut() {
+            f.write_all(&request).expect("Failed to write to file!")
+        }
+
         requests.push((nonce, request, socket));
     }
 
-    for &mut (_, ref request, ref mut socket) in requests.iter_mut() {
+    for &mut (_, ref request, ref mut socket) in &mut requests {
         socket.send_to(request, addr).unwrap();
     }
 
@@ -296,10 +313,12 @@ fn main() {
         let nsecs = (midpoint - (seconds * 10_u64.pow(6))) * 10_u64.pow(3);
         let spec = Utc.timestamp(seconds as i64, nsecs as u32);
         let out = spec.format(time_format).to_string();
+        let verify_str = if verified { "Yes" } else { "No" };
 
         println!(
-            "Received time from server: midpoint={:?}, radius={:?} (merkle_index={}, verified={})",
-            out, radius, index, verified
+            "Received time from server: midpoint={:?}, radius={:?}, verified={} (merkle_index={})",
+            out, radius, verify_str, index
         );
     }
 }
+

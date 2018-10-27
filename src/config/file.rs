@@ -16,12 +16,12 @@ extern crate hex;
 
 use std::fs::File;
 use std::io::Read;
-use std::net::SocketAddr;
 use std::time::Duration;
 use yaml_rust::YamlLoader;
 
 use config::ServerConfig;
 use config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
+use key::KmsProtection;
 use Error;
 
 ///
@@ -42,6 +42,8 @@ pub struct FileConfig {
     seed: Vec<u8>,
     batch_size: u8,
     status_interval: Duration,
+    kms_protection: KmsProtection,
+    health_check_port: Option<u16>,
 }
 
 impl FileConfig {
@@ -67,6 +69,8 @@ impl FileConfig {
             seed: Vec::new(),
             batch_size: DEFAULT_BATCH_SIZE,
             status_interval: DEFAULT_STATUS_INTERVAL,
+            kms_protection: KmsProtection::Plaintext,
+            health_check_port: None,
         };
 
         for (key, value) in cfg[0].as_hash().unwrap() {
@@ -82,6 +86,17 @@ impl FileConfig {
                 "status_interval" => {
                     let val = value.as_i64().expect("status_interval value invalid");
                     config.status_interval = Duration::from_secs(val as u64)
+                }
+                "kms_protection" => {
+                    let val =
+                        value.as_str().unwrap().parse().unwrap_or_else(|_| {
+                            panic!("invalid kms_protection value: {:?}", value)
+                        });
+                    config.kms_protection = val
+                }
+                "health_check_port" => {
+                    let val = value.as_i64().unwrap() as u16;
+                    config.health_check_port = Some(val);
                 }
                 unknown => {
                     return Err(Error::InvalidConfiguration(format!(
@@ -105,8 +120,8 @@ impl ServerConfig for FileConfig {
         self.port
     }
 
-    fn seed(&self) -> &[u8] {
-        &self.seed
+    fn seed(&self) -> Vec<u8> {
+        self.seed.clone()
     }
 
     fn batch_size(&self) -> u8 {
@@ -117,11 +132,11 @@ impl ServerConfig for FileConfig {
         self.status_interval
     }
 
-    fn socket_addr(&self) -> Result<SocketAddr, Error> {
-        let addr = format!("{}:{}", self.interface, self.port);
-        match addr.parse() {
-            Ok(v) => Ok(v),
-            Err(_) => Err(Error::InvalidConfiguration(addr)),
-        }
+    fn kms_protection(&self) -> &KmsProtection {
+        &self.kms_protection
+    }
+
+    fn health_check_port(&self) -> Option<u16> {
+        self.health_check_port
     }
 }

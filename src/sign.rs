@@ -20,15 +20,17 @@ extern crate hex;
 extern crate ring;
 extern crate untrusted;
 
-use self::ring::signature;
-use self::ring::signature::Ed25519KeyPair;
 use self::ring::rand;
 use self::ring::rand::SecureRandom;
+use self::ring::signature;
+use self::ring::signature::Ed25519KeyPair;
 
 use self::untrusted::Input;
 
 use std::fmt;
 use std::fmt::Formatter;
+
+const INITIAL_BUF_SIZE: usize = 1024;
 
 /// A multi-step (init-update-finish) interface for verifying an Ed25519 signature
 #[derive(Debug)]
@@ -41,7 +43,7 @@ impl<'a> Verifier<'a> {
     pub fn new(pubkey: &'a [u8]) -> Self {
         Verifier {
             pubkey: Input::from(pubkey),
-            buf: Vec::with_capacity(256),
+            buf: Vec::with_capacity(INITIAL_BUF_SIZE),
         }
     }
 
@@ -80,7 +82,7 @@ impl Signer {
         let seed_input = Input::from(seed);
         Signer {
             key_pair: Ed25519KeyPair::from_seed_unchecked(seed_input).unwrap(),
-            buf: Vec::with_capacity(256),
+            buf: Vec::with_capacity(INITIAL_BUF_SIZE),
         }
     }
 

@@ -25,6 +25,16 @@
 //! Roughtime messages are represented by [`RtMessage`](struct.RtMessage.html) which
 //! implements the mapping of Roughtime `u32` [`tags`](enum.Tag.html) to byte-strings.
 //!
+//! # Keys and Signing
+//!
+//! Roughtime uses an [Ed25519](https://ed25519.cr.yp.to/) key pair as the server's
+//! long-term identity and a second key pair (signed by the long-term key) as a
+//! delegated on-line (ephemeral) key.
+//!
+//! [`LongTermKey`](key/struct.LongTermKey.html) and [`OnlineKey`](key/struct.OnlineKey.html)
+//! implement these elements of the protocol. The [`sign`](sign/index.html) module provides
+//! signing and verification operations.
+//!
 //! # Client
 //!
 //! A Roughtime client can be found in `src/bin/client.rs`. To run the client:
@@ -37,32 +47,36 @@
 //!
 //! # Server
 //!
-//! The Roughtime server implementation is in `src/bin/server.rs`. The server is
-//! configured via a YAML config file. See [FileConfig](config/struct.FileConfig.html)
-//! for details of the configuration parameters.
+//! The core Roughtime server implementation is in `src/server.rs` and the server's CLI can
+//! be found in `src/bin/roughenough-server.rs`.
 //!
-//! To run the server:
+//! The server has multiple ways it can be configured,
+//! see [`ServerConfig`](config/trait.ServerConfig.html) for the configuration trait and
 //!
-//! ```bash
-//! $ cargo run --release --bin server /path/to/config.file
-//! ```
 //!
 
+extern crate base64;
 extern crate byteorder;
 extern crate core;
+extern crate hex;
+extern crate mio;
+extern crate mio_extras;
 extern crate time;
 extern crate yaml_rust;
 
 #[macro_use]
 extern crate log;
+extern crate ring;
 
 mod error;
 mod message;
 mod tag;
 
 pub mod config;
-pub mod keys;
+pub mod key;
+pub mod kms;
 pub mod merkle;
+pub mod server;
 pub mod sign;
 
 pub use error::Error;
@@ -70,7 +84,20 @@ pub use message::RtMessage;
 pub use tag::Tag;
 
 /// Version of Roughenough
-pub const VERSION: &str = "1.0.6";
+pub const VERSION: &str = "1.1.0";
+
+/// Roughenough version string enriched with any compile-time optional features
+pub fn roughenough_version() -> String {
+    let kms_str = if cfg!(feature = "awskms") {
+        " (+AWS KMS)"
+    } else if cfg!(feature = "gcpkms") {
+        " (+GCP KMS)"
+    } else {
+        ""
+    };
+
+    format!("{}{}", VERSION, kms_str)
+}
 
 //  Constants and magic numbers of the Roughtime protocol
 

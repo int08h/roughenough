@@ -22,7 +22,7 @@ Requires latest stable Rust to compile. Contributions welcome, see
 
 ## Building and Running
 
-Requires the latest stable Rust to build.
+Requires Rust 1.28 or newer to build.
 
 ```bash
 # Build roughenough
@@ -33,7 +33,7 @@ The client binary is `target/release/roughenough-client`. After building you can
 binary and run on its own (no `cargo` needed) if you wish.
 
 ```bash
-$ cp target/release/roughenough-server /usr/local/bin 
+$ cp target/release/roughenough-client /usr/local/bin 
 ```
 
 ### Using the Client to Query a Roughtime Server 
@@ -41,7 +41,7 @@ $ cp target/release/roughenough-server /usr/local/bin
 ```bash
 $ target/release/roughenough-client roughtime.int08h.com 2002
 Requesting time from: "roughtime.int08h.com":2002
-Received time from server: midpoint="Jul 28 2018 15:21:31", radius=1000000 (merkle_index=0, verified=false)
+Received time from server: midpoint="Oct 26 2018 23:20:44", radius=1000000, verified=No (merkle_index=0)
 ```
 
 ### Validating Server Responses 
@@ -56,10 +56,10 @@ roughtime.int08h.com descriptive text "016e6e0284d24c37c6e4d7d8d5b4e1d3c1949ceaa
 # Validate the server response using its public key
 $ target/release/roughenough-client roughtime.int08h.com 2002 -p 016e6e0284d24c37c6e4d7d8d5b4e1d3c1949ceaa545bf875616c9dce0c9bec1
 Requesting time from: "roughtime.int08h.com":2002
-Received time from server: midpoint="Jul 28 2018 15:26:54", radius=1000000 (merkle_index=0, verified=true)
+Received time from server: midpoint="Oct 26 2018 23:22:20", radius=1000000, verified=Yes (merkle_index=0)
 ```
 
-The **`verified=true`** in the output confirms that the server's response had a valid signature.
+The **`verified=Yes`** in the output confirms that the server's response had a valid signature.
 
 ### Server Configuration
 
@@ -74,9 +74,11 @@ YAML Key | Environment Variable | Necessity | Description
 --- | --- | --- | ---
 `interface` | `ROUGHENOUGH_INTERFACE` | Required | IP address or interface name for listening to client requests
 `port` | `ROUGHENOUGH_PORT` | Required | UDP port to listen for requests
-`seed` | `ROUGHENOUGH_SEED` | Required | A 32-byte hexadecimal value used to generate the server's long-term key pair. **This is a secret value and must be un-guessable**, treat it with care.
+`seed` | `ROUGHENOUGH_SEED` | Required | A 32-byte hexadecimal value used to generate the server's long-term key pair. **This is a secret value and must be un-guessable**, treat it with care. (If compiled with KMS support, length will vary; see [Optional Features](#optional-features))
 `batch_size` | `ROUGHENOUGH_BATCH_SIZE` | Optional | The maximum number of requests to process in one batch. All nonces in a batch are used to build a Merkle tree, the root of which is signed. Default is `64` requests per batch.
 `status_interval` | `ROUGHENOUGH_STATUS_INTERVAL` | Optional | Number of _seconds_ between each logged status update. Default is `600` seconds (10 minutes).
+`health_check_port` | `ROUGHENOUGH_HEALTH_CHECK_PORT` | Optional | If present, enable an HTTP health check responder on the provided port. **Use with caution**, see [Optional Features](#optional-features).
+`kms_protection` | `ROUGHENOUGH_KMS_PROTECTION` | Optional | If compiled with KMS support, the ID of the KMS key used to protect the long-term identity. See [Optional Features](#optional-features).
 
 #### YAML Configuration 
 
@@ -110,6 +112,7 @@ $ /path/to/roughenough-server ENV
 ### Starting the Server
 
 ```bash
+# Build roughenough
 $ cargo build --release
 
 # Via a config file
@@ -141,6 +144,22 @@ $ cp target/release/roughenough-server /usr/local/bin
 
 Use Ctrl-C or `kill` the process.
 
+
+## Optional Features
+
+Roughenough has two opt-in (disabled by default) features that are enabled either 
+A) via a config setting, or B) at compile-time.
+
+* [HTTP Health Check responder](doc/OPTIONAL-FEATURES.md#http-health-check) 
+  to facilitate detection and replacement of "sick" Roughenough servers.
+* [Key Management System (KMS) support](doc/OPTIONAL-FEATURES.md#key-management-system-kms-support)
+  to protect the long-term server identity using envelope encryption and 
+  AWS or Google KMS.
+
+See [OPTIONAL-FEATURES.md](doc/OPTIONAL-FEATURES.md) for details and instructions
+how to enable and use.
+
+
 ## Limitations
 
 Roughtime features not implemented by the server:
@@ -151,11 +170,6 @@ Roughtime features not implemented by the server:
   [Google's public NTP servers](https://developers.google.com/time/) would produce compliant
   smeared leap-seconds but time sourced from members of `pool.ntp.org` likely will not.
 * Ecosystem-style response fault injection.
-
-Other notes:
-
-* Per-request heap allocations could probably be reduced: a few `Vec`'s could be replaced by 
-  lifetime scoped slices.
 
 ## About the Roughtime Protocol
 [Roughtime](https://roughtime.googlesource.com/roughtime) is a protocol that aims to achieve rough 
