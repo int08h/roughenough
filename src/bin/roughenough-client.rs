@@ -36,7 +36,7 @@ use std::net::{ToSocketAddrs, UdpSocket};
 use clap::{App, Arg};
 use roughenough::merkle::root_from_paths;
 use roughenough::sign::Verifier;
-use roughenough::{RtMessage, Tag, CERTIFICATE_CONTEXT, SIGNED_RESPONSE_CONTEXT, VERSION};
+use roughenough::{RtMessage, Tag, CERTIFICATE_CONTEXT, SIGNED_RESPONSE_CONTEXT, roughenough_version};
 
 fn create_nonce() -> [u8; 64] {
     let rng = rand::SystemRandom::new();
@@ -136,7 +136,7 @@ impl ResponseHandler {
                 &self.cert[&Tag::SIG],
                 &full_cert
             ),
-            "Invalid signature on DELE tag!"
+            "Invalid signature on DELE tag, response may not be authentic"
         );
     }
 
@@ -146,7 +146,7 @@ impl ResponseHandler {
 
         assert!(
             self.validate_sig(&self.dele[&Tag::PUBK], &self.msg[&Tag::SIG], &full_srep),
-            "Invalid signature on SREP tag!"
+            "Invalid signature on SREP tag, response may not be authentic"
         );
     }
 
@@ -162,7 +162,7 @@ impl ResponseHandler {
 
         let hash = root_from_paths(index as usize, &self.nonce, paths);
 
-        assert_eq!(hash, srep[&Tag::ROOT], "Nonce not in merkle tree!");
+        assert_eq!(hash, srep[&Tag::ROOT], "Nonce is not present in the response's merkle tree");
     }
 
     fn validate_midpoint(&self, midpoint: u64) {
@@ -177,12 +177,12 @@ impl ResponseHandler {
 
         assert!(
             midpoint >= mint,
-            "Response midpoint {} lies before delegation span ({}, {})",
+            "Response midpoint {} lies *before* delegation span ({}, {})",
             midpoint, mint, maxt
         );
         assert!(
             midpoint <= maxt,
-            "Response midpoint {} lies after delegation span ({}, {})",
+            "Response midpoint {} lies *after* delegation span ({}, {})",
             midpoint, mint, maxt
         );
     }
@@ -196,7 +196,7 @@ impl ResponseHandler {
 
 fn main() {
     let matches = App::new("roughenough client")
-    .version(VERSION)
+    .version(roughenough_version().as_ref())
     .arg(Arg::with_name("host")
       .required(true)
       .help("The Roughtime server to connect to")
@@ -309,10 +309,11 @@ fn main() {
         let nsecs = (midpoint - (seconds * 10_u64.pow(6))) * 10_u64.pow(3);
         let spec = Utc.timestamp(seconds as i64, nsecs as u32);
         let out = spec.format(time_format).to_string();
+        let verify_str = if verified { "Yes" } else { "No" };
 
         println!(
-            "Received time from server: midpoint={:?}, radius={:?} (merkle_index={}, verified={})",
-            out, radius, index, verified
+            "Received time from server: midpoint={:?}, radius={:?}, verified={} (merkle_index={})",
+            out, radius, verify_str, index
         );
     }
 }

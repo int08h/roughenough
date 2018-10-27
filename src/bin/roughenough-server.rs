@@ -41,7 +41,7 @@ use std::sync::atomic::Ordering;
 use roughenough::config;
 use roughenough::config::ServerConfig;
 use roughenough::server::Server;
-use roughenough::VERSION;
+use roughenough::roughenough_version;
 
 macro_rules! check_ctrlc {
     ($keep_running:expr) => {
@@ -93,26 +93,12 @@ fn polling_loop(config: Box<ServerConfig>) {
     }
 }
 
-fn kms_support_str() -> &'static str {
-    if cfg!(feature = "awskms") {
-        " (+AWS KMS)"
-    } else if cfg!(feature = "gcpkms") {
-        " (+GCP KMS)"
-    } else {
-        ""
-    }
-}
-
 pub fn main() {
     use log::Level;
 
     simple_logger::init_with_level(Level::Info).unwrap();
 
-    info!(
-        "Roughenough server v{}{} starting",
-        VERSION,
-        kms_support_str()
-    );
+    info!("Roughenough server v{} starting", roughenough_version());
 
     let mut args = env::args();
     if args.len() != 2 {

@@ -86,6 +86,19 @@ pub use tag::Tag;
 /// Version of Roughenough
 pub const VERSION: &str = "1.1.0";
 
+/// Roughenough version string enriched with any compile-time optional features
+pub fn roughenough_version() -> String {
+    let kms_str = if cfg!(feature = "awskms") {
+        " (+AWS KMS)"
+    } else if cfg!(feature = "gcpkms") {
+        " (+GCP KMS)"
+    } else {
+        ""
+    };
+
+    format!("{}{}", VERSION, kms_str)
+}
+
 //  Constants and magic numbers of the Roughtime protocol
 
 /// Minimum size (in bytes) of a client request

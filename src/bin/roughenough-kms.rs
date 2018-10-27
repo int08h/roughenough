@@ -26,7 +26,7 @@ extern crate simple_logger;
 extern crate untrusted;
 
 use clap::{App, Arg};
-use roughenough::VERSION;
+use roughenough::roughenough_version;
 
 #[cfg(feature = "awskms")]
 fn aws_kms(kms_key: &str, plaintext_seed: &[u8]) {
@@ -69,7 +69,7 @@ pub fn main() {
     simple_logger::init_with_level(Level::Info).unwrap();
 
     let matches = App::new("roughenough-kms")
-        .version(VERSION)
+        .version(roughenough_version().as_ref())
         .long_about("Encrypt a Roughenough server's long-term seed using a KMS")
         .arg(
             Arg::with_name("KEY_ID")
