@@ -84,7 +84,7 @@ pub use message::RtMessage;
 pub use tag::Tag;
 
 /// Version of Roughenough
-pub const VERSION: &str = "1.1.0";
+pub const VERSION: &str = "1.1.1";
 
 /// Roughenough version string enriched with any compile-time optional features
 pub fn roughenough_version() -> String {

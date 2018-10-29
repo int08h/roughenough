@@ -99,6 +99,10 @@ pub mod inner {
             let mut decrypt_req: DecryptRequest = Default::default();
             decrypt_req.ciphertext_blob = encrypted_dek.clone();
 
+            let mut dec_context = HashMap::new();
+            dec_context.insert("AD".to_string(), AD.to_string());
+            decrypt_req.encryption_context = Some(dec_context);
+
             match self.kms_client.decrypt(decrypt_req).sync() {
                 Ok(result) => {
                     if let Some(plaintext_dek) = result.plaintext {
