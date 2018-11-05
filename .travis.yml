@@ -1,9 +1,18 @@
 language: rust
+cache: cargo
 rust:
   - stable
   - nightly
+
+env:
+  - FEATURE=awskms
+  - FEATURE=gcpkms
+  - FEATURE=""
 
 matrix:
   allow_failures:
     - rust: nightly
   fast_finish: true
+  script:
+    - cargo build --verbose --features $FEATURE
+    - cargo test --verbose --features $FEATURE
