@@ -5,9 +5,9 @@ rust:
   - nightly
 
 env:
+  - FEATURE=default
   - FEATURE=awskms
   - FEATURE=gcpkms
-  - FEATURE=""
 
 matrix:
   allow_failures:
