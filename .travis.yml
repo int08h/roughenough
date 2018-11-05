@@ -13,6 +13,7 @@ matrix:
   allow_failures:
     - rust: nightly
   fast_finish: true
-  script:
-    - cargo build --verbose --features $FEATURE
-    - cargo test --verbose --features $FEATURE
+
+script:
+  - cargo build --verbose --features $FEATURE
+  - cargo test --verbose --features $FEATURE
