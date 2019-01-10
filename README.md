@@ -180,6 +180,7 @@ created by Adam Langley and Robert Obryk.
 ## Contributors
 * Stuart Stock (stuart {at} int08h.com)
 * Aaron Hill (aa1ronham {at} gmail.com)
+* Peter Todd (pete {at} petertodd.org)
 
 ## Copyright and License
 Roughenough is copyright (c) 2017-2018 int08h LLC. All rights reserved. 
