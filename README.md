@@ -22,11 +22,10 @@ Requires latest stable Rust to compile. Contributions welcome, see
 
 ## Building and Running
 
-### Rust Version 1.31 or above required
+### Rust 1.31 or above required
 
-Roughenough version 1.1.2 and above use 
-[2018 edition](https://rust-lang-nursery.github.io/edition-guide/rust-2018/index.html) 
-features and need Rust 1.31 or newer to build.
+Roughenough uses [2018 edition](https://rust-lang-nursery.github.io/edition-guide/rust-2018/index.html) 
+features and requires Rust 1.31 or newer to build.
 
 ### Building
 
