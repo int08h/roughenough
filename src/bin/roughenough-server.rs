@@ -91,7 +91,7 @@ pub fn main() {
 
     let mut args = env::args();
     if args.len() != 2 {
-        error!("Usage: server <ENV|/path/to/config.yaml>");
+        error!("Usage: server <ENV | /path/to/config.yaml>");
         process::exit(1);
     }
 
