@@ -31,13 +31,13 @@ use mio::net::{TcpListener, UdpSocket};
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio_extras::timer::Timer;
 
-use config::ServerConfig;
-use key::{LongTermKey, OnlineKey};
-use kms;
-use merkle::MerkleTree;
+use crate::config::ServerConfig;
+use crate::key::{LongTermKey, OnlineKey};
+use crate::kms;
+use crate::merkle::MerkleTree;
 use mio::tcp::Shutdown;
 use std::io::Write;
-use {Error, RtMessage, Tag, MIN_REQUEST_LENGTH};
+use crate::{Error, RtMessage, Tag, MIN_REQUEST_LENGTH};
 
 macro_rules! check_ctrlc {
     ($keep_running:expr) => {

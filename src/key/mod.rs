@@ -16,11 +16,6 @@
 //! Representations and management of Roughtime's online and long-term Ed25519 keys
 //!
 
-extern crate hex;
-extern crate log;
-extern crate ring;
-extern crate std;
-
 mod longterm;
 mod online;
 
@@ -69,7 +64,7 @@ impl FromStr for KmsProtection {
 
 #[cfg(test)]
 mod test {
-    use key::KmsProtection;
+    use crate::key::KmsProtection;
     use std::str::FromStr;
 
     #[test]

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use error::Error;
+use crate::error::Error;
 
 /// An unsigned 32-bit value (key) that maps to a byte-string (value).
 #[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Clone, Copy)]

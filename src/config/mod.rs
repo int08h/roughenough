@@ -22,9 +22,6 @@
 //! such as files or environment variables.
 //!
 
-extern crate hex;
-extern crate log;
-
 use std::net::SocketAddr;
 use std::time::Duration;
 
@@ -37,8 +34,8 @@ pub use self::environment::EnvironmentConfig;
 mod memory;
 pub use self::memory::MemoryConfig;
 
-use key::KmsProtection;
-use Error;
+use crate::key::KmsProtection;
+use crate::Error;
 
 /// Maximum number of requests to process in one batch and include the the Merkle tree.
 pub const DEFAULT_BATCH_SIZE: u8 = 64;

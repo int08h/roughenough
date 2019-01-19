@@ -12,16 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-extern crate hex;
-
 use std::io::{Cursor, Read, Write};
 
 use ring::aead::{open_in_place, seal_in_place, OpeningKey, SealingKey, AES_256_GCM};
 use ring::rand::{SecureRandom, SystemRandom};
 
-use super::super::MIN_SEED_LENGTH;
+use crate::MIN_SEED_LENGTH;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use kms::{KmsError, KmsProvider, AD, DEK_SIZE_BYTES, NONCE_SIZE_BYTES, TAG_SIZE_BYTES};
+use crate::kms::{KmsError, KmsProvider, AD, DEK_SIZE_BYTES, NONCE_SIZE_BYTES, TAG_SIZE_BYTES};
 
 const DEK_LEN_FIELD: usize = 2;
 const NONCE_LEN_FIELD: usize = 2;
@@ -174,9 +172,9 @@ impl EnvelopeEncryption {
 
 #[cfg(test)]
 mod test {
-    use kms::envelope::{DEK_LEN_FIELD, MIN_PAYLOAD_SIZE, NONCE_LEN_FIELD};
-    use kms::EnvelopeEncryption;
-    use kms::{KmsError, KmsProvider};
+    use crate::kms::envelope::{DEK_LEN_FIELD, MIN_PAYLOAD_SIZE, NONCE_LEN_FIELD};
+    use crate::kms::EnvelopeEncryption;
+    use crate::kms::{KmsError, KmsProvider};
 
     struct MockKmsProvider {}
 

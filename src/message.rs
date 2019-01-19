@@ -17,8 +17,8 @@ use std::collections::HashMap;
 use std::io::{Cursor, Read, Write};
 use std::iter::once;
 
-use error::Error;
-use tag::Tag;
+use crate::error::Error;
+use crate::tag::Tag;
 
 ///
 /// A Roughtime protocol message; a map of u32 tags to arbitrary byte-strings.
@@ -289,9 +289,9 @@ impl RtMessage {
 #[cfg(test)]
 mod test {
     use byteorder::{LittleEndian, ReadBytesExt};
-    use message::*;
+    use crate::message::*;
     use std::io::{Cursor, Read};
-    use tag::Tag;
+    use crate::tag::Tag;
 
     #[test]
     fn empty_message_size() {

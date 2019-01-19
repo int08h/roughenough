@@ -12,14 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-extern crate hex;
-extern crate log;
-
 #[cfg(feature = "awskms")]
 pub mod inner {
-    extern crate rusoto_core;
-    extern crate rusoto_kms;
-
     use std::collections::HashMap;
     use std::default::Default;
     use std::error::Error;
@@ -27,9 +21,9 @@ pub mod inner {
     use std::fmt::Formatter;
     use std::str::FromStr;
 
-    use self::rusoto_core::Region;
-    use self::rusoto_kms::{DecryptRequest, EncryptRequest, Kms, KmsClient};
-    use kms::{EncryptedDEK, KmsError, KmsProvider, PlaintextDEK, AD, DEK_SIZE_BYTES};
+    use rusoto_core::Region;
+    use rusoto_kms::{DecryptRequest, EncryptRequest, Kms, KmsClient};
+    use crate::kms::{EncryptedDEK, KmsError, KmsProvider, PlaintextDEK, AD, DEK_SIZE_BYTES};
 
     /// Amazon Web Services Key Management Service
     /// https://aws.amazon.com/kms/

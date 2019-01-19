@@ -55,18 +55,8 @@
 //!
 //!
 
-extern crate base64;
-extern crate byteorder;
-extern crate core;
-extern crate hex;
-extern crate mio;
-extern crate mio_extras;
-extern crate time;
-extern crate yaml_rust;
-
 #[macro_use]
 extern crate log;
-extern crate ring;
 
 mod error;
 mod message;
@@ -79,9 +69,9 @@ pub mod merkle;
 pub mod server;
 pub mod sign;
 
-pub use error::Error;
-pub use message::RtMessage;
-pub use tag::Tag;
+pub use crate::error::Error;
+pub use crate::message::RtMessage;
+pub use crate::tag::Tag;
 
 /// Version of Roughenough
 pub const VERSION: &str = "1.1.1";

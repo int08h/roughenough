@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-extern crate hex;
-extern crate log;
-
 #[cfg(feature = "gcpkms")]
 pub mod inner {
     extern crate base64;
@@ -35,7 +32,7 @@ pub mod inner {
     use self::hyper_rustls::TlsClient;
     use self::oauth2::{ServiceAccountAccess, ServiceAccountKey};
 
-    use kms::{EncryptedDEK, KmsError, KmsProvider, PlaintextDEK, AD};
+    use crate::kms::{EncryptedDEK, KmsError, KmsProvider, PlaintextDEK, AD};
 
     const GOOGLE_APP_CREDS: &str = &"GOOGLE_APPLICATION_CREDENTIALS";
 

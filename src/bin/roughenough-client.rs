@@ -10,14 +10,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-extern crate byteorder;
-extern crate chrono;
+// for value_t_or_exit!()
 #[macro_use]
 extern crate clap;
-extern crate hex;
-extern crate ring;
-extern crate roughenough;
-extern crate time;
 
 use ring::rand;
 use ring::rand::SecureRandom;
@@ -280,7 +275,7 @@ fn main() {
 
     for _ in 0..num_requests {
         let nonce = create_nonce();
-        let mut socket = UdpSocket::bind("0.0.0.0:0").expect("Couldn't open UDP socket");
+        let socket = UdpSocket::bind("0.0.0.0:0").expect("Couldn't open UDP socket");
         let request = make_request(&nonce);
 
         if let Some(f) = file.as_mut() {

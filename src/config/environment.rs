@@ -12,15 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-extern crate hex;
-
 use std::env;
 use std::time::Duration;
 
-use config::ServerConfig;
-use config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
-use key::KmsProtection;
-use Error;
+use crate::config::ServerConfig;
+use crate::config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
+use crate::key::KmsProtection;
+use crate::Error;
 
 ///
 /// Obtain a Roughenough server configuration ([ServerConfig](trait.ServerConfig.html))

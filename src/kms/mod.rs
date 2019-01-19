@@ -59,9 +59,9 @@ use base64;
 use ring;
 use std;
 
-use config::ServerConfig;
-use error;
-use key::KmsProtection;
+use crate::config::ServerConfig;
+use crate::error;
+use crate::key::KmsProtection;
 
 pub use self::envelope::EnvelopeEncryption;
 
@@ -129,7 +129,7 @@ pub trait KmsProvider {
 mod awskms;
 
 #[cfg(feature = "awskms")]
-pub use kms::awskms::inner::AwsKms;
+pub use crate::kms::awskms::inner::AwsKms;
 
 /// Load the seed value for the long-term key.
 ///
@@ -145,7 +145,7 @@ pub use kms::awskms::inner::AwsKms;
 ///
 #[cfg(feature = "awskms")]
 pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
-    use kms::envelope::EnvelopeEncryption;
+    use crate::kms::envelope::EnvelopeEncryption;
 
     match config.kms_protection() {
         KmsProtection::Plaintext => Ok(config.seed()),
@@ -165,7 +165,7 @@ pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
 mod gcpkms;
 
 #[cfg(feature = "gcpkms")]
-pub use kms::gcpkms::inner::GcpKms;
+pub use crate::kms::gcpkms::inner::GcpKms;
 
 /// Load the seed value for the long-term key.
 ///
@@ -181,7 +181,7 @@ pub use kms::gcpkms::inner::GcpKms;
 ///
 #[cfg(feature = "gcpkms")]
 pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
-    use kms::envelope::EnvelopeEncryption;
+    use crate::kms::envelope::EnvelopeEncryption;
 
     match config.kms_protection() {
         KmsProtection::Plaintext => Ok(config.seed()),
@@ -199,6 +199,15 @@ pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
 
 /// Load the seed value for the long-term key.
 ///
+/// ## This build has KMS disabled
+///
+/// *The KMS feature is disabled in this build of Roughenough*.
+///
+/// The only supported `kms_protection` value in this build is `plaintext`. Any
+/// other value will cause a runtime error.
+///
+/// ## Background
+///
 /// Loading behavior depends on the value of `config.kms_protection()`:
 ///
 ///  * If `config.kms_protection() == Plaintext` then the value returned from `config.seed()`
@@ -208,11 +217,6 @@ pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
 ///    a prior `EnvelopeEncryption::encrypt_seed` call. The value of `config.kms_protection()`
 ///    is parsed as a KMS key id and `EnvelopeEncryption::decrypt_seed` is called to obtain
 ///    the plaintext seed value.
-///
-/// ## KMS Disabled
-///
-/// The KMS feature is *disabled* in this build of Roughenough. The only
-/// supported `kms_protection` value is `plaintext`. Any other value is an error.
 ///
 #[cfg(not(any(feature = "awskms", feature = "gcpkms")))]
 pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {

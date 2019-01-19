@@ -16,16 +16,12 @@
 //! A multi-step (init-update-finish) interface for Ed25519 signing and verification
 //!
 
-extern crate hex;
-extern crate ring;
-extern crate untrusted;
+use ring::rand;
+use ring::rand::SecureRandom;
+use ring::signature;
+use ring::signature::Ed25519KeyPair;
 
-use self::ring::rand;
-use self::ring::rand::SecureRandom;
-use self::ring::signature;
-use self::ring::signature::Ed25519KeyPair;
-
-use self::untrusted::Input;
+use untrusted::Input;
 
 use std::fmt;
 use std::fmt::Formatter;

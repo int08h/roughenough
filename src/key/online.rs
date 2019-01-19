@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use message::RtMessage;
-use sign::Signer;
-use tag::Tag;
+use crate::message::RtMessage;
+use crate::sign::Signer;
+use crate::tag::Tag;
 use time::Timespec;
 
 use byteorder::{LittleEndian, WriteBytesExt};
@@ -22,7 +22,7 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use std::fmt;
 use std::fmt::Formatter;
 
-use SIGNED_RESPONSE_CONTEXT;
+use crate::SIGNED_RESPONSE_CONTEXT;
 
 ///
 /// Represents the delegated Roughtime ephemeral online key.

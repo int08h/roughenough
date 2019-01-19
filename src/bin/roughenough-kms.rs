@@ -16,14 +16,8 @@
 //! CLI used to encrypt the Roughenough long-term key using one of the KMS implementations
 //!
 
-extern crate clap;
 #[macro_use]
 extern crate log;
-extern crate hex;
-extern crate ring;
-extern crate roughenough;
-extern crate simple_logger;
-extern crate untrusted;
 
 use clap::{App, Arg};
 use roughenough::roughenough_version;

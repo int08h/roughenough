@@ -20,19 +20,8 @@
 //! [`ServerConfig`](config/trait.ServerConfig.html) for details.
 //!
 
-extern crate byteorder;
-extern crate ctrlc;
-extern crate hex;
 #[macro_use]
 extern crate log;
-extern crate mio;
-extern crate mio_extras;
-extern crate ring;
-extern crate roughenough;
-extern crate simple_logger;
-extern crate time;
-extern crate untrusted;
-extern crate yaml_rust;
 
 use std::env;
 use std::process;
