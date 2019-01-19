@@ -4,3 +4,4 @@ target/
 example-kms.cfg
 example-gcp.cfg
 creds.json
+.idea/
