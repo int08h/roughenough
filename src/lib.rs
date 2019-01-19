@@ -74,7 +74,7 @@ pub use crate::message::RtMessage;
 pub use crate::tag::Tag;
 
 /// Version of Roughenough
-pub const VERSION: &str = "1.1.1";
+pub const VERSION: &str = "1.1.2";
 
 /// Roughenough version string enriched with any compile-time optional features
 pub fn roughenough_version() -> String {
