@@ -1,4 +1,4 @@
-## Version 1.1.2
+## Version 1.1.2 [in progress]
 
 * Optional client request statistics tracking.
 * Clean-up and simplification of server inner loop.
