@@ -38,6 +38,7 @@ use crate::key::{LongTermKey, OnlineKey};
 use crate::kms;
 use crate::merkle::MerkleTree;
 use crate::{Error, RtMessage, Tag, MIN_REQUEST_LENGTH};
+use crate::stats::{ClientStats, SimpleStats};
 
 macro_rules! check_ctrlc {
     ($keep_running:expr) => {
@@ -71,9 +72,6 @@ pub struct Server {
     online_key: OnlineKey,
     cert_bytes: Vec<u8>,
 
-    response_counter: u64,
-    num_bad_requests: u64,
-
     socket: UdpSocket,
     health_listener: Option<TcpListener>,
     keep_running: Arc<AtomicBool>,
@@ -89,6 +87,8 @@ pub struct Server {
     // Used to send requests to ourselves in fuzzing mode
     #[cfg(fuzzing)]
     fake_client_socket: UdpSocket,
+
+    stats: SimpleStats,
 }
 
 impl Server {
@@ -154,8 +154,6 @@ impl Server {
             online_key,
             cert_bytes,
 
-            response_counter: 0,
-            num_bad_requests: 0,
             socket,
             health_listener,
 
@@ -171,6 +169,8 @@ impl Server {
 
             #[cfg(fuzzing)]
             fake_client_socket: UdpSocket::bind(&"127.0.0.1:0".parse().unwrap()).unwrap(),
+
+            stats: SimpleStats::new(),
         }
     }
 
@@ -242,11 +242,12 @@ impl Server {
                     match listener.accept() {
                         Ok((ref mut stream, src_addr)) => {
                             info!("health check from {}", src_addr);
+                            self.stats.add_health_check(&src_addr.ip());
 
                             match stream.write(HTTP_RESPONSE.as_bytes()) {
                                 Ok(_) => (),
                                 Err(e) => warn!("error writing health check {}", e),
-                            }
+                            };
 
                             match stream.shutdown(Shutdown::Both) {
                                 Ok(_) => (),
@@ -265,7 +266,7 @@ impl Server {
                 STATUS => {
                     info!(
                         "responses {}, invalid requests {}",
-                        self.response_counter, self.num_bad_requests
+                        self.stats.total_responses_sent(), self.stats.total_invalid_requests()
                     );
 
                     self.timer.set_timeout(self.config.status_interval(), ());
@@ -285,15 +286,17 @@ impl Server {
                 Ok((num_bytes, src_addr)) => {
                     match self.nonce_from_request(&self.buf, num_bytes) {
                         Ok(nonce) => {
+                            self.stats.add_valid_request(&src_addr.ip());
                             self.requests.push((Vec::from(nonce), src_addr));
                             self.merkle.push_leaf(nonce);
                         }
                         Err(e) => {
-                            self.num_bad_requests += 1;
+                            self.stats.add_invalid_request(&src_addr.ip());
 
                             info!(
                                 "Invalid request: '{:?}' ({} bytes) from {} (#{} in batch, resp #{})",
-                                e, num_bytes, src_addr, i, self.response_counter + i as u64
+                                e, num_bytes, src_addr, i,
+                                self.stats.total_responses_sent() + u64::from(i)
                             );
                         }
                     }
@@ -350,7 +353,7 @@ impl Server {
                 .send_to(&resp_bytes, &src_addr)
                 .expect("send_to failed");
 
-            self.response_counter += 1;
+            self.stats.add_response(&src_addr.ip(), bytes_sent);
 
             info!(
                 "Responded {} bytes to {} for '{}..' (#{} in batch, resp #{})",
@@ -358,7 +361,7 @@ impl Server {
                 src_addr,
                 hex::encode(&nonce[0..4]),
                 i,
-                self.response_counter
+                self.stats.total_responses_sent()
             );
         }
     }

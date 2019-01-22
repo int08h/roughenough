@@ -68,6 +68,7 @@ pub mod kms;
 pub mod merkle;
 pub mod server;
 pub mod sign;
+pub mod stats;
 
 pub use crate::error::Error;
 pub use crate::message::RtMessage;
