@@ -13,6 +13,8 @@
 // limitations under the License.
 
 use hashbrown::HashMap;
+use hashbrown::hash_map::Iter;
+
 use std::net::IpAddr;
 
 /// Maximum number of stats entries to maintain.
@@ -41,6 +43,8 @@ pub trait ClientStats {
     fn total_unique_clients(&self) -> u64;
 
     fn get_stats(&self, addr: &IpAddr) -> Option<&StatEntry>;
+
+    fn iter(&self) -> Iter<IpAddr, StatEntry>;
 
     fn clear(&mut self);
 }
@@ -196,9 +200,11 @@ impl ClientStats for SimpleStats {
     }
 
     fn get_stats(&self, addr: &IpAddr) -> Option<&StatEntry> {
-        self.clients.iter()
-
         self.clients.get(addr)
+    }
+
+    fn iter(&self) -> Iter<IpAddr, StatEntry> {
+        self.clients.iter()
     }
 
     fn clear(&mut self) {

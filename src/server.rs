@@ -28,6 +28,8 @@ use time;
 
 use byteorder::{LittleEndian, WriteBytesExt};
 
+use humansize::{FileSize, file_size_opts as fsopts};
+
 use mio::net::{TcpListener, UdpSocket};
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio::tcp::Shutdown;
@@ -264,9 +266,21 @@ impl Server {
                 }
 
                 STATUS => {
+                    for (addr, counts) in self.stats.iter() {
+                        info!(
+                            "{:16}: {} valid, {} invalid requests; {} responses ({} sent)",
+                            format!("{}", addr), counts.valid_requests, counts.invalid_requests,
+                            counts.responses_sent,
+                            counts.bytes_sent.file_size(fsopts::BINARY).unwrap()
+                        );
+                    }
+
                     info!(
-                        "responses {}, invalid requests {}",
-                        self.stats.total_responses_sent(), self.stats.total_invalid_requests()
+                        "Totals: {} unique clients; {} valid, {} invalid requests; {} responses ({} sent)",
+                        self.stats.total_unique_clients(),
+                        self.stats.total_valid_requests(), self.stats.total_invalid_requests(),
+                        self.stats.total_responses_sent(),
+                        self.stats.total_bytes_sent().file_size(fsopts::BINARY).unwrap()
                     );
 
                     self.timer.set_timeout(self.config.status_interval(), ());
