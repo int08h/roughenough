@@ -112,7 +112,7 @@ pub trait ServerConfig {
 ///   * `ENV` will return an [`EnvironmentConfig`](struct.EnvironmentConfig.html)
 ///   * any other value returns a [`FileConfig`](struct.FileConfig.html)
 ///
-pub fn make_config(arg: &str) -> Result<Box<ServerConfig>, Error> {
+pub fn make_config(arg: &str) -> Result<Box<dyn ServerConfig>, Error> {
     if arg == "ENV" {
         match EnvironmentConfig::new() {
             Ok(cfg) => Ok(Box::new(cfg)),
@@ -129,7 +129,7 @@ pub fn make_config(arg: &str) -> Result<Box<ServerConfig>, Error> {
 ///
 /// Validate configuration settings. Returns `true` if the config is valid, `false` otherwise.
 ///
-pub fn is_valid_config(cfg: &Box<ServerConfig>) -> bool {
+pub fn is_valid_config(cfg: &Box<dyn ServerConfig>) -> bool {
     let mut is_valid = true;
 
     if cfg.port() == 0 {

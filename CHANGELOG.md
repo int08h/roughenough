@@ -1,3 +1,9 @@
+## Version 1.1.2 
+
+* Add client request statistics tracking.
+* Clean-up and simplification of server inner loop.
+* Rust 2018 edition required to compile.
+
 ## Version 1.1.1
 
 * Provide auxiliary data to the AWS KMS decryption call. The auxiliary data _was_ provided in encrypt, but not decrypt, resulting in unconditional failure when unwrapping the long-term identity. See https://github.com/int08h/roughenough/commit/846128d08bd3fcd72f23b3123b332d0692782e41#diff-7f7c3059af30a5ded26269301caf8531R102

@@ -32,6 +32,8 @@ use roughenough::config::ServerConfig;
 use roughenough::roughenough_version;
 use roughenough::server::Server;
 
+use mio::Events;
+
 macro_rules! check_ctrlc {
     ($keep_running:expr) => {
         if !$keep_running.load(Ordering::Acquire) {
@@ -74,9 +76,11 @@ fn polling_loop(config: Box<ServerConfig>) {
     ctrlc::set_handler(move || kr.store(false, Ordering::Release))
         .expect("failed setting Ctrl-C handler");
 
+    let mut events = Events::with_capacity(64);
+
     loop {
         check_ctrlc!(kr_new);
-        if server.process_events() {
+        if server.process_events(&mut events) {
             return;
         }
     }

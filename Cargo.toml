@@ -1,6 +1,6 @@
 [package]
 name = "roughenough"
-version = "1.1.1"
+version = "1.1.2"
 repository = "https://github.com/int08h/roughenough"
 authors = ["Stuart Stock <stuart@int08h.com>", "Aaron Hill <aa1ronham@gmail.com>"]
 license = "Apache-2.0"
@@ -32,10 +32,14 @@ clap = "2"
 chrono = "0.4"
 hex = "0.3"
 base64 = "0.9"
+hashbrown = "0.1"
+humansize = "1.0"
 
-rusoto_core = { version = "0.34", optional = true }
-rusoto_kms = { version = "0.34", optional = true }
+# Used by 'awskms'
+rusoto_core = { version = "0.36", optional = true }
+rusoto_kms = { version = "0.36", optional = true }
 
+# Used by 'gcpkms'
 # google-cloudkms1 intentionally uses an old version of Hyper. See
 # https://github.com/Byron/google-apis-rs/issues/173 for more information.
 google-cloudkms1 = { version = "1.0.8+20181005", optional = true }
@@ -44,7 +48,6 @@ hyper-rustls = { version = "^0.6", optional = true }
 serde = { version = "^1.0", optional = true }
 serde_json = { version = "^1.0", optional = true }
 yup-oauth2 = { version = "^1.0", optional = true }
-
 
 [dev-dependencies]
 criterion = "0.2"

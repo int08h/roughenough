@@ -23,21 +23,24 @@ use std::process;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use std::io::Write;
 use time;
 
 use byteorder::{LittleEndian, WriteBytesExt};
 
+use humansize::{FileSize, file_size_opts as fsopts};
+
 use mio::net::{TcpListener, UdpSocket};
 use mio::{Events, Poll, PollOpt, Ready, Token};
+use mio::tcp::Shutdown;
 use mio_extras::timer::Timer;
 
 use crate::config::ServerConfig;
 use crate::key::{LongTermKey, OnlineKey};
 use crate::kms;
 use crate::merkle::MerkleTree;
-use mio::tcp::Shutdown;
-use std::io::Write;
 use crate::{Error, RtMessage, Tag, MIN_REQUEST_LENGTH};
+use crate::stats::{ClientStats, SimpleStats};
 
 macro_rules! check_ctrlc {
     ($keep_running:expr) => {
@@ -67,12 +70,9 @@ const HTTP_RESPONSE: &str = "HTTP/1.1 200 OK\nContent-Length: 0\nConnection: clo
 /// See [the config module](../config/index.html) for more information.
 ///
 pub struct Server {
-    config: Box<ServerConfig>,
+    config: Box<dyn ServerConfig>,
     online_key: OnlineKey,
     cert_bytes: Vec<u8>,
-
-    response_counter: u64,
-    num_bad_requests: u64,
 
     socket: UdpSocket,
     health_listener: Option<TcpListener>,
@@ -80,7 +80,6 @@ pub struct Server {
     poll_duration: Option<Duration>,
     timer: Timer<()>,
     poll: Poll,
-    events: Events,
     merkle: MerkleTree,
     requests: Vec<(Vec<u8>, SocketAddr)>,
     buf: [u8; 65_536],
@@ -90,6 +89,8 @@ pub struct Server {
     // Used to send requests to ourselves in fuzzing mode
     #[cfg(fuzzing)]
     fake_client_socket: UdpSocket,
+
+    stats: SimpleStats,
 }
 
 impl Server {
@@ -155,8 +156,6 @@ impl Server {
             online_key,
             cert_bytes,
 
-            response_counter: 0,
-            num_bad_requests: 0,
             socket,
             health_listener,
 
@@ -164,7 +163,6 @@ impl Server {
             poll_duration,
             timer,
             poll,
-            events: Events::with_capacity(32),
             merkle,
             requests,
             buf: [0u8; 65_536],
@@ -173,12 +171,163 @@ impl Server {
 
             #[cfg(fuzzing)]
             fake_client_socket: UdpSocket::bind(&"127.0.0.1:0".parse().unwrap()).unwrap(),
+
+            stats: SimpleStats::new(),
         }
+    }
+
+    /// Returns a reference to the server's long-term public key
+    pub fn get_public_key(&self) -> &str {
+        &self.public_key
+    }
+
+    /// Returns a reference to the server's on-line (delegated) key
+    pub fn get_online_key(&self) -> &OnlineKey {
+        &self.online_key
+    }
+
+    /// Returns a reference to the `ServerConfig` this server was configured with
+    pub fn get_config(&self) -> &Box<dyn ServerConfig> {
+        &self.config
     }
 
     /// Returns a reference counted pointer the this server's `keep_running` value.
     pub fn get_keep_running(&self) -> Arc<AtomicBool> {
         self.keep_running.clone()
+    }
+
+    #[cfg(fuzzing)]
+    pub fn send_to_self(&mut self, data: &[u8]) {
+        self.response_counter = 0;
+        self.num_bad_requests = 0;
+        let res = self
+            .fake_client_socket
+            .send_to(data, &self.socket.local_addr().unwrap());
+        info!("Sent to self: {:?}", res);
+    }
+
+    /// The main processing function for incoming connections. This method should be
+    /// called repeatedly in a loop to process requests. It returns 'true' when the
+    /// server has shutdown (due to keep_running being set to 'false').
+    ///
+    pub fn process_events(&mut self, events: &mut Events) -> bool {
+        self.poll
+            .poll(events, self.poll_duration)
+            .expect("poll failed");
+
+        for msg in events.iter() {
+            match msg.token() {
+                MESSAGE => {
+                    loop {
+                        check_ctrlc!(self.keep_running);
+
+                        self.merkle.reset();
+                        self.requests.clear();
+
+                        let socket_now_empty = self.collect_requests();
+
+                        if self.requests.is_empty() {
+                            break;
+                        }
+
+                        self.send_responses();
+
+                        if socket_now_empty {
+                            break;
+                        }
+                    }
+                }
+
+                HEALTH_CHECK => {
+                    let listener = self.health_listener.as_ref().unwrap();
+
+                    match listener.accept() {
+                        Ok((ref mut stream, src_addr)) => {
+                            info!("health check from {}", src_addr);
+                            self.stats.add_health_check(&src_addr.ip());
+
+                            match stream.write(HTTP_RESPONSE.as_bytes()) {
+                                Ok(_) => (),
+                                Err(e) => warn!("error writing health check {}", e),
+                            };
+
+                            match stream.shutdown(Shutdown::Both) {
+                                Ok(_) => (),
+                                Err(e) => warn!("error in health check socket shutdown {}", e),
+                            }
+                        }
+                        Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                            debug!("blocking in TCP health check");
+                        }
+                        Err(e) => {
+                            warn!("unexpected health check error {}", e);
+                        }
+                    }
+                }
+
+                STATUS => {
+                    for (addr, counts) in self.stats.iter() {
+                        info!(
+                            "{:16}: {} valid, {} invalid requests; {} responses ({} sent)",
+                            format!("{}", addr), counts.valid_requests, counts.invalid_requests,
+                            counts.responses_sent,
+                            counts.bytes_sent.file_size(fsopts::BINARY).unwrap()
+                        );
+                    }
+
+                    info!(
+                        "Totals: {} unique clients; {} valid, {} invalid requests; {} responses ({} sent)",
+                        self.stats.total_unique_clients(),
+                        self.stats.total_valid_requests(), self.stats.total_invalid_requests(),
+                        self.stats.total_responses_sent(),
+                        self.stats.total_bytes_sent().file_size(fsopts::BINARY).unwrap()
+                    );
+
+                    self.timer.set_timeout(self.config.status_interval(), ());
+                }
+
+                _ => unreachable!(),
+            }
+        }
+        false
+    }
+
+    // Read and process client requests from socket until empty or 'batch_size' number of
+    // requests have been read.
+    fn collect_requests(&mut self) -> bool {
+        for i in 0..self.config.batch_size() {
+            match self.socket.recv_from(&mut self.buf) {
+                Ok((num_bytes, src_addr)) => {
+                    match self.nonce_from_request(&self.buf, num_bytes) {
+                        Ok(nonce) => {
+                            self.stats.add_valid_request(&src_addr.ip());
+                            self.requests.push((Vec::from(nonce), src_addr));
+                            self.merkle.push_leaf(nonce);
+                        }
+                        Err(e) => {
+                            self.stats.add_invalid_request(&src_addr.ip());
+
+                            info!(
+                                "Invalid request: '{:?}' ({} bytes) from {} (#{} in batch, resp #{})",
+                                e, num_bytes, src_addr, i,
+                                self.stats.total_responses_sent() + u64::from(i)
+                            );
+                        }
+                    }
+                }
+                Err(e) => match e.kind() {
+                    ErrorKind::WouldBlock => {
+                        return true;
+                    }
+                    _ => {
+                        error!("Error receiving from socket: {:?}: {:?}", e.kind(), e);
+                        return false;
+                    }
+                },
+            };
+        }
+
+        false
     }
 
     // extract the client's nonce from its request
@@ -202,13 +351,36 @@ impl Server {
         }
     }
 
-    fn make_response(
-        &self,
-        srep: &RtMessage,
-        cert_bytes: &[u8],
-        path: &[u8],
-        idx: u32,
-    ) -> RtMessage {
+    fn send_responses(&mut self) -> () {
+        let merkle_root = self.merkle.compute_root();
+
+        // The SREP tag is identical for each response
+        let srep = self.online_key.make_srep(time::get_time(), &merkle_root);
+
+        for (i, &(ref nonce, ref src_addr)) in self.requests.iter().enumerate() {
+            let paths = self.merkle.get_paths(i);
+            let resp = self.make_response(&srep, &self.cert_bytes, &paths, i as u32);
+            let resp_bytes = resp.encode().unwrap();
+
+            let bytes_sent = self
+                .socket
+                .send_to(&resp_bytes, &src_addr)
+                .expect("send_to failed");
+
+            self.stats.add_response(&src_addr.ip(), bytes_sent);
+
+            info!(
+                "Responded {} bytes to {} for '{}..' (#{} in batch, resp #{})",
+                bytes_sent,
+                src_addr,
+                hex::encode(&nonce[0..4]),
+                i,
+                self.stats.total_responses_sent()
+            );
+        }
+    }
+
+    fn make_response(&self, srep: &RtMessage, cert_bytes: &[u8], path: &[u8], idx: u32) -> RtMessage {
         let mut index = [0; 4];
         (&mut index as &mut [u8])
             .write_u32::<LittleEndian>(idx)
@@ -225,165 +397,5 @@ impl Server {
         response.add_field(Tag::INDX, &index).unwrap();
 
         response
-    }
-
-    /// The main processing function for incoming connections. This method should be
-    /// called repeatedly in a loop to process requests. It returns 'true' when the
-    /// server has shutdown (due to keep_running being set to 'false').
-    ///
-    pub fn process_events(&mut self) -> bool {
-        self.poll
-            .poll(&mut self.events, self.poll_duration)
-            .expect("poll failed");
-
-        for event in self.events.iter() {
-            match event.token() {
-                MESSAGE => {
-                    let mut done = false;
-
-                    'process_batch: loop {
-                        check_ctrlc!(self.keep_running);
-
-                        let resp_start = self.response_counter;
-
-                        for i in 0..self.config.batch_size() {
-                            match self.socket.recv_from(&mut self.buf) {
-                                Ok((num_bytes, src_addr)) => {
-                                    match self.nonce_from_request(&self.buf, num_bytes) {
-                                        Ok(nonce) => {
-                                            self.requests.push((Vec::from(nonce), src_addr));
-                                            self.merkle.push_leaf(nonce);
-                                        }
-                                        Err(e) => {
-                                            self.num_bad_requests += 1;
-
-                                            info!(
-                                                "Invalid request: '{:?}' ({} bytes) from {} (#{} in batch, resp #{})",
-                                                e, num_bytes, src_addr, i, resp_start + i as u64
-                                            );
-                                        }
-                                    }
-                                }
-                                Err(e) => match e.kind() {
-                                    ErrorKind::WouldBlock => {
-                                        done = true;
-                                        break;
-                                    }
-                                    _ => {
-                                        error!(
-                                            "Error receiving from socket: {:?}: {:?}",
-                                            e.kind(),
-                                            e
-                                        );
-                                        break;
-                                    }
-                                },
-                            };
-                        }
-
-                        if self.requests.is_empty() {
-                            break 'process_batch;
-                        }
-
-                        let merkle_root = self.merkle.compute_root();
-                        let srep = self.online_key.make_srep(time::get_time(), &merkle_root);
-
-                        for (i, &(ref nonce, ref src_addr)) in self.requests.iter().enumerate() {
-                            let paths = self.merkle.get_paths(i);
-
-                            let resp =
-                                self.make_response(&srep, &self.cert_bytes, &paths, i as u32);
-                            let resp_bytes = resp.encode().unwrap();
-
-                            let bytes_sent = self
-                                .socket
-                                .send_to(&resp_bytes, &src_addr)
-                                .expect("send_to failed");
-
-                            self.response_counter += 1;
-
-                            info!(
-                                "Responded {} bytes to {} for '{}..' (#{} in batch, resp #{})",
-                                bytes_sent,
-                                src_addr,
-                                hex::encode(&nonce[0..4]),
-                                i,
-                                self.response_counter
-                            );
-                        }
-
-                        self.merkle.reset();
-                        self.requests.clear();
-
-                        if done {
-                            break 'process_batch;
-                        }
-                    }
-                }
-
-                HEALTH_CHECK => {
-                    let listener = self.health_listener.as_ref().unwrap();
-
-                    match listener.accept() {
-                        Ok((ref mut stream, src_addr)) => {
-                            info!("health check from {}", src_addr);
-
-                            match stream.write(HTTP_RESPONSE.as_bytes()) {
-                                Ok(_) => (),
-                                Err(e) => warn!("error writing health check {}", e),
-                            }
-
-                            match stream.shutdown(Shutdown::Both) {
-                                Ok(_) => (),
-                                Err(e) => warn!("error in health check socket shutdown {}", e),
-                            }
-                        }
-                        Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-                            debug!("blocking in TCP health check");
-                        }
-                        Err(e) => {
-                            warn!("unexpected health check error {}", e);
-                        }
-                    }
-                }
-
-                STATUS => {
-                    info!(
-                        "responses {}, invalid requests {}",
-                        self.response_counter, self.num_bad_requests
-                    );
-
-                    self.timer.set_timeout(self.config.status_interval(), ());
-                }
-
-                _ => unreachable!(),
-            }
-        }
-        false
-    }
-
-    /// Returns a reference to the server's long-term public key
-    pub fn get_public_key(&self) -> &str {
-        &self.public_key
-    }
-
-    /// Returns a reference to the server's on-line (delegated) key
-    pub fn get_online_key(&self) -> &OnlineKey {
-        &self.online_key
-    }
-
-    /// Returns a reference to the `ServerConfig` this server was configured with
-    pub fn get_config(&self) -> &Box<ServerConfig> {
-        &self.config
-    }
-
-    #[cfg(fuzzing)]
-    pub fn send_to_self(&mut self, data: &[u8]) {
-        self.response_counter = 0;
-        self.num_bad_requests = 0;
-        let res = self
-            .fake_client_socket
-            .send_to(data, &self.socket.local_addr().unwrap());
-        info!("Sent to self: {:?}", res);
     }
 }
