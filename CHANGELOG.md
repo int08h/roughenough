@@ -1,7 +1,8 @@
 ## Version 1.1.2 
 
-* Client request statistics tracking.
+* Add client request statistics tracking.
 * Clean-up and simplification of server inner loop.
+* Rust 2018 edition required to compile.
 
 ## Version 1.1.1
 
