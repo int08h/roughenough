@@ -12,15 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//!
+//! Facilities for tracking client requests to the server
+//!
+
 use hashbrown::HashMap;
 use hashbrown::hash_map::Iter;
 
 use std::net::IpAddr;
 
-/// Maximum number of stats entries to maintain.
-const MAX_CLIENTS: usize = 1_000_000;
-
-/// Track number and sizes of requests and responses per client.
+///
+/// Implementations of this trait record client activity
+///
 pub trait ClientStats {
     fn add_valid_request(&mut self, addr: &IpAddr);
 
@@ -49,6 +52,9 @@ pub trait ClientStats {
     fn clear(&mut self);
 }
 
+///
+/// Specific metrics tracked per each client
+///
 #[derive(Debug, Clone, Copy)]
 pub struct StatEntry {
     pub valid_requests: u64,
@@ -71,10 +77,10 @@ impl StatEntry {
 }
 
 ///
-/// Straight forward implementation of `ClientStats` backed by a hashmap.
+/// Implementation of `ClientStats` backed by a hashmap.
 ///
-/// Maintains a maximum of `MAX_CLIENTS` unique entries to bound memory use. Excess entries
-/// beyond `MAX_CLIENTS` are ignored and `num_overflows` is incremented.
+/// Maintains a maximum of `MAX_CLIENTS` unique entries to bound memory use. Excess
+/// entries beyond `MAX_CLIENTS` are ignored and `num_overflows` is incremented.
 ///
 pub struct SimpleStats {
     clients: HashMap<IpAddr, StatEntry>,
@@ -83,11 +89,16 @@ pub struct SimpleStats {
 }
 
 impl SimpleStats {
+
+    /// Maximum number of stats entries to maintain to prevent
+    /// unbounded memory growth.
+    pub const MAX_CLIENTS: usize = 1_000_000;
+
     pub fn new() -> Self {
         SimpleStats {
             clients: HashMap::with_capacity(128),
             num_overflows: 0,
-            max_clients: MAX_CLIENTS
+            max_clients: SimpleStats::MAX_CLIENTS,
         }
     }
 
@@ -97,7 +108,7 @@ impl SimpleStats {
         SimpleStats {
             clients: HashMap::with_capacity(128),
             num_overflows: 0,
-            max_clients: limit
+            max_clients: limit,
         }
     }
 
@@ -112,6 +123,7 @@ impl SimpleStats {
         return too_big;
     }
 
+    #[allow(dead_code)]
     pub fn num_overflows(&self) -> u64 {
         self.num_overflows
     }
@@ -272,7 +284,7 @@ mod test {
     #[test]
     fn overflow_max_entries() {
         let mut stats = SimpleStats::with_limits(100);
-        
+
         for i in 0..201 {
             let ipv4 = Ipv4Addr::from(i as u32);
             let addr = IpAddr::from(ipv4);
