@@ -225,6 +225,68 @@ impl ClientStats for SimpleStats {
     }
 }
 
+///
+/// A no-op implementation that does not track anything and has no runtime cost
+///
+#[allow(dead_code)]
+pub struct NoOpStats {
+    empty_map: HashMap<IpAddr, StatEntry>
+}
+
+impl NoOpStats {
+
+    #[allow(dead_code)]
+    pub fn new() -> Self {
+        NoOpStats {
+            empty_map: HashMap::new()
+        }
+    }
+}
+
+impl ClientStats for NoOpStats {
+    fn add_valid_request(&mut self, _addr: &IpAddr) {}
+
+    fn add_invalid_request(&mut self, _addr: &IpAddr) {}
+
+    fn add_health_check(&mut self, _addr: &IpAddr) {}
+
+    fn add_response(&mut self, _addr: &IpAddr, _bytes_sent: usize) {}
+
+    fn total_valid_requests(&self) -> u64 {
+        0
+    }
+
+    fn total_invalid_requests(&self) -> u64 {
+        0
+    }
+
+    fn total_health_checks(&self) -> u64 {
+        0
+    }
+
+    fn total_responses_sent(&self) -> u64 {
+        0
+    }
+
+    fn total_bytes_sent(&self) -> usize {
+        0
+    }
+
+    fn total_unique_clients(&self) -> u64 {
+        0
+    }
+
+    fn get_stats(&self, _addr: &IpAddr) -> Option<&StatEntry> {
+        None
+    }
+
+    fn iter(&self) -> Iter<IpAddr, StatEntry> {
+        self.empty_map.iter()
+    }
+
+    fn clear(&mut self) {}
+}
+
 #[cfg(test)]
 mod test {
     use crate::stats::{ClientStats, SimpleStats};
