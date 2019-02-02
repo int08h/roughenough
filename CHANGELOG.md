@@ -1,3 +1,7 @@
+## Version 1.1.3
+
+* Add decrypt option to `roughenough-kms` 
+
 ## Version 1.1.2 
 
 * Add client request statistics tracking.

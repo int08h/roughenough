@@ -13,22 +13,36 @@
 // limitations under the License.
 
 //!
-//! CLI used to encrypt the Roughenough long-term key using one of the KMS implementations
+//! CLI used to encrypt and decrypt the Roughenough long-term key
+//! using one of the KMS implementations
 //!
 
 #[macro_use]
 extern crate log;
 
 use clap::{App, Arg};
+
+#[allow(unused_imports)]
+use roughenough::kms::{EnvelopeEncryption, KmsProvider};
 use roughenough::roughenough_version;
 
-#[cfg(feature = "awskms")]
-fn aws_kms(kms_key: &str, plaintext_seed: &[u8]) {
-    use roughenough::kms::{AwsKms, EnvelopeEncryption};
+#[cfg(not(any(feature = "awskms", feature = "gcpkms")))]
+fn encrypt_seed(_: &str, _: &str) {
+    // main() will exit if kms support is not enabled, making this unreachable
+    unreachable!()
+}
 
-    let client = AwsKms::from_arn(kms_key).unwrap();
+#[cfg(any(feature = "awskms", feature = "gcpkms"))]
+fn encrypt_seed(kms_key: &str, hex_seed: &str) {
+    let kms_client = get_kms(kms_key);
 
-    match EnvelopeEncryption::encrypt_seed(&client, &plaintext_seed) {
+    let plaintext_seed = hex::decode(hex_seed).expect("Error decoding hex seed value");
+
+    if plaintext_seed.len() != 32 {
+        panic!("Seed must be 32 bytes long; provided seed is {}", plaintext_seed.len());
+    }
+
+    match EnvelopeEncryption::encrypt_seed(&kms_client, &plaintext_seed) {
         Ok(encrypted_blob) => {
             println!("kms_protection: \"{}\"", kms_key);
             println!("seed: {}", hex::encode(&encrypted_blob));
@@ -39,21 +53,37 @@ fn aws_kms(kms_key: &str, plaintext_seed: &[u8]) {
     }
 }
 
-#[cfg(feature = "gcpkms")]
-fn gcp_kms(kms_key: &str, plaintext_seed: &[u8]) {
-    use roughenough::kms::{EnvelopeEncryption, GcpKms};
+#[cfg(not(any(feature = "awskms", feature = "gcpkms")))]
+fn decrypt_blob(_: &str, _: &str) {
+    // main() will exit if kms support is not enabled, making this unreachable
+    unreachable!()
+}
 
-    let client = GcpKms::from_resource_id(kms_key).unwrap();
+#[cfg(any(feature = "awskms", feature = "gcpkms"))]
+fn decrypt_blob(kms_key: &str, hex_blob: &str) {
+    let kms_client = get_kms(kms_key);
+    let ciphertext = hex::decode(hex_blob).expect("Error decoding hex blob value");
 
-    match EnvelopeEncryption::encrypt_seed(&client, &plaintext_seed) {
-        Ok(encrypted_blob) => {
-            println!("kms_protection: \"{}\"", kms_key);
-            println!("seed: {}", hex::encode(&encrypted_blob));
+    match EnvelopeEncryption::decrypt_seed(&kms_client, ciphertext.as_ref()) {
+        Ok(plaintext) => {
+            println!("{}", hex::encode(plaintext));
         }
         Err(e) => {
             error!("Error: {:?}", e);
         }
     }
+}
+
+#[cfg(feature = "awskms")]
+fn get_kms(kms_key: &str) -> impl KmsProvider {
+    use roughenough::kms::AwsKms;
+    AwsKms::from_arn(kms_key).unwrap()
+}
+
+#[cfg(feature = "gcpkms")]
+fn get_kms(kms_key: &str) -> impl KmsProvider {
+    use roughenough::kms::GcpKms;
+    GcpKms::from_resource_id(kms_key).unwrap()
 }
 
 #[allow(unused_variables)]
@@ -64,45 +94,49 @@ pub fn main() {
 
     let matches = App::new("roughenough-kms")
         .version(roughenough_version().as_ref())
-        .long_about("Encrypt a Roughenough server's long-term seed using a KMS")
+        .long_about("Encrypt and decrypt Roughenough long-term server seeds using a KMS")
         .arg(
             Arg::with_name("KEY_ID")
                 .short("k")
                 .long("kms-key")
                 .takes_value(true)
                 .required(true)
-                .help("Identity of the KMS key to be used"),
+                .help("Identity of the KMS key to be used")
+        ).arg(
+            Arg::with_name("DECRYPT")
+                .short("d")
+                .long("decrypt")
+                .takes_value(true)
+                .required(false)
+                .help("Previously encrypted blob to decrypt to plaintext"),
         ).arg(
             Arg::with_name("SEED")
                 .short("s")
                 .long("seed")
                 .takes_value(true)
-                .required(true)
+                .required(false)
                 .help("32 byte hex seed for the server's long-term identity"),
         ).get_matches();
 
-    let kms_key = matches.value_of("KEY_ID").unwrap();
-    let plaintext_seed = matches
-        .value_of("SEED")
-        .map(|seed| hex::decode(seed).expect("Error parsing seed value"))
-        .unwrap();
-
-    if plaintext_seed.len() != 32 {
-        error!(
-            "Seed must be 32 bytes long; provided seed is {}",
-            plaintext_seed.len()
-        );
-        return;
+    if !(cfg!(feature = "gcpkms") || cfg!(feature = "awskms")) {
+        warn!("KMS support was not compiled into this build; nothing to do.");
+        warn!("See the Roughenough documentation for information on KMS support.");
+        warn!("  https://github.com/int08h/roughenough/blob/master/doc/OPTIONAL-FEATURES.md");
+        return
     }
 
-    if cfg!(feature = "awskms") {
-        #[cfg(feature = "awskms")]
-        aws_kms(kms_key, &plaintext_seed);
-    } else if cfg!(feature = "gcpkms") {
-        #[cfg(feature = "gcpkms")]
-        gcp_kms(kms_key, &plaintext_seed);
+    let kms_key = matches.value_of("KEY_ID").expect("Invalid KMS key id");
+
+    if matches.is_present("SEED") {
+        let hex_seed = matches.value_of("SEED").expect("Invalid seed value");
+        encrypt_seed(kms_key, hex_seed);
+
+    } else if matches.is_present("DECRYPT") {
+        let hex_blob = matches.value_of("DECRYPT").expect("Invalid blob value");
+        decrypt_blob(kms_key, hex_blob);
+
     } else {
-        warn!("KMS support was not compiled, nothing to do.");
-        warn!("For information on KMS support see the Roughenough documentation.");
+        error!("Neither seed encryption (-s) or blob decryption (-d) was specified.");
+        error!("One of them is required.");
     }
 }
