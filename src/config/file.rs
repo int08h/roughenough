@@ -26,7 +26,7 @@ use crate::Error;
 /// Read a Roughenough server configuration ([ServerConfig](trait.ServerConfig.html))
 /// from a YAML file.
 ///
-/// Example config:
+/// Example minimal config:
 ///
 /// ```yaml
 /// interface: 127.0.0.1
@@ -83,7 +83,7 @@ impl FileConfig {
                 "seed" => {
                     let val = value.as_str().unwrap().to_string();
                     config.seed = hex::decode(val)
-                        .expect("seed value invalid; 'seed' should be 32 byte hex value");
+                        .expect("seed value invalid; 'seed' must be a valid hex value");
                 }
                 "status_interval" => {
                     let val = value.as_i64().expect("status_interval value invalid");

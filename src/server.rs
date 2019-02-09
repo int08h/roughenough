@@ -40,7 +40,7 @@ use crate::key::{LongTermKey, OnlineKey};
 use crate::kms;
 use crate::merkle::MerkleTree;
 use crate::{Error, RtMessage, Tag, MIN_REQUEST_LENGTH};
-use crate::stats::{ClientStats, SimpleStats};
+use crate::stats::{ServerStats, PerClientStats};
 
 macro_rules! check_ctrlc {
     ($keep_running:expr) => {
@@ -90,7 +90,7 @@ pub struct Server {
     #[cfg(fuzzing)]
     fake_client_socket: UdpSocket,
 
-    stats: SimpleStats,
+    stats: PerClientStats,
 }
 
 impl Server {
@@ -172,7 +172,7 @@ impl Server {
             #[cfg(fuzzing)]
             fake_client_socket: UdpSocket::bind(&"127.0.0.1:0".parse().unwrap()).unwrap(),
 
-            stats: SimpleStats::new(),
+            stats: PerClientStats::new(),
         }
     }
 

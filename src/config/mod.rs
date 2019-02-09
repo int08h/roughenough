@@ -47,7 +47,7 @@ pub const DEFAULT_STATUS_INTERVAL: Duration = Duration::from_secs(600);
 /// Specifies parameters needed to configure a Roughenough server.
 ///
 /// Parameters labeled "**Required**" must always be provided and have no default value
-/// while those labeled "**Optional**" provide default values that can be overridden.
+/// while those labeled "**Optional**" provide sane default values that can be overridden.
 ///
 /// YAML Key | Environment Variable | Necessity | Description
 /// --- | --- | --- | ---
