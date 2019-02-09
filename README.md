@@ -170,7 +170,7 @@ how to enable and use.
 Roughtime features not implemented by the server:
 
 * On-line (while server is running) key rotation. The server must be restarted to generate a new delegated key. 
-* The Rougheough server depends on the host's time source to comply with the smeared leap-second 
+* The Roughenough server depends on the host's time source to comply with the smeared leap-second 
   requirement of the Roughtime protocol. A Roughenough server sourcing time from 
   [Google's public NTP servers](https://developers.google.com/time/) would produce compliant
   smeared leap-seconds but time sourced from members of `pool.ntp.org` likely will not.
@@ -186,6 +186,7 @@ created by Adam Langley and Robert Obryk.
 * Stuart Stock (stuart {at} int08h.com)
 * Aaron Hill (aa1ronham {at} gmail.com)
 * Peter Todd (pete {at} petertodd.org)
+* Muncan90 (github.com/Muncan90)
 
 ## Copyright and License
 Roughenough is copyright (c) 2017-2019 int08h LLC. All rights reserved. 
