@@ -35,12 +35,12 @@ use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio::tcp::Shutdown;
 use mio_extras::timer::Timer;
 
+use crate::{Error, RtMessage, Tag, MIN_REQUEST_LENGTH};
 use crate::config::ServerConfig;
 use crate::key::{LongTermKey, OnlineKey};
 use crate::kms;
 use crate::merkle::MerkleTree;
-use crate::{Error, RtMessage, Tag, MIN_REQUEST_LENGTH};
-use crate::stats::{ServerStats, PerClientStats};
+use crate::stats::{AggregatedStats, PerClientStats, ServerStats};
 
 macro_rules! check_ctrlc {
     ($keep_running:expr) => {
@@ -86,11 +86,11 @@ pub struct Server {
 
     public_key: String,
 
+    stats: Box<dyn ServerStats>,
+
     // Used to send requests to ourselves in fuzzing mode
     #[cfg(fuzzing)]
     fake_client_socket: UdpSocket,
-
-    stats: PerClientStats,
 }
 
 impl Server {
@@ -98,7 +98,7 @@ impl Server {
     /// Create a new server instance from the provided
     /// [`ServerConfig`](../config/trait.ServerConfig.html) trait object instance.
     ///
-    pub fn new(config: Box<ServerConfig>) -> Server {
+    pub fn new(config: Box<dyn ServerConfig>) -> Server {
         let online_key = OnlineKey::new();
         let public_key: String;
 
@@ -148,6 +148,12 @@ impl Server {
             None
         };
 
+        let stats: Box<dyn ServerStats> = if config.client_stats_enabled() {
+            Box::new(PerClientStats::new())
+        } else {
+            Box::new(AggregatedStats::new())
+        };
+
         let merkle = MerkleTree::new();
         let requests = Vec::with_capacity(config.batch_size() as usize);
 
@@ -169,10 +175,10 @@ impl Server {
 
             public_key,
 
+            stats,
+
             #[cfg(fuzzing)]
             fake_client_socket: UdpSocket::bind(&"127.0.0.1:0".parse().unwrap()).unwrap(),
-
-            stats: PerClientStats::new(),
         }
     }
 
@@ -374,7 +380,7 @@ impl Server {
                 bytes_sent,
                 src_addr,
                 hex::encode(&nonce[0..4]),
-                i,
+                i + 1,
                 self.stats.total_responses_sent()
             );
         }
