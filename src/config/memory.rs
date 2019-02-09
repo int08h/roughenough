@@ -30,10 +30,12 @@ pub struct MemoryConfig {
     pub status_interval: Duration,
     pub kms_protection: KmsProtection,
     pub health_check_port: Option<u16>,
+    pub client_stats: bool,
+    pub fault_percentage: u8,
 }
 
 impl MemoryConfig {
-    pub fn new(port: u16) -> MemoryConfig {
+    pub fn new(port: u16) -> Self {
         MemoryConfig {
             port,
             interface: "127.0.0.1".to_string(),
@@ -43,6 +45,8 @@ impl MemoryConfig {
             status_interval: DEFAULT_STATUS_INTERVAL,
             kms_protection: KmsProtection::Plaintext,
             health_check_port: None,
+            client_stats: false,
+            fault_percentage: 0
         }
     }
 }
@@ -74,5 +78,13 @@ impl ServerConfig for MemoryConfig {
 
     fn health_check_port(&self) -> Option<u16> {
         self.health_check_port
+    }
+
+    fn client_stats_enabled(&self) -> bool {
+        self.client_stats
+    }
+
+    fn fault_percentage(&self) -> u8 {
+        self.fault_percentage
     }
 }

@@ -42,6 +42,8 @@ pub struct FileConfig {
     status_interval: Duration,
     kms_protection: KmsProtection,
     health_check_port: Option<u16>,
+    client_stats: bool,
+    fault_percentage: u8,
 }
 
 impl FileConfig {
@@ -69,6 +71,8 @@ impl FileConfig {
             status_interval: DEFAULT_STATUS_INTERVAL,
             kms_protection: KmsProtection::Plaintext,
             health_check_port: None,
+            client_stats: false,
+            fault_percentage: 0,
         };
 
         for (key, value) in cfg[0].as_hash().unwrap() {
@@ -95,6 +99,14 @@ impl FileConfig {
                 "health_check_port" => {
                     let val = value.as_i64().unwrap() as u16;
                     config.health_check_port = Some(val);
+                }
+                "client_stats" => {
+                    let val = value.as_str().unwrap().to_ascii_lowercase();
+                    config.client_stats = val == "yes" || val == "on";
+                }
+                "fault_percentage" => {
+                    let val = value.as_i64().unwrap() as u8;
+                    config.fault_percentage = val;
                 }
                 unknown => {
                     return Err(Error::InvalidConfiguration(format!(
@@ -136,5 +148,13 @@ impl ServerConfig for FileConfig {
 
     fn health_check_port(&self) -> Option<u16> {
         self.health_check_port
+    }
+
+    fn client_stats_enabled(&self) -> bool {
+        self.client_stats
+    }
+
+    fn fault_percentage(&self) -> u8 {
+        self.fault_percentage
     }
 }

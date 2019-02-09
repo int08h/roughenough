@@ -58,13 +58,13 @@ pub const DEFAULT_STATUS_INTERVAL: Duration = Duration::from_secs(600);
 /// `status_interval` | `ROUGHENOUGH_STATUS_INTERVAL` | Optional | Number of _seconds_ between each logged status update. Default is `600` seconds (10 minutes).
 /// `health_check_port` | `ROUGHENOUGH_HEALTH_CHECK_PORT` | Optional | If present, enable an HTTP health check responder on the provided port. **Use with caution**.
 /// `kms_protection` | `ROUGHENOUGH_KMS_PROTECTION` | Optional | If compiled with KMS support, the ID of the KMS key used to protect the long-term identity.
+/// `client_stats` | `ROUGHENOUGH_CLIENT_STATS` | Optional | A value of `on` or `yes` will enable tracking of per-client request statistics that will be output each time server status is logged. Default is `off` (disabled).
+/// `fault_percentage` | `ROUGHENOUGH_FAULT_PERCENTAGE` | Optional | Likelihood (as a percentage) that the server will intentionally return an invalid client response. An integer range from `0` (disabled, all responses valid) to `50` (50% of responses will be invalid). Default is `0` (disabled).
 ///
 /// Implementations of this trait obtain a valid configuration from different back-end
 /// sources. See:
 ///   * [FileConfig](struct.FileConfig.html) - configure via a YAML file
-///   * [EnvironmentConfig](struct.EnvironmentConfig.html) - configure via environment vars
-///
-/// The health check and KMS features require
+///   * [EnvironmentConfig](struct.EnvironmentConfig.html) - configure via environment variables
 ///
 pub trait ServerConfig {
     /// [Required] IP address or interface name to listen for client requests
@@ -95,6 +95,18 @@ pub trait ServerConfig {
     /// This is a *very* simplistic check, it emits a fixed HTTP response to all TCP connections.
     /// https://cloud.google.com/load-balancing/docs/health-checks#legacy-health-checks
     fn health_check_port(&self) -> Option<u16>;
+
+    /// [Optional] A value of `on` or `yes` will enable tracking of per-client request statistics
+    /// that will be output each time server status is logged. Default is `off` (disabled).
+    fn client_stats_enabled(&self) -> bool;
+
+    /// [Optional] Likelihood (as a percentage) that the server will intentionally return an
+    /// invalid client response. An integer range from `0` (disabled, all responses valid) to `50`
+    /// (~50% of responses will be invalid). Default is `0` (disabled).
+    ///
+    /// See the [Roughtime spec](https://roughtime.googlesource.com/roughtime/+/HEAD/ECOSYSTEM.md#maintaining-a-healthy-software-ecosystem)
+    /// for background and rationale.
+    fn fault_percentage(&self) -> u8;
 
     /// Convenience function to create a `SocketAddr` from the provided `interface` and `port`
     fn udp_socket_addr(&self) -> Result<SocketAddr, Error> {
@@ -157,6 +169,10 @@ pub fn is_valid_config(cfg: &Box<dyn ServerConfig>) -> bool {
             "batch_size {} is invalid; valid range 1-64",
             cfg.batch_size()
         );
+        is_valid = false;
+    }
+    if cfg.fault_percentage() > 50 {
+        error!("fault_percentage {} is invalid; valid range 0-50", cfg.fault_percentage());
         is_valid = false;
     }
 

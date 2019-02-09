@@ -33,6 +33,8 @@ use crate::Error;
 ///   status_interval   | `ROUGHENOUGH_STATUS_INTERVAL`
 ///   kms_protection    | `ROUGHENOUGH_KMS_PROTECTION`
 ///   health_check_port | `ROUGHENOUGH_HEALTH_CHECK_PORT`
+///   client_stats      | `ROUGHENOUGH_CLIENT_STATS`
+///   fault_percentage  | `ROUGHENOUGH_FAULT_PERCENTAGE`
 ///
 pub struct EnvironmentConfig {
     port: u16,
@@ -42,6 +44,8 @@ pub struct EnvironmentConfig {
     status_interval: Duration,
     kms_protection: KmsProtection,
     health_check_port: Option<u16>,
+    client_stats: bool,
+    fault_percentage: u8,
 }
 
 const ROUGHENOUGH_PORT: &str = "ROUGHENOUGH_PORT";
@@ -51,6 +55,8 @@ const ROUGHENOUGH_BATCH_SIZE: &str = "ROUGHENOUGH_BATCH_SIZE";
 const ROUGHENOUGH_STATUS_INTERVAL: &str = "ROUGHENOUGH_STATUS_INTERVAL";
 const ROUGHENOUGH_KMS_PROTECTION: &str = "ROUGHENOUGH_KMS_PROTECTION";
 const ROUGHENOUGH_HEALTH_CHECK_PORT: &str = "ROUGHENOUGH_HEALTH_CHECK_PORT";
+const ROUGHENOUGH_CLIENT_STATS: &str = "ROUGHENOUGH_CLIENT_STATS";
+const ROUGHENOUGH_FAULT_PERCENTAGE: &str = "ROUGHENOUGH_FAULT_PERCENTAGE";
 
 impl EnvironmentConfig {
     pub fn new() -> Result<Self, Error> {
@@ -62,6 +68,8 @@ impl EnvironmentConfig {
             status_interval: DEFAULT_STATUS_INTERVAL,
             kms_protection: KmsProtection::Plaintext,
             health_check_port: None,
+            client_stats: false,
+            fault_percentage: 0,
         };
 
         if let Ok(port) = env::var(ROUGHENOUGH_PORT) {
@@ -107,6 +115,18 @@ impl EnvironmentConfig {
             cfg.health_check_port = Some(val);
         };
 
+        if let Ok(mut client_stats) = env::var(ROUGHENOUGH_CLIENT_STATS) {
+            client_stats.make_ascii_lowercase();
+            
+            cfg.client_stats = client_stats == "yes" || client_stats == "on";
+        }
+
+        if let Ok(fault_percentage) = env::var(ROUGHENOUGH_FAULT_PERCENTAGE) {
+            cfg.fault_percentage = fault_percentage
+                .parse()
+                .unwrap_or_else(|_| panic!("invalid fault_percentage: {}", fault_percentage));
+        };
+
         Ok(cfg)
     }
 }
@@ -138,5 +158,13 @@ impl ServerConfig for EnvironmentConfig {
 
     fn health_check_port(&self) -> Option<u16> {
         self.health_check_port
+    }
+
+    fn client_stats_enabled(&self) -> bool {
+        self.client_stats
+    }
+
+    fn fault_percentage(&self) -> u8 {
+        self.fault_percentage
     }
 }

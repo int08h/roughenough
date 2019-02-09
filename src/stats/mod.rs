@@ -24,7 +24,7 @@ use std::net::IpAddr;
 ///
 /// Implementations of this trait record client activity
 ///
-pub trait ClientStats {
+pub trait ServerStats {
     fn add_valid_request(&mut self, addr: &IpAddr);
 
     fn add_invalid_request(&mut self, addr: &IpAddr);
@@ -45,9 +45,9 @@ pub trait ClientStats {
 
     fn total_unique_clients(&self) -> u64;
 
-    fn get_stats(&self, addr: &IpAddr) -> Option<&StatEntry>;
+    fn get_client_stats(&self, addr: &IpAddr) -> Option<&ClientStatEntry>;
 
-    fn iter(&self) -> Iter<IpAddr, StatEntry>;
+    fn iter(&self) -> Iter<IpAddr, ClientStatEntry>;
 
     fn clear(&mut self);
 }
@@ -56,7 +56,7 @@ pub trait ClientStats {
 /// Specific metrics tracked per each client
 ///
 #[derive(Debug, Clone, Copy)]
-pub struct StatEntry {
+pub struct ClientStatEntry {
     pub valid_requests: u64,
     pub invalid_requests: u64,
     pub health_checks: u64,
@@ -64,9 +64,9 @@ pub struct StatEntry {
     pub bytes_sent: usize,
 }
 
-impl StatEntry {
+impl ClientStatEntry {
     fn new() -> Self {
-        StatEntry {
+        ClientStatEntry {
             valid_requests: 0,
             invalid_requests: 0,
             health_checks: 0,
@@ -77,35 +77,35 @@ impl StatEntry {
 }
 
 ///
-/// Implementation of `ClientStats` backed by a hashmap.
+/// Implementation of `ServerStats` that provides granular per-client request/response counts.
 ///
 /// Maintains a maximum of `MAX_CLIENTS` unique entries to bound memory use. Excess
 /// entries beyond `MAX_CLIENTS` are ignored and `num_overflows` is incremented.
 ///
-pub struct SimpleStats {
-    clients: HashMap<IpAddr, StatEntry>,
+pub struct PerClientStats {
+    clients: HashMap<IpAddr, ClientStatEntry>,
     num_overflows: u64,
     max_clients: usize,
 }
 
-impl SimpleStats {
+impl PerClientStats {
 
     /// Maximum number of stats entries to maintain to prevent
     /// unbounded memory growth.
     pub const MAX_CLIENTS: usize = 1_000_000;
 
     pub fn new() -> Self {
-        SimpleStats {
+        PerClientStats {
             clients: HashMap::with_capacity(128),
             num_overflows: 0,
-            max_clients: SimpleStats::MAX_CLIENTS,
+            max_clients: PerClientStats::MAX_CLIENTS,
         }
     }
 
     // visible for testing
     #[cfg(test)]
-    fn with_limits(limit: usize) -> Self {
-        SimpleStats {
+    fn with_limit(limit: usize) -> Self {
+        PerClientStats {
             clients: HashMap::with_capacity(128),
             num_overflows: 0,
             max_clients: limit,
@@ -129,14 +129,14 @@ impl SimpleStats {
     }
 }
 
-impl ClientStats for SimpleStats {
+impl ServerStats for PerClientStats {
     fn add_valid_request(&mut self, addr: &IpAddr) {
         if self.too_many_entries() {
             return;
         }
         self.clients
             .entry(*addr)
-            .or_insert_with(StatEntry::new)
+            .or_insert_with(ClientStatEntry::new)
             .valid_requests += 1;
     }
 
@@ -146,7 +146,7 @@ impl ClientStats for SimpleStats {
         }
         self.clients
             .entry(*addr)
-            .or_insert_with(StatEntry::new)
+            .or_insert_with(ClientStatEntry::new)
             .invalid_requests += 1;
     }
 
@@ -156,7 +156,7 @@ impl ClientStats for SimpleStats {
         }
         self.clients
             .entry(*addr)
-            .or_insert_with(StatEntry::new)
+            .or_insert_with(ClientStatEntry::new)
             .health_checks += 1;
     }
 
@@ -166,7 +166,7 @@ impl ClientStats for SimpleStats {
         }
         let entry = self.clients
             .entry(*addr)
-            .or_insert_with(StatEntry::new);
+            .or_insert_with(ClientStatEntry::new);
 
         entry.responses_sent += 1;
         entry.bytes_sent += bytes_sent;
@@ -211,11 +211,11 @@ impl ClientStats for SimpleStats {
         self.clients.len() as u64
     }
 
-    fn get_stats(&self, addr: &IpAddr) -> Option<&StatEntry> {
+    fn get_client_stats(&self, addr: &IpAddr) -> Option<&ClientStatEntry> {
         self.clients.get(addr)
     }
 
-    fn iter(&self) -> Iter<IpAddr, StatEntry> {
+    fn iter(&self) -> Iter<IpAddr, ClientStatEntry> {
         self.clients.iter()
     }
 
@@ -226,61 +226,80 @@ impl ClientStats for SimpleStats {
 }
 
 ///
-/// A no-op implementation that does not track anything and has no runtime cost
+/// Implementation of `ServerStats` that provides high-level aggregated server statistics.
 ///
 #[allow(dead_code)]
-pub struct NoOpStats {
-    empty_map: HashMap<IpAddr, StatEntry>
+pub struct AggregatedStats {
+    valid_requests: u64,
+    invalid_requests: u64,
+    health_checks: u64,
+    responses_sent: u64,
+    bytes_sent: usize,
+    empty_map: HashMap<IpAddr, ClientStatEntry>,
 }
 
-impl NoOpStats {
+impl AggregatedStats {
 
     #[allow(dead_code)]
     pub fn new() -> Self {
-        NoOpStats {
+        AggregatedStats {
+            valid_requests: 0,
+            invalid_requests: 0,
+            health_checks: 0,
+            responses_sent: 0,
+            bytes_sent: 0,
             empty_map: HashMap::new()
         }
     }
 }
 
-impl ClientStats for NoOpStats {
-    fn add_valid_request(&mut self, _addr: &IpAddr) {}
+impl ServerStats for AggregatedStats {
+    fn add_valid_request(&mut self, _: &IpAddr) {
+        self.valid_requests += 1
+    }
 
-    fn add_invalid_request(&mut self, _addr: &IpAddr) {}
+    fn add_invalid_request(&mut self, _: &IpAddr) {
+        self.invalid_requests += 1
+    }
 
-    fn add_health_check(&mut self, _addr: &IpAddr) {}
+    fn add_health_check(&mut self, _: &IpAddr) {
+        self.health_checks += 1
+    }
 
-    fn add_response(&mut self, _addr: &IpAddr, _bytes_sent: usize) {}
+    fn add_response(&mut self, _: &IpAddr, bytes_sent: usize) {
+        self.bytes_sent += bytes_sent;
+        self.responses_sent += 1;
+    }
 
     fn total_valid_requests(&self) -> u64 {
-        0
+        self.valid_requests
     }
 
     fn total_invalid_requests(&self) -> u64 {
-        0
+        self.invalid_requests
     }
 
     fn total_health_checks(&self) -> u64 {
-        0
+        self.health_checks
     }
 
     fn total_responses_sent(&self) -> u64 {
-        0
+        self.responses_sent
     }
 
     fn total_bytes_sent(&self) -> usize {
-        0
+        self.bytes_sent
     }
 
     fn total_unique_clients(&self) -> u64 {
         0
     }
 
-    fn get_stats(&self, _addr: &IpAddr) -> Option<&StatEntry> {
+    fn get_client_stats(&self, _addr: &IpAddr) -> Option<&ClientStatEntry> {
         None
     }
 
-    fn iter(&self) -> Iter<IpAddr, StatEntry> {
+    fn iter(&self) -> Iter<IpAddr, ClientStatEntry> {
         self.empty_map.iter()
     }
 
@@ -289,12 +308,12 @@ impl ClientStats for NoOpStats {
 
 #[cfg(test)]
 mod test {
-    use crate::stats::{ClientStats, SimpleStats};
+    use crate::stats::{ServerStats, PerClientStats};
     use std::net::{IpAddr, Ipv4Addr};
 
     #[test]
     fn simple_stats_starts_empty() {
-        let stats = SimpleStats::new();
+        let stats = PerClientStats::new();
 
         assert_eq!(stats.total_valid_requests(), 0);
         assert_eq!(stats.total_invalid_requests(), 0);
@@ -307,7 +326,7 @@ mod test {
 
     #[test]
     fn client_requests_are_tracked() {
-        let mut stats = SimpleStats::new();
+        let mut stats = PerClientStats::new();
 
         let ip1 = "127.0.0.1".parse().unwrap();
         let ip2 = "127.0.0.2".parse().unwrap();
@@ -329,7 +348,7 @@ mod test {
 
     #[test]
     fn per_client_stats() {
-        let mut stats = SimpleStats::new();
+        let mut stats = PerClientStats::new();
         let ip = "127.0.0.3".parse().unwrap();
 
         stats.add_valid_request(&ip);
@@ -345,7 +364,7 @@ mod test {
 
     #[test]
     fn overflow_max_entries() {
-        let mut stats = SimpleStats::with_limits(100);
+        let mut stats = PerClientStats::with_limit(100);
 
         for i in 0..201 {
             let ipv4 = Ipv4Addr::from(i as u32);
