@@ -219,7 +219,7 @@ impl Server {
     pub fn process_events(&mut self, events: &mut Events) -> bool {
         self.poll
             .poll(events, self.poll_duration)
-            .expect("poll failed");
+            .expect("server event poll failed; cannot recover");
 
         for msg in events.iter() {
             match msg.token() {

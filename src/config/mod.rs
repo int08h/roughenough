@@ -145,25 +145,26 @@ pub fn is_valid_config(cfg: &Box<dyn ServerConfig>) -> bool {
     let mut is_valid = true;
 
     if cfg.port() == 0 {
-        error!("unset port: {}", cfg.port());
+        error!("server port not set: {}", cfg.port());
         is_valid = false;
     }
+
     if cfg.interface().is_empty() {
-        error!("interface is missing");
+        error!("'interface' is missing");
         is_valid = false;
     }
+
     if cfg.seed().is_empty() {
-        error!("seed value is missing");
+        error!("'seed' value is missing");
         is_valid = false;
-    }
-    if *cfg.kms_protection() == KmsProtection::Plaintext && cfg.seed().len() != 32 {
-        error!("plaintext seed value must be 32 characters long");
+    } else if *cfg.kms_protection() == KmsProtection::Plaintext && cfg.seed().len() != SEED_LENGTH as usize {
+        error!("plaintext seed value must be 32 characters long, found {}", cfg.seed().len());
         is_valid = false;
-    }
-    if *cfg.kms_protection() != KmsProtection::Plaintext && cfg.seed().len() <= 32 {
+    } else if *cfg.kms_protection() != KmsProtection::Plaintext && cfg.seed().len() <= SEED_LENGTH as usize {
         error!("KMS use enabled but seed value is too short to be an encrypted blob");
         is_valid = false;
     }
+
     if cfg.batch_size() < 1 || cfg.batch_size() > 64 {
         error!(
             "batch_size {} is invalid; valid range 1-64",
