@@ -116,7 +116,7 @@ impl fmt::Debug for Signer {
     }
 }
 
-#[cfg_attr(rustfmt, rustfmt_skip)] // rustfmt errors on the long signature strings
+#[rustfmt::skip] // rustfmt errors on the long signature strings
 #[cfg(test)]
 mod test {
     use super::*;
