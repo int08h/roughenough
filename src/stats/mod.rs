@@ -74,7 +74,7 @@ pub trait ServerStats {
 
     fn total_unique_clients(&self) -> u64;
 
-    fn get_client_stats(&self, addr: &IpAddr) -> Option<&ClientStatEntry>;
+    fn stats_for_client(&self, addr: &IpAddr) -> Option<&ClientStatEntry>;
 
     fn iter(&self) -> Iter<IpAddr, ClientStatEntry>;
 
@@ -131,7 +131,7 @@ mod test {
         stats.add_response(&ip, 2048);
         stats.add_response(&ip, 1024);
 
-        let entry = stats.get_client_stats(&ip).unwrap();
+        let entry = stats.stats_for_client(&ip).unwrap();
         assert_eq!(entry.valid_requests, 1);
         assert_eq!(entry.invalid_requests, 0);
         assert_eq!(entry.responses_sent, 2);

@@ -37,6 +37,7 @@ use mio_extras::timer::Timer;
 
 use crate::{Error, RtMessage, Tag, MIN_REQUEST_LENGTH};
 use crate::config::ServerConfig;
+use crate::grease::Grease;
 use crate::key::{LongTermKey, OnlineKey};
 use crate::kms;
 use crate::merkle::MerkleTree;
@@ -78,6 +79,7 @@ pub struct Server {
     health_listener: Option<TcpListener>,
     keep_running: Arc<AtomicBool>,
     poll_duration: Option<Duration>,
+    grease: Grease,
     timer: Timer<()>,
     poll: Poll,
     merkle: MerkleTree,
@@ -154,6 +156,7 @@ impl Server {
             Box::new(AggregatedStats::new())
         };
 
+        let grease = Grease::new(config.fault_percentage());
         let merkle = MerkleTree::new();
         let requests = Vec::with_capacity(config.batch_size() as usize);
 
@@ -167,6 +170,7 @@ impl Server {
 
             keep_running,
             poll_duration,
+            grease,
             timer,
             poll,
             merkle,
@@ -357,7 +361,7 @@ impl Server {
         }
     }
 
-    fn send_responses(&mut self) -> () {
+    fn send_responses(&mut self) {
         let merkle_root = self.merkle.compute_root();
 
         // The SREP tag is identical for each response
@@ -365,8 +369,11 @@ impl Server {
 
         for (i, &(ref nonce, ref src_addr)) in self.requests.iter().enumerate() {
             let paths = self.merkle.get_paths(i);
-            let resp = self.make_response(&srep, &self.cert_bytes, &paths, i as u32);
-            let resp_bytes = resp.encode().unwrap();
+            let resp_msg = {
+                let r = self.make_response(&srep, &self.cert_bytes, &paths, i as u32);
+                if self.grease.should_add_error() { self.grease.add_errors(&r) } else { r }
+            };
+            let resp_bytes = resp_msg.encode().unwrap();
 
             let bytes_sent = self
                 .socket

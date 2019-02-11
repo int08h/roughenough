@@ -91,7 +91,7 @@ impl ServerStats for AggregatedStats {
         0
     }
 
-    fn get_client_stats(&self, _addr: &IpAddr) -> Option<&ClientStatEntry> {
+    fn stats_for_client(&self, _addr: &IpAddr) -> Option<&ClientStatEntry> {
         None
     }
 

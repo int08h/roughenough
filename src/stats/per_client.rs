@@ -40,7 +40,7 @@ impl PerClientStats {
 
     pub fn new() -> Self {
         PerClientStats {
-            clients: HashMap::with_capacity(128),
+            clients: HashMap::with_capacity(64),
             num_overflows: 0,
             max_clients: PerClientStats::MAX_CLIENTS,
         }
@@ -50,7 +50,7 @@ impl PerClientStats {
     #[cfg(test)]
     pub fn with_limit(limit: usize) -> Self {
         PerClientStats {
-            clients: HashMap::with_capacity(128),
+            clients: HashMap::with_capacity(64),
             num_overflows: 0,
             max_clients: limit,
         }
@@ -64,7 +64,7 @@ impl PerClientStats {
             self.num_overflows += 1;
         }
 
-        return too_big;
+        too_big
     }
 
     #[allow(dead_code)]
@@ -155,7 +155,7 @@ impl ServerStats for PerClientStats {
         self.clients.len() as u64
     }
 
-    fn get_client_stats(&self, addr: &IpAddr) -> Option<&ClientStatEntry> {
+    fn stats_for_client(&self, addr: &IpAddr) -> Option<&ClientStatEntry> {
         self.clients.get(addr)
     }
 

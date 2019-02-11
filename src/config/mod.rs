@@ -22,20 +22,20 @@
 //! such as files or environment variables.
 //!
 
+mod environment;
+mod file;
+mod memory;
+
 use std::net::SocketAddr;
 use std::time::Duration;
 
-mod file;
-pub use self::file::FileConfig;
-
-mod environment;
 pub use self::environment::EnvironmentConfig;
-
-mod memory;
+pub use self::file::FileConfig;
 pub use self::memory::MemoryConfig;
 
 use crate::key::KmsProtection;
 use crate::Error;
+use crate::SEED_LENGTH;
 
 /// Maximum number of requests to process in one batch and include the the Merkle tree.
 pub const DEFAULT_BATCH_SIZE: u8 = 64;
@@ -172,6 +172,7 @@ pub fn is_valid_config(cfg: &Box<dyn ServerConfig>) -> bool {
         );
         is_valid = false;
     }
+
     if cfg.fault_percentage() > 50 {
         error!("fault_percentage {} is invalid; valid range 0-50", cfg.fault_percentage());
         is_valid = false;
