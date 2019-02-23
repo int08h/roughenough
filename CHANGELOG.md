@@ -1,3 +1,8 @@
+## Version 1.1.4
+
+* Implement Roughtime ecosystem response mangling (177372f, f851deb)
+* Doc fix from @Muncan90 (20ba144)
+
 ## Version 1.1.3
 
 * Add decrypt option to `roughenough-kms` 
