@@ -63,6 +63,7 @@ mod message;
 mod tag;
 
 pub mod config;
+pub mod grease;
 pub mod key;
 pub mod kms;
 pub mod merkle;
@@ -75,7 +76,7 @@ pub use crate::message::RtMessage;
 pub use crate::tag::Tag;
 
 /// Version of Roughenough
-pub const VERSION: &str = "1.1.3";
+pub const VERSION: &str = "1.1.4";
 
 /// Roughenough version string enriched with any compile-time optional features
 pub fn roughenough_version() -> String {
@@ -95,8 +96,8 @@ pub fn roughenough_version() -> String {
 /// Minimum size (in bytes) of a client request
 pub const MIN_REQUEST_LENGTH: u32 = 1024;
 
-/// Minimum size (in bytes) of seeds used to derive private keys
-pub const MIN_SEED_LENGTH: u32 = 32;
+/// Size (in bytes) of seeds used to derive private keys
+pub const SEED_LENGTH: u32 = 32;
 
 /// Size (in bytes) of an Ed25519 public key
 pub const PUBKEY_LENGTH: u32 = 32;

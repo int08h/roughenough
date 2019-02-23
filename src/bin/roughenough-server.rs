@@ -45,29 +45,25 @@ macro_rules! check_ctrlc {
 
 fn polling_loop(config: Box<ServerConfig>) {
     let mut server = Server::new(config);
+    let cfg = server.get_config(); // borrow config that was moved above
 
-    info!("Long-term public key    : {}", server.get_public_key());
-    info!("Online public key       : {}", server.get_online_key());
-    info!(
-        "Max response batch size : {}",
-        server.get_config().batch_size()
+    info!("Long-term public key       : {}", server.get_public_key());
+    info!("Online public key          : {}", server.get_online_key());
+    info!("Max response batch size    : {}", cfg.batch_size());
+    info!("Status updates every       : {} seconds", cfg.status_interval().as_secs());
+    info!("Server listening on        : {}:{}", cfg.interface(), cfg.port());
+    if let Some(hc_port) = cfg.health_check_port() {
+        info!("TCP health check           : {}:{}", cfg.interface(), hc_port);
+    } else {
+        info!("TCP health check           : disabled");
+    }
+    info!("Client req/resp tracking   : {}",
+          if cfg.client_stats_enabled() { "per-client" } else { "aggregated" }
     );
-    info!(
-        "Status updates every    : {} seconds",
-        server.get_config().status_interval().as_secs()
-    );
-    info!(
-        "Server listening on     : {}:{}",
-        server.get_config().interface(),
-        server.get_config().port()
-    );
-
-    if let Some(hc_port) = server.get_config().health_check_port() {
-        info!(
-            "TCP health check        : {}:{}",
-            server.get_config().interface(),
-            hc_port
-        );
+    if cfg.fault_percentage() > 0 {
+        info!("Deliberate response errors : ~{}%", cfg.fault_percentage());
+    } else {
+        info!("Deliberate response errors : disabled");
     }
 
     let kr = server.get_keep_running();

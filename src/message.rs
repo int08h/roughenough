@@ -69,6 +69,19 @@ impl RtMessage {
         }
     }
 
+    ///
+    /// Dangerous: construct a new RtMessage **without validation or error checking**.
+    ///
+    /// Intended _only_ for construction of deliberately bogus responses as part of [Roughtime's
+    /// ecosystem](https://roughtime.googlesource.com/roughtime/+/HEAD/ECOSYSTEM.md#maintaining-a-healthy-software-ecosystem).
+    ///
+    pub fn new_deliberately_invalid(tags: Vec<Tag>, values: Vec<Vec<u8>>) -> Self {
+        RtMessage {
+            tags,
+            values,
+        }
+    }
+
     /// Internal function to create a single tag message
     fn single_tag_message(bytes: &[u8], msg: &mut Cursor<&[u8]>) -> Result<Self, Error> {
         if bytes.len() < 8 {

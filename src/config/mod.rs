@@ -22,20 +22,20 @@
 //! such as files or environment variables.
 //!
 
+mod environment;
+mod file;
+mod memory;
+
 use std::net::SocketAddr;
 use std::time::Duration;
 
-mod file;
-pub use self::file::FileConfig;
-
-mod environment;
 pub use self::environment::EnvironmentConfig;
-
-mod memory;
+pub use self::file::FileConfig;
 pub use self::memory::MemoryConfig;
 
 use crate::key::KmsProtection;
 use crate::Error;
+use crate::SEED_LENGTH;
 
 /// Maximum number of requests to process in one batch and include the the Merkle tree.
 pub const DEFAULT_BATCH_SIZE: u8 = 64;
@@ -47,7 +47,7 @@ pub const DEFAULT_STATUS_INTERVAL: Duration = Duration::from_secs(600);
 /// Specifies parameters needed to configure a Roughenough server.
 ///
 /// Parameters labeled "**Required**" must always be provided and have no default value
-/// while those labeled "**Optional**" provide default values that can be overridden.
+/// while those labeled "**Optional**" provide sane default values that can be overridden.
 ///
 /// YAML Key | Environment Variable | Necessity | Description
 /// --- | --- | --- | ---
@@ -58,13 +58,13 @@ pub const DEFAULT_STATUS_INTERVAL: Duration = Duration::from_secs(600);
 /// `status_interval` | `ROUGHENOUGH_STATUS_INTERVAL` | Optional | Number of _seconds_ between each logged status update. Default is `600` seconds (10 minutes).
 /// `health_check_port` | `ROUGHENOUGH_HEALTH_CHECK_PORT` | Optional | If present, enable an HTTP health check responder on the provided port. **Use with caution**.
 /// `kms_protection` | `ROUGHENOUGH_KMS_PROTECTION` | Optional | If compiled with KMS support, the ID of the KMS key used to protect the long-term identity.
+/// `client_stats` | `ROUGHENOUGH_CLIENT_STATS` | Optional | A value of `on` or `yes` will enable tracking of per-client request statistics that will be output each time server status is logged. Default is `off` (disabled).
+/// `fault_percentage` | `ROUGHENOUGH_FAULT_PERCENTAGE` | Optional | Likelihood (as a percentage) that the server will intentionally return an invalid client response. An integer range from `0` (disabled, all responses valid) to `50` (50% of responses will be invalid). Default is `0` (disabled).
 ///
 /// Implementations of this trait obtain a valid configuration from different back-end
 /// sources. See:
 ///   * [FileConfig](struct.FileConfig.html) - configure via a YAML file
-///   * [EnvironmentConfig](struct.EnvironmentConfig.html) - configure via environment vars
-///
-/// The health check and KMS features require
+///   * [EnvironmentConfig](struct.EnvironmentConfig.html) - configure via environment variables
 ///
 pub trait ServerConfig {
     /// [Required] IP address or interface name to listen for client requests
@@ -95,6 +95,18 @@ pub trait ServerConfig {
     /// This is a *very* simplistic check, it emits a fixed HTTP response to all TCP connections.
     /// https://cloud.google.com/load-balancing/docs/health-checks#legacy-health-checks
     fn health_check_port(&self) -> Option<u16>;
+
+    /// [Optional] A value of `on` or `yes` will enable tracking of per-client request statistics
+    /// that will be output each time server status is logged. Default is `off` (disabled).
+    fn client_stats_enabled(&self) -> bool;
+
+    /// [Optional] Likelihood (as a percentage) that the server will intentionally return an
+    /// invalid client response. An integer range from `0` (disabled, all responses valid) to `50`
+    /// (~50% of responses will be invalid). Default is `0` (disabled).
+    ///
+    /// See the [Roughtime spec](https://roughtime.googlesource.com/roughtime/+/HEAD/ECOSYSTEM.md#maintaining-a-healthy-software-ecosystem)
+    /// for background and rationale.
+    fn fault_percentage(&self) -> u8;
 
     /// Convenience function to create a `SocketAddr` from the provided `interface` and `port`
     fn udp_socket_addr(&self) -> Result<SocketAddr, Error> {
@@ -133,30 +145,36 @@ pub fn is_valid_config(cfg: &Box<dyn ServerConfig>) -> bool {
     let mut is_valid = true;
 
     if cfg.port() == 0 {
-        error!("unset port: {}", cfg.port());
+        error!("server port not set: {}", cfg.port());
         is_valid = false;
     }
+
     if cfg.interface().is_empty() {
-        error!("interface is missing");
+        error!("'interface' is missing");
         is_valid = false;
     }
+
     if cfg.seed().is_empty() {
-        error!("seed value is missing");
+        error!("'seed' value is missing");
         is_valid = false;
-    }
-    if *cfg.kms_protection() == KmsProtection::Plaintext && cfg.seed().len() != 32 {
-        error!("plaintext seed value must be 32 characters long");
+    } else if *cfg.kms_protection() == KmsProtection::Plaintext && cfg.seed().len() != SEED_LENGTH as usize {
+        error!("plaintext seed value must be 32 characters long, found {}", cfg.seed().len());
         is_valid = false;
-    }
-    if *cfg.kms_protection() != KmsProtection::Plaintext && cfg.seed().len() <= 32 {
+    } else if *cfg.kms_protection() != KmsProtection::Plaintext && cfg.seed().len() <= SEED_LENGTH as usize {
         error!("KMS use enabled but seed value is too short to be an encrypted blob");
         is_valid = false;
     }
+
     if cfg.batch_size() < 1 || cfg.batch_size() > 64 {
         error!(
             "batch_size {} is invalid; valid range 1-64",
             cfg.batch_size()
         );
+        is_valid = false;
+    }
+
+    if cfg.fault_percentage() > 50 {
+        error!("fault_percentage {} is invalid; valid range 0-50", cfg.fault_percentage());
         is_valid = false;
     }
 

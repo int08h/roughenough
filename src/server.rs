@@ -35,12 +35,13 @@ use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio::tcp::Shutdown;
 use mio_extras::timer::Timer;
 
+use crate::{Error, RtMessage, Tag, MIN_REQUEST_LENGTH};
 use crate::config::ServerConfig;
+use crate::grease::Grease;
 use crate::key::{LongTermKey, OnlineKey};
 use crate::kms;
 use crate::merkle::MerkleTree;
-use crate::{Error, RtMessage, Tag, MIN_REQUEST_LENGTH};
-use crate::stats::{ClientStats, SimpleStats};
+use crate::stats::{AggregatedStats, PerClientStats, ServerStats};
 
 macro_rules! check_ctrlc {
     ($keep_running:expr) => {
@@ -78,6 +79,7 @@ pub struct Server {
     health_listener: Option<TcpListener>,
     keep_running: Arc<AtomicBool>,
     poll_duration: Option<Duration>,
+    grease: Grease,
     timer: Timer<()>,
     poll: Poll,
     merkle: MerkleTree,
@@ -86,11 +88,11 @@ pub struct Server {
 
     public_key: String,
 
+    stats: Box<dyn ServerStats>,
+
     // Used to send requests to ourselves in fuzzing mode
     #[cfg(fuzzing)]
     fake_client_socket: UdpSocket,
-
-    stats: SimpleStats,
 }
 
 impl Server {
@@ -98,7 +100,7 @@ impl Server {
     /// Create a new server instance from the provided
     /// [`ServerConfig`](../config/trait.ServerConfig.html) trait object instance.
     ///
-    pub fn new(config: Box<ServerConfig>) -> Server {
+    pub fn new(config: Box<dyn ServerConfig>) -> Server {
         let online_key = OnlineKey::new();
         let public_key: String;
 
@@ -148,6 +150,13 @@ impl Server {
             None
         };
 
+        let stats: Box<dyn ServerStats> = if config.client_stats_enabled() {
+            Box::new(PerClientStats::new())
+        } else {
+            Box::new(AggregatedStats::new())
+        };
+
+        let grease = Grease::new(config.fault_percentage());
         let merkle = MerkleTree::new();
         let requests = Vec::with_capacity(config.batch_size() as usize);
 
@@ -161,6 +170,7 @@ impl Server {
 
             keep_running,
             poll_duration,
+            grease,
             timer,
             poll,
             merkle,
@@ -169,10 +179,10 @@ impl Server {
 
             public_key,
 
+            stats,
+
             #[cfg(fuzzing)]
             fake_client_socket: UdpSocket::bind(&"127.0.0.1:0".parse().unwrap()).unwrap(),
-
-            stats: SimpleStats::new(),
         }
     }
 
@@ -213,7 +223,7 @@ impl Server {
     pub fn process_events(&mut self, events: &mut Events) -> bool {
         self.poll
             .poll(events, self.poll_duration)
-            .expect("poll failed");
+            .expect("server event poll failed; cannot recover");
 
         for msg in events.iter() {
             match msg.token() {
@@ -351,7 +361,7 @@ impl Server {
         }
     }
 
-    fn send_responses(&mut self) -> () {
+    fn send_responses(&mut self) {
         let merkle_root = self.merkle.compute_root();
 
         // The SREP tag is identical for each response
@@ -359,8 +369,11 @@ impl Server {
 
         for (i, &(ref nonce, ref src_addr)) in self.requests.iter().enumerate() {
             let paths = self.merkle.get_paths(i);
-            let resp = self.make_response(&srep, &self.cert_bytes, &paths, i as u32);
-            let resp_bytes = resp.encode().unwrap();
+            let resp_msg = {
+                let r = self.make_response(&srep, &self.cert_bytes, &paths, i as u32);
+                if self.grease.should_add_error() { self.grease.add_errors(&r) } else { r }
+            };
+            let resp_bytes = resp_msg.encode().unwrap();
 
             let bytes_sent = self
                 .socket
@@ -374,7 +387,7 @@ impl Server {
                 bytes_sent,
                 src_addr,
                 hex::encode(&nonce[0..4]),
-                i,
+                i + 1,
                 self.stats.total_responses_sent()
             );
         }

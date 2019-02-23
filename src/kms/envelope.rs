@@ -17,7 +17,7 @@ use std::io::{Cursor, Read, Write};
 use ring::aead::{open_in_place, seal_in_place, OpeningKey, SealingKey, AES_256_GCM};
 use ring::rand::{SecureRandom, SystemRandom};
 
-use crate::MIN_SEED_LENGTH;
+use crate::SEED_LENGTH;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use crate::kms::{KmsError, KmsProvider, AD, DEK_SIZE_BYTES, NONCE_SIZE_BYTES, TAG_SIZE_BYTES};
 
@@ -33,7 +33,7 @@ const MIN_PAYLOAD_SIZE: usize = DEK_LEN_FIELD
     + NONCE_LEN_FIELD
     + DEK_SIZE_BYTES
     + NONCE_SIZE_BYTES
-    + MIN_SEED_LENGTH as usize
+    + SEED_LENGTH as usize
     + TAG_SIZE_BYTES;
 
 // No input prefix to skip, consume entire buffer
@@ -41,7 +41,7 @@ const IN_PREFIX_LEN: usize = 0;
 
 // Convenience function to create zero-filled Vec of given size
 fn vec_zero_filled(len: usize) -> Vec<u8> {
-    (0..len).into_iter().map(|_| 0).collect()
+    (0..len).map(|_| 0).collect()
 }
 
 /// Envelope encryption of the long-term key seed value.
