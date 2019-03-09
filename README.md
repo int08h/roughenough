@@ -175,7 +175,6 @@ Roughtime features not implemented by the server:
   requirement of the Roughtime protocol. A Roughenough server sourcing time from 
   [Google's public NTP servers](https://developers.google.com/time/) would produce compliant
   smeared leap-seconds but time sourced from members of `pool.ntp.org` likely will not.
-* Ecosystem-style response fault injection.
 
 ## About the Roughtime Protocol
 [Roughtime](https://roughtime.googlesource.com/roughtime) is a protocol that aims to achieve rough 
