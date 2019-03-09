@@ -48,18 +48,20 @@ pub struct FileConfig {
 
 impl FileConfig {
     pub fn new(config_file: &str) -> Result<Self, Error> {
-        let mut infile = File::open(config_file).expect("failed to open config file");
+        let mut infile = File::open(config_file)
+            .expect(&format!("failed to open config file '{}'", config_file));
 
         let mut contents = String::new();
         infile
             .read_to_string(&mut contents)
-            .expect("could not read config file");
+            .expect(&format!("could not read config file '{}'", config_file));
 
-        let cfg = YamlLoader::load_from_str(&contents).expect("could not parse config file");
+        let cfg = YamlLoader::load_from_str(&contents)
+            .expect(&format!("could not parse config file '{}'", config_file));
 
         if cfg.len() != 1 {
             return Err(Error::InvalidConfiguration(
-                "Empty or malformed config file".to_string(),
+                format!("Empty or malformed config file '{}'", config_file),
             ));
         }
 
@@ -90,10 +92,9 @@ impl FileConfig {
                     config.status_interval = Duration::from_secs(val as u64)
                 }
                 "kms_protection" => {
-                    let val =
-                        value.as_str().unwrap().parse().unwrap_or_else(|_| {
-                            panic!("invalid kms_protection value: {:?}", value)
-                        });
+                    let val = value.as_str().unwrap().parse().unwrap_or_else(|_| {
+                        panic!("invalid kms_protection value: {:?}", value)
+                    });
                     config.kms_protection = val
                 }
                 "health_check_port" => {
