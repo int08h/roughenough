@@ -1,7 +1,8 @@
 # Roughenough 
 
-[![Apache License 2](https://img.shields.io/badge/license-ASF2-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0.txt)
-[![Build Status](https://travis-ci.org/int08h/roughenough.svg?branch=master)](https://travis-ci.org/int08h/roughenough)
+[![crates.io](https://img.shields.io/crates/v/roughenough.svg?style=flat-square)](https://crates.io/crates/roughenough)
+[![Build Status](https://img.shields.io/travis/int08h/roughenough/master.svg?style=flat-square)](https://travis-ci.org/int08h/roughenough)
+[![Apache License 2](https://img.shields.io/badge/license-ASF2-blue.svg?style=flat-square)](https://www.apache.org/licenses/LICENSE-2.0.txt)
 
 **Roughenough** is a [Roughtime](https://roughtime.googlesource.com/roughtime) secure time 
 synchronization client and server implementation in Rust. 
