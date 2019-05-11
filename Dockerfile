@@ -4,11 +4,10 @@
 
 # Stage 1: build
 
-FROM rust:1.33 AS stage1
+FROM rust:1.34.1 AS stage1
 
 ARG ROUGHENOUGH_RELEASE=1.1.4
 ARG ROUGHENOUGH_FEATURES="default" 
-
 # Uncomment and replace above if you want KMS support
 #ARG ROUGHENOUGH_FEATURES="awskms"
 #ARG ROUGHENOUGH_FEATURES="gcpkms"
