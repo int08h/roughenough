@@ -1,3 +1,9 @@
+## Version 1.1.5
+
+* Improved error messages (3841942)
+* Update fuzzer server target to sync with roughenough-fuzz
+* Add Dockerfile to create a server container
+
 ## Version 1.1.4
 
 * Implement Roughtime ecosystem response mangling (177372f, f851deb)
