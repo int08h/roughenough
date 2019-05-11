@@ -208,8 +208,6 @@ impl Server {
 
     #[cfg(fuzzing)]
     pub fn send_to_self(&mut self, data: &[u8]) {
-        self.response_counter = 0;
-        self.num_bad_requests = 0;
         let res = self
             .fake_client_socket
             .send_to(data, &self.socket.local_addr().unwrap());
