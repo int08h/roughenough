@@ -145,8 +145,6 @@ pub use crate::kms::awskms::inner::AwsKms;
 ///
 #[cfg(feature = "awskms")]
 pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
-    use crate::kms::envelope::EnvelopeEncryption;
-
     match config.kms_protection() {
         KmsProtection::Plaintext => Ok(config.seed()),
         KmsProtection::AwsKmsEnvelope(key_id) => {
@@ -181,8 +179,6 @@ pub use crate::kms::gcpkms::inner::GcpKms;
 ///
 #[cfg(feature = "gcpkms")]
 pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
-    use crate::kms::envelope::EnvelopeEncryption;
-
     match config.kms_protection() {
         KmsProtection::Plaintext => Ok(config.seed()),
         KmsProtection::GoogleKmsEnvelope(resource_id) => {
