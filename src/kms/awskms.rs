@@ -14,6 +14,8 @@
 
 #[cfg(feature = "awskms")]
 pub mod inner {
+    extern crate bytes;
+
     use std::collections::HashMap;
     use std::default::Default;
     use std::error::Error;
@@ -23,6 +25,8 @@ pub mod inner {
 
     use rusoto_core::Region;
     use rusoto_kms::{DecryptRequest, EncryptRequest, Kms, KmsClient};
+    use self::bytes::Bytes;
+
     use crate::kms::{EncryptedDEK, KmsError, KmsProvider, PlaintextDEK, AD, DEK_SIZE_BYTES};
 
     /// Amazon Web Services Key Management Service
@@ -69,7 +73,7 @@ pub mod inner {
 
             let mut encrypt_req: EncryptRequest = Default::default();
             encrypt_req.key_id = self.key_id.clone();
-            encrypt_req.plaintext = plaintext_dek.clone();
+            encrypt_req.plaintext = Bytes::from(plaintext_dek.as_slice());
 
             let mut enc_context = HashMap::new();
             enc_context.insert("AD".to_string(), AD.to_string());
@@ -78,7 +82,7 @@ pub mod inner {
             match self.kms_client.encrypt(encrypt_req).sync() {
                 Ok(result) => {
                     if let Some(ciphertext) = result.ciphertext_blob {
-                        Ok(ciphertext)
+                        Ok(ciphertext.to_vec())
                     } else {
                         Err(KmsError::OperationFailed(
                             "no ciphertext despite successful response".to_string(),
@@ -91,7 +95,7 @@ pub mod inner {
 
         fn decrypt_dek(&self, encrypted_dek: &EncryptedDEK) -> Result<PlaintextDEK, KmsError> {
             let mut decrypt_req: DecryptRequest = Default::default();
-            decrypt_req.ciphertext_blob = encrypted_dek.clone();
+            decrypt_req.ciphertext_blob = Bytes::from(encrypted_dek.as_slice());
 
             let mut dec_context = HashMap::new();
             dec_context.insert("AD".to_string(), AD.to_string());
@@ -101,7 +105,7 @@ pub mod inner {
                 Ok(result) => {
                     if let Some(plaintext_dek) = result.plaintext {
                         if plaintext_dek.len() == DEK_SIZE_BYTES {
-                            Ok(plaintext_dek)
+                            Ok(plaintext_dek.to_vec())
                         } else {
                             Err(KmsError::InvalidKey(format!(
                                 "decrypted DEK wrong length: {}",
