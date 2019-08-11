@@ -62,7 +62,7 @@ pub struct EnvelopeEncryption;
 
 impl EnvelopeEncryption {
     /// Decrypt a seed previously encrypted with `encrypt_seed()`
-    pub fn decrypt_seed(kms: &KmsProvider, ciphertext_blob: &[u8]) -> Result<Vec<u8>, KmsError> {
+    pub fn decrypt_seed(kms: &dyn KmsProvider, ciphertext_blob: &[u8]) -> Result<Vec<u8>, KmsError> {
         if ciphertext_blob.len() < MIN_PAYLOAD_SIZE {
             return Err(KmsError::InvalidData(format!(
                 "ciphertext too short: min {}, found {}",
@@ -121,7 +121,7 @@ impl EnvelopeEncryption {
     ///
     /// The returned encrypted byte blob is safe to store on unsecured media.
     ///
-    pub fn encrypt_seed(kms: &KmsProvider, plaintext_seed: &[u8]) -> Result<Vec<u8>, KmsError> {
+    pub fn encrypt_seed(kms: &dyn KmsProvider, plaintext_seed: &[u8]) -> Result<Vec<u8>, KmsError> {
         // Generate random DEK and nonce
         let rng = SystemRandom::new();
         let mut dek = [0u8; DEK_SIZE_BYTES];

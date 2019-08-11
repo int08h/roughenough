@@ -65,6 +65,12 @@ pub struct Signer {
     buf: Vec<u8>,
 }
 
+impl Default for Signer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Signer {
     pub fn new() -> Self {
         let rng = rand::SystemRandom::new();

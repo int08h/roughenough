@@ -105,7 +105,7 @@ impl Server {
         let public_key: String;
 
         let cert_bytes = {
-            let seed = match kms::load_seed(&config) {
+            let seed = match kms::load_seed(config.as_ref()) {
                 Ok(seed) => seed,
                 Err(e) => {
                     error!("Failed to load seed: {:#?}", e);
@@ -197,8 +197,8 @@ impl Server {
     }
 
     /// Returns a reference to the `ServerConfig` this server was configured with
-    pub fn get_config(&self) -> &Box<dyn ServerConfig> {
-        &self.config
+    pub fn get_config(&self) -> &dyn ServerConfig {
+        self.config.as_ref()
     }
 
     /// Returns a reference counted pointer the this server's `keep_running` value.

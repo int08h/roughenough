@@ -29,6 +29,12 @@ pub struct MerkleTree {
     levels: Vec<Vec<Data>>,
 }
 
+impl Default for MerkleTree {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MerkleTree {
     ///
     /// Create a new empty Merkle Tree

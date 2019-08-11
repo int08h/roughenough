@@ -31,6 +31,12 @@ pub struct OnlineKey {
     signer: Signer,
 }
 
+impl Default for OnlineKey {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OnlineKey {
     pub fn new() -> Self {
         OnlineKey {

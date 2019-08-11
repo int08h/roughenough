@@ -141,7 +141,8 @@ pub fn make_config(arg: &str) -> Result<Box<dyn ServerConfig>, Error> {
 ///
 /// Validate configuration settings. Returns `true` if the config is valid, `false` otherwise.
 ///
-pub fn is_valid_config(cfg: &Box<dyn ServerConfig>) -> bool {
+#[allow(clippy::useless_let_if_seq)]
+pub fn is_valid_config(cfg: &dyn ServerConfig) -> bool {
     let mut is_valid = true;
 
     if cfg.port() == 0 {
@@ -179,17 +180,14 @@ pub fn is_valid_config(cfg: &Box<dyn ServerConfig>) -> bool {
     }
 
     if is_valid {
-        match cfg.udp_socket_addr() {
-            Err(e) => {
-                error!(
-                    "failed to create UDP socket {}:{} {:?}",
-                    cfg.interface(),
-                    cfg.port(),
-                    e
-                );
-                is_valid = false;
-            }
-            _ => (),
+        if let Err(e) = cfg.udp_socket_addr() {
+            error!(
+                "failed to create UDP socket {}:{} {:?}",
+                cfg.interface(),
+                cfg.port(),
+                e
+            );
+            is_valid = false;
         }
     }
 

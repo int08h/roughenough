@@ -49,15 +49,15 @@ pub struct FileConfig {
 impl FileConfig {
     pub fn new(config_file: &str) -> Result<Self, Error> {
         let mut infile = File::open(config_file)
-            .expect(&format!("failed to open config file '{}'", config_file));
+            .unwrap_or_else(|_| panic!("failed to open config file '{}'", config_file));
 
         let mut contents = String::new();
         infile
             .read_to_string(&mut contents)
-            .expect(&format!("could not read config file '{}'", config_file));
+            .unwrap_or_else(|_| panic!("could not read config file '{}'", config_file));
 
         let cfg = YamlLoader::load_from_str(&contents)
-            .expect(&format!("could not parse config file '{}'", config_file));
+            .unwrap_or_else(|_| panic!("could not parse config file '{}'", config_file));
 
         if cfg.len() != 1 {
             return Err(Error::InvalidConfiguration(

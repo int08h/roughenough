@@ -34,6 +34,12 @@ pub struct AggregatedStats {
     empty_map: HashMap<IpAddr, ClientStatEntry>,
 }
 
+impl Default for AggregatedStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AggregatedStats {
 
     #[allow(dead_code)]

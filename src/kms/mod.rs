@@ -144,7 +144,7 @@ pub use crate::kms::awskms::inner::AwsKms;
 ///    the plaintext seed value.
 ///
 #[cfg(feature = "awskms")]
-pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
+pub fn load_seed(config: &dyn ServerConfig) -> Result<Vec<u8>, error::Error> {
     match config.kms_protection() {
         KmsProtection::Plaintext => Ok(config.seed()),
         KmsProtection::AwsKmsEnvelope(key_id) => {
@@ -178,7 +178,7 @@ pub use crate::kms::gcpkms::inner::GcpKms;
 ///    the plaintext seed value.
 ///
 #[cfg(feature = "gcpkms")]
-pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
+pub fn load_seed(config: &dyn ServerConfig) -> Result<Vec<u8>, error::Error> {
     match config.kms_protection() {
         KmsProtection::Plaintext => Ok(config.seed()),
         KmsProtection::GoogleKmsEnvelope(resource_id) => {
@@ -205,7 +205,7 @@ pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
 ///  * `config.seed()` is used as-is and assumed to be a 32-byte hexadecimal value
 ///
 #[cfg(not(any(feature = "awskms", feature = "gcpkms")))]
-pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
+pub fn load_seed(config: &dyn ServerConfig) -> Result<Vec<u8>, error::Error> {
     match config.kms_protection() {
         KmsProtection::Plaintext => Ok(config.seed()),
         v => Err(error::Error::InvalidConfiguration(format!(

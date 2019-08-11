@@ -33,6 +33,12 @@ pub struct PerClientStats {
     max_clients: usize,
 }
 
+impl Default for PerClientStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PerClientStats {
 
     /// Maximum number of entries to prevent unbounded memory growth.

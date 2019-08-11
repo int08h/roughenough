@@ -101,7 +101,7 @@ pub fn main() {
             error!("{:?}", e);
             process::exit(1)
         }
-        Ok(ref cfg) if !config::is_valid_config(&cfg) => process::exit(1),
+        Ok(ref cfg) if !config::is_valid_config(cfg.as_ref()) => process::exit(1),
         Ok(cfg) => cfg,
     };
 
