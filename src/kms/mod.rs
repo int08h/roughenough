@@ -202,17 +202,7 @@ pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
 /// The only supported `kms_protection` value in this build is `plaintext`. Any
 /// other value will cause a runtime error.
 ///
-/// ## Background
-///
-/// Loading behavior depends on the value of `config.kms_protection()`:
-///
-///  * If `config.kms_protection() == Plaintext` then the value returned from `config.seed()`
-///    is used as-is and assumed to be a 32-byte hexadecimal value.
-///
-///  * Otherwise `config.seed()` is assumed to be an encrypted opaque blob generated from
-///    a prior `EnvelopeEncryption::encrypt_seed` call. The value of `config.kms_protection()`
-///    is parsed as a KMS key id and `EnvelopeEncryption::decrypt_seed` is called to obtain
-///    the plaintext seed value.
+///  * `config.seed()` is used as-is and assumed to be a 32-byte hexadecimal value
 ///
 #[cfg(not(any(feature = "awskms", feature = "gcpkms")))]
 pub fn load_seed(config: &Box<ServerConfig>) -> Result<Vec<u8>, error::Error> {
