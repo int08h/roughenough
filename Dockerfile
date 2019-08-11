@@ -4,7 +4,7 @@
 
 # Stage 1: build
 
-FROM rust:1.35 AS stage1
+FROM rust:1.36 AS stage1
 
 ARG ROUGHENOUGH_RELEASE=1.1.5
 ARG ROUGHENOUGH_FEATURES="default" 
