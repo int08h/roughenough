@@ -43,7 +43,7 @@ macro_rules! check_ctrlc {
     };
 }
 
-fn polling_loop(config: Box<ServerConfig>) {
+fn polling_loop(config: Box<dyn ServerConfig>) {
     let mut server = Server::new(config);
     let cfg = server.get_config(); // borrow config that was moved above
 

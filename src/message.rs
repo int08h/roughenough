@@ -64,7 +64,7 @@ impl RtMessage {
         match num_tags {
             0 => Ok(RtMessage::new(0)),
             1 => RtMessage::single_tag_message(bytes, &mut msg),
-            2...1024 => RtMessage::multi_tag_message(num_tags, bytes, &mut msg),
+            2..=1024 => RtMessage::multi_tag_message(num_tags, bytes, &mut msg),
             _ => Err(Error::InvalidNumTags(num_tags)),
         }
     }
