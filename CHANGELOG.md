@@ -1,9 +1,9 @@
-## Unreleased (to be 1.1.6)
+## Version 1.1.6
 
 * Fix several Clippy items (266f1adc9) 
 * Update to latest Rusoto (6ff01af52)
 * Update to latest google-cloudkms (a0165c019)
-* Update Dockerfile to Rust 1.36 (743662ff)
+* Update Dockerfile to Rust 1.38 (a14c2e8)
 
 ## Version 1.1.5
 
