@@ -275,7 +275,7 @@ fn main() {
     let out = matches.value_of("output");
 
     if verbose {
-        println!("Requesting time from: {:?}:{:?}", host, port);
+        eprintln!("Requesting time from: {:?}:{:?}", host, port);
     }
 
     let addr = (host, port).to_socket_addrs().unwrap().next().unwrap();
@@ -325,7 +325,7 @@ fn main() {
         let verify_str = if verified { "Yes" } else { "No" };
 
         if verbose {
-            println!(
+            eprintln!(
                 "Received time from server: midpoint={:?}, radius={:?}, verified={} (merkle_index={})",
                 out, radius, verify_str, index
             );
