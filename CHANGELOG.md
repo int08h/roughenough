@@ -1,3 +1,23 @@
+## Version 1.1.7
+
+* Improved options for client output thanks to @zicklag (f1f834e8c).
+
+  By default the client now outputs just the time reported by the queried server. 
+  The `-v` or `--verbose` flag will print additional information such as the response's 
+  midpoint and radius. `-j` or `--json` outputs responses in JSON format instead.
+
+  Non-response text output is written to standard error to enable verbose output 
+  while redirecting the response(s) to a file or pipe like so:
+  
+  ```
+  $ roughenough-client -v roughtime.int08h.com 2002 > time.txt
+  Requesting time from: "roughtime.int08h.com":2002
+  Received time from server: midpoint="Oct 08 2019 18:40:38", radius=1000000, verified=No (merkle_index=0)
+  
+  $ cat time.txt
+  Oct 08 2019 18:40:38
+  ```
+
 ## Version 1.1.6
 
 * Fix several Clippy items (266f1adc9) 
