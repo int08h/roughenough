@@ -258,7 +258,7 @@ fn main() {
       .short("o")
       .long("output")
       .takes_value(true)
-      .help("Writes all requsts to the specified file, in addition to sending them to the server. Useful for generating fuzer inputs")
+      .help("Writes all requests to the specified file, in addition to sending them to the server. Useful for generating fuzzer inputs")
     )
     .get_matches();
 
