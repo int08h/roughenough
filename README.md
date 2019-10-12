@@ -45,9 +45,18 @@ $ cp target/release/roughenough-client /usr/local/bin
 ### Using the Client to Query a Roughtime Server 
 
 ```bash
-$ target/release/roughenough-client roughtime.int08h.com 2002
+$ target/release/roughenough-client -v roughtime.int08h.com 2002
 Requesting time from: "roughtime.int08h.com":2002
 Received time from server: midpoint="Oct 26 2018 23:20:44", radius=1000000, verified=No (merkle_index=0)
+Oct 26 2018 23:20:44
+```
+
+### Setting The System Time on Linux
+
+You can use the `date` utility on Linux machines to set the system time to the time determined by the Roughenough client:
+
+```bash
+sudo date --utc --set "$(roughenough-client roughtime.int08h.com 2002)"
 ```
 
 ### Validating Server Responses 
@@ -60,9 +69,10 @@ $ host -t TXT roughtime.int08h.com
 roughtime.int08h.com descriptive text "016e6e0284d24c37c6e4d7d8d5b4e1d3c1949ceaa545bf875616c9dce0c9bec1"
 
 # Validate the server response using its public key
-$ target/release/roughenough-client roughtime.int08h.com 2002 -p 016e6e0284d24c37c6e4d7d8d5b4e1d3c1949ceaa545bf875616c9dce0c9bec1
+$ target/release/roughenough-client -v roughtime.int08h.com 2002 -p 016e6e0284d24c37c6e4d7d8d5b4e1d3c1949ceaa545bf875616c9dce0c9bec1
 Requesting time from: "roughtime.int08h.com":2002
 Received time from server: midpoint="Oct 26 2018 23:22:20", radius=1000000, verified=Yes (merkle_index=0)
+Oct 26 2018 23:22:20
 ```
 
 The **`verified=Yes`** in the output confirms that the server's response had a valid signature.

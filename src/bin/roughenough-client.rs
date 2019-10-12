@@ -222,6 +222,14 @@ fn main() {
       .required(true)
       .help("The Roughtime server port to connect to")
       .takes_value(true))
+    .arg(Arg::with_name("verbose")
+      .short("v")
+      .long("verbose")
+      .help("Print more output"))
+    .arg(Arg::with_name("json")
+      .short("j")
+      .long("json")
+      .help("Print output in JSON"))
     .arg(Arg::with_name("public-key")
       .short("p")
       .long("public-key")
@@ -256,6 +264,8 @@ fn main() {
 
     let host = matches.value_of("host").unwrap();
     let port = value_t_or_exit!(matches.value_of("port"), u16);
+    let verbose = matches.is_present("verbose");
+    let json = matches.is_present("json");
     let num_requests = value_t_or_exit!(matches.value_of("num-requests"), u16) as usize;
     let time_format = matches.value_of("time-format").unwrap();
     let stress = matches.is_present("stress");
@@ -264,7 +274,9 @@ fn main() {
         .map(|pkey| hex::decode(pkey).expect("Error parsing public key!"));
     let out = matches.value_of("output");
 
-    println!("Requesting time from: {:?}:{:?}", host, port);
+    if verbose {
+        eprintln!("Requesting time from: {:?}:{:?}", host, port);
+    }
 
     let addr = (host, port).to_socket_addrs().unwrap().next().unwrap();
 
@@ -312,10 +324,21 @@ fn main() {
         let out = spec.format(time_format).to_string();
         let verify_str = if verified { "Yes" } else { "No" };
 
-        println!(
-            "Received time from server: midpoint={:?}, radius={:?}, verified={} (merkle_index={})",
-            out, radius, verify_str, index
-        );
+        if verbose {
+            eprintln!(
+                "Received time from server: midpoint={:?}, radius={:?}, verified={} (merkle_index={})",
+                out, radius, verify_str, index
+            );
+        }
+
+        if json {
+            println!(
+                r#"{{ "midpoint": {:?}, "radius": {:?}, "verified": {}, "merkle_index": {} }}"#,
+                out, radius, verified, index
+            );
+        } else {
+            println!("{}", out);
+        }
     }
 }
 
