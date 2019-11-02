@@ -15,5 +15,5 @@ matrix:
   fast_finish: true
 
 script:
-  - cargo build --verbose --features $FEATURE
-  - cargo test --verbose --features $FEATURE
+  - travis_wait cargo build --verbose --features $FEATURE
+  - travis_wait cargo test --verbose --features $FEATURE
