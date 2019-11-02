@@ -6,7 +6,7 @@
 
 FROM rust:1.38 AS stage1
 
-ARG ROUGHENOUGH_RELEASE=1.1.5
+ARG ROUGHENOUGH_RELEASE=1.1.7
 ARG ROUGHENOUGH_FEATURES="default" 
 # Uncomment and replace above if you want KMS support
 #ARG ROUGHENOUGH_FEATURES="awskms"
