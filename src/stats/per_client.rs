@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use hashbrown::HashMap;
-use hashbrown::hash_map::Iter;
-
 use std::net::IpAddr;
+use std::collections::HashMap;
+use std::collections::hash_map::Iter;
 
 use crate::stats::ClientStatEntry;
 use crate::stats::ServerStats;

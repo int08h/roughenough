@@ -19,12 +19,11 @@
 mod aggregated;
 mod per_client;
 
+use std::net::IpAddr;
+use std::collections::hash_map::Iter;
+
 pub use crate::stats::aggregated::AggregatedStats;
 pub use crate::stats::per_client::PerClientStats;
-
-use hashbrown::hash_map::Iter;
-
-use std::net::IpAddr;
 
 ///
 /// Specific metrics tracked per each client
