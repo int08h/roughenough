@@ -33,7 +33,6 @@ clap = "2"
 chrono = "0.4"
 hex = "0.3"
 base64 = "0.9"
-hashbrown = "0.1"
 humansize = "1.0"
 rand = "0.6"
 
