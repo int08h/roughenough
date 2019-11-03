@@ -23,12 +23,25 @@ FROM gcr.io/distroless/cc
 WORKDIR /roughenough
 
 COPY --from=stage1 /roughenough/target/release/roughenough-server /roughenough
-COPY roughenough.cfg /roughenough
-COPY creds.json /roughenough
 
+# Produce backtraces in case of a panic
 ENV RUST_BACKTRACE 1
-ENV GOOGLE_APPLICATION_CREDENTIALS /roughenough/creds.json
+
+# Configure Roughenough via environment variables
+ENV ROUGHENOUGH_PORT 2002
+ENV ROUGHENOUGH_INTERFACE 127.0.0.1
+ENV ROUGHENOUGH_SEED 111111111aaaaaaaaa222222222bbbbbbbbb333333333ccccccccc4444444444
+
+# Alternatively Roughenough can use a config file
+# COPY roughenough.cfg /roughenough
+
+# How to provide credentials when using GCP KMS
+# COPY gcp-creds.json /roughenough
+# ENV GOOGLE_APPLICATION_CREDENTIALS /roughenough/creds.json
 
 EXPOSE 2002/udp 
 
-CMD ["/roughenough/roughenough-server", "/roughenough/roughenough.cfg"]
+CMD ["/roughenough/roughenough-server", "ENV"]
+
+# Or if using a config file
+#CMD ["/roughenough/roughenough-server", "/roughenough/roughenough.cfg"]
