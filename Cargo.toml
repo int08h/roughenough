@@ -18,23 +18,23 @@ awskms = ["rusoto_core", "rusoto_kms"]
 gcpkms = ["google-cloudkms1", "hyper", "hyper-rustls", "serde", "serde_json", "yup-oauth2"]
 
 [dependencies]
+base64 = "0.9"
+byteorder = "1"
+bytes = "0.4"
+chrono = "0.4"
+clap = "2"
+ctrlc = { version = "3.1", features = ["termination"] }
+hex = "0.3"
+humansize = "1.0"
+log = "0.4"
 mio = "0.6"
 mio-extras = "2.0"
-bytes = "0.4"
-byteorder = "1"
-ring = "0.13"
-untrusted = "0.6"
-time = "0.1"
-log = "0.4"
-simple_logger = "0.5"
-yaml-rust = "0.3"
-ctrlc = { version = "3.1", features = ["termination"] }
-clap = "2"
-chrono = "0.4"
-hex = "0.3"
-base64 = "0.9"
-humansize = "1.0"
 rand = "0.6"
+ring = "0.13"
+simple_logger = "0.5"
+time = "0.1"
+untrusted = "0.6"
+yaml-rust = "0.3"
 
 # Used by 'awskms'
 rusoto_core = { version = "0.40", optional = true }
