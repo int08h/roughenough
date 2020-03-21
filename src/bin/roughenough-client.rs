@@ -22,7 +22,7 @@ use ring::rand::SecureRandom;
 use byteorder::{LittleEndian, ReadBytesExt};
 
 use chrono::offset::Utc;
-use chrono::TimeZone;
+use chrono::{TimeZone, Local};
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -240,7 +240,7 @@ fn main() {
       .long("time-format")
       .takes_value(true)
       .help("The strftime format string used to print the time recieved from the server.")
-      .default_value("%b %d %Y %H:%M:%S")
+      .default_value("%b %d %Y %H:%M:%S %Z")
     )
     .arg(Arg::with_name("num-requests")
       .short("n")
@@ -260,6 +260,11 @@ fn main() {
       .takes_value(true)
       .help("Writes all requests to the specified file, in addition to sending them to the server. Useful for generating fuzzer inputs.")
     )
+    .arg(Arg::with_name("zulu")
+      .short("z")
+      .long("zulu")
+      .help("Display time in UTC (default is local time zone)")
+    )
     .get_matches();
 
     let host = matches.value_of("host").unwrap();
@@ -273,6 +278,7 @@ fn main() {
         .value_of("public-key")
         .map(|pkey| hex::decode(pkey).expect("Error parsing public key!"));
     let out = matches.value_of("output");
+    let use_utc = matches.is_present("zulu");
 
     if verbose {
         eprintln!("Requesting time from: {:?}:{:?}", host, port);
@@ -320,9 +326,15 @@ fn main() {
 
         let seconds = midpoint / 10_u64.pow(6);
         let nsecs = (midpoint - (seconds * 10_u64.pow(6))) * 10_u64.pow(3);
-        let spec = Utc.timestamp(seconds as i64, nsecs as u32);
-        let out = spec.format(time_format).to_string();
         let verify_str = if verified { "Yes" } else { "No" };
+
+        let out = if use_utc {
+            let ts = Utc.timestamp(seconds as i64, nsecs as u32);
+            ts.format(time_format).to_string()
+        } else {
+            let ts = Local.timestamp(seconds as i64, nsecs as u32);
+            ts.format(time_format).to_string()
+        };
 
         if verbose {
             eprintln!(
