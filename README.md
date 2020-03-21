@@ -56,7 +56,7 @@ Oct 26 2018 23:20:44
 You can use the `date` utility on Linux machines to set the system time to the time determined by the Roughenough client:
 
 ```bash
-sudo date --utc --set "$(roughenough-client roughtime.int08h.com 2002)"
+sudo date --utc --set "$(roughenough-client -z roughtime.int08h.com 2002)"
 ```
 
 ### Validating Server Responses 
