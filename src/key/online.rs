@@ -15,14 +15,14 @@
 use crate::message::RtMessage;
 use crate::sign::Signer;
 use crate::tag::Tag;
-use time::Timespec;
+
+use crate::SIGNED_RESPONSE_CONTEXT;
 
 use byteorder::{LittleEndian, WriteBytesExt};
 
 use std::fmt;
 use std::fmt::Formatter;
-
-use crate::SIGNED_RESPONSE_CONTEXT;
+use std::time::{UNIX_EPOCH, SystemTime};
 
 ///
 /// Represents the delegated Roughtime ephemeral online key.
@@ -60,7 +60,7 @@ impl OnlineKey {
 
     /// Create an SREP response containing the provided time and Merkle root,
     /// signed by this online key.
-    pub fn make_srep(&mut self, now: Timespec, merkle_root: &[u8]) -> RtMessage {
+    pub fn make_srep(&mut self, now: SystemTime, merkle_root: &[u8]) -> RtMessage {
         let mut radi = [0; 4];
         let mut midp = [0; 8];
 
@@ -71,11 +71,13 @@ impl OnlineKey {
 
         // current epoch time in microseconds
         let midp_time = {
-            let secs = (now.sec as u64) * 1_000_000;
-            let nsecs = (now.nsec as u64) / 1_000;
+            let d = now.duration_since(UNIX_EPOCH).expect("duration since epoch");
+            let secs = d.as_secs() * 1_000_000;
+            let nsecs = (d.subsec_nanos() as u64) / 1_000;
 
             secs + nsecs
         };
+
         (&mut midp as &mut [u8])
             .write_u64::<LittleEndian>(midp_time)
             .unwrap();
