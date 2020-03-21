@@ -1,3 +1,14 @@
+## Version 1.1.8
+
+New feature:
+* 407f12d client: output local time by default, add -z/--zulu for UTC 
+
+Housekeeping:
+* 02212e2 Switch to std::time and drop use of 'time' crate 
+* d42db50 Upgrade several dependencies to latest versions 
+* e13d6fd Remove deprecated `std::error::Error::description` calls 
+* 32f11aa Update Dockerfile to Rust 1.42 
+
 ## Version 1.1.7
 
 * Improved options for client output thanks to @zicklag (f1f834e8c).
