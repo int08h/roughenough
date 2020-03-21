@@ -20,7 +20,7 @@ gcpkms = ["google-cloudkms1", "hyper", "hyper-rustls", "serde", "serde_json", "y
 [dependencies]
 base64 = "0.12"
 byteorder = "1"
-bytes = "0.5"
+bytes = "0.4"
 chrono = "0.4"
 clap = "2"
 ctrlc = { version = "3.1", features = ["termination"] }
@@ -36,8 +36,8 @@ untrusted = "0.6"
 yaml-rust = "0.4"
 
 # Used by 'awskms'
-rusoto_core = { version = "0.43", optional = true }
-rusoto_kms = { version = "0.43", optional = true }
+rusoto_core = { version = "0.42", optional = true }
+rusoto_kms = { version = "0.42", optional = true }
 
 # Used by 'gcpkms'
 # google-cloudkms1 intentionally uses an old version of Hyper. See

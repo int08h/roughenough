@@ -18,14 +18,13 @@ pub mod inner {
 
     use std::collections::HashMap;
     use std::default::Default;
-    use std::error::Error;
     use std::fmt;
     use std::fmt::Formatter;
     use std::str::FromStr;
 
     use rusoto_core::Region;
     use rusoto_kms::{DecryptRequest, EncryptRequest, Kms, KmsClient};
-    use self::bytes::Bytes;
+    use bytes::Bytes;
 
     use crate::kms::{EncryptedDEK, KmsError, KmsProvider, PlaintextDEK, AD, DEK_SIZE_BYTES};
 
