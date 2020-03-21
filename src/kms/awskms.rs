@@ -52,7 +52,7 @@ pub mod inner {
             let region_part = parts.get(3).expect("region is missing");
             let region = match Region::from_str(region_part) {
                 Ok(r) => r,
-                Err(e) => return Err(KmsError::InvalidConfiguration(e.description().to_string())),
+                Err(e) => return Err(KmsError::InvalidConfiguration(e.to_string())),
             };
 
             Ok(AwsKms {
@@ -89,7 +89,7 @@ pub mod inner {
                         ))
                     }
                 }
-                Err(e) => Err(KmsError::OperationFailed(e.description().to_string())),
+                Err(e) => Err(KmsError::OperationFailed(e.to_string())),
             }
         }
 
@@ -118,7 +118,7 @@ pub mod inner {
                         ))
                     }
                 }
-                Err(e) => Err(KmsError::OperationFailed(e.description().to_string())),
+                Err(e) => Err(KmsError::OperationFailed(e.to_string())),
             }
         }
     }
