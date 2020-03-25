@@ -287,7 +287,7 @@ impl RtMessage {
         let mut padding_needed = 1024 - size;
         if self.tags.len() == 1 {
             // If we currently only have one tag, adding a padding tag will cause
-            // a 32-bit offset values to be written
+            // a 32-bit offset value to be written
             padding_needed -= 4;
         }
         padding_needed -= Tag::PAD.wire_value().len();
