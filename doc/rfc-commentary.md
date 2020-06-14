@@ -15,7 +15,7 @@ Have written deep-dive articles about the Roughtime protocol:
   * https://int08h.com/post/to-catch-a-lying-timeserver/
   * https://int08h.com/post/roughtime-message-anatomy/
   
-And operate the longest running publicly accessible (non-Google) Roughtime server 
+And operate the longest running publicly accessible (non-Googler) Roughtime server 
 on the internet
 
   * roughtime.int08h.com:2002
