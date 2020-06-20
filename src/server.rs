@@ -18,29 +18,28 @@
 
 use hex;
 use std::io::ErrorKind;
-use std::net::{SocketAddr, IpAddr};
+use std::io::Write;
+use std::net::{IpAddr, Shutdown, SocketAddr};
 use std::process;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use std::io::Write;
 
 use byteorder::{LittleEndian, WriteBytesExt};
 
-use humansize::{FileSize, file_size_opts as fsopts};
+use humansize::{file_size_opts as fsopts, FileSize};
 
 use mio::net::{TcpListener, UdpSocket};
 use mio::{Events, Poll, PollOpt, Ready, Token};
-use mio::tcp::Shutdown;
 use mio_extras::timer::Timer;
 
-use crate::{Error, RtMessage, Tag, MIN_REQUEST_LENGTH};
 use crate::config::ServerConfig;
 use crate::grease::Grease;
 use crate::key::{LongTermKey, OnlineKey};
 use crate::kms;
 use crate::merkle::MerkleTree;
-use crate::stats::{AggregatedStats, PerClientStats, ServerStats, ClientStatEntry};
+use crate::stats::{AggregatedStats, ClientStatEntry, PerClientStats, ServerStats};
+use crate::{Error, RtMessage, Tag, MIN_REQUEST_LENGTH};
 
 macro_rules! check_ctrlc {
     ($keep_running:expr) => {
@@ -224,24 +223,22 @@ impl Server {
 
         for msg in events.iter() {
             match msg.token() {
-                EVT_MESSAGE => {
-                    loop {
-                        check_ctrlc!(self.keep_running);
+                EVT_MESSAGE => loop {
+                    check_ctrlc!(self.keep_running);
 
-                        self.merkle.reset();
-                        self.requests.clear();
+                    self.merkle.reset();
+                    self.requests.clear();
 
-                        let socket_now_empty = self.collect_requests();
+                    let socket_now_empty = self.collect_requests();
 
-                        if self.requests.is_empty() {
-                            break;
-                        }
+                    if self.requests.is_empty() {
+                        break;
+                    }
 
-                        self.send_responses();
+                    self.send_responses();
 
-                        if socket_now_empty {
-                            break;
-                        }
+                    if socket_now_empty {
+                        break;
                     }
                 },
                 EVT_HEALTH_CHECK => self.handle_health_check(),
@@ -252,8 +249,8 @@ impl Server {
         false
     }
 
-    // Read and process client requests from socket until empty or 'batch_size' number of
-    // requests have been read.
+    // Read and process client requests from socket into `self.requests` and `self.merkle` until
+    // socket is empty or 'batch_size' number of requests have been read.
     fn collect_requests(&mut self) -> bool {
         for i in 0..self.config.batch_size() {
             match self.socket.recv_from(&mut self.buf) {
@@ -396,7 +393,9 @@ impl Server {
         for (addr, counts) in vec {
             info!(
                 "{:16}: {} valid, {} invalid requests; {} responses ({} sent)",
-                format!("{}", addr), counts.valid_requests, counts.invalid_requests,
+                format!("{}", addr),
+                counts.valid_requests,
+                counts.invalid_requests,
                 counts.responses_sent,
                 counts.bytes_sent.file_size(fsopts::BINARY).unwrap()
             );
@@ -405,9 +404,13 @@ impl Server {
         info!(
             "Totals: {} unique clients; {} valid, {} invalid requests; {} responses ({} sent)",
             self.stats.total_unique_clients(),
-            self.stats.total_valid_requests(), self.stats.total_invalid_requests(),
+            self.stats.total_valid_requests(),
+            self.stats.total_invalid_requests(),
             self.stats.total_responses_sent(),
-            self.stats.total_bytes_sent().file_size(fsopts::BINARY).unwrap()
+            self.stats
+                .total_bytes_sent()
+                .file_size(fsopts::BINARY)
+                .unwrap()
         );
 
         self.timer.set_timeout(self.config.status_interval(), ());
