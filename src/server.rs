@@ -390,7 +390,8 @@ impl Server {
 
     fn handle_status_update(&mut self) {
         let mut vec: Vec<(&IpAddr, &ClientStatEntry)> = self.stats.iter().collect();
-        vec.sort_by(|lhs, rhs| lhs.1.valid_requests.cmp(&rhs.1.valid_requests));
+        // sort in descending order
+        vec.sort_by(|lhs, rhs| rhs.1.valid_requests.cmp(&lhs.1.valid_requests));
 
         for (addr, counts) in vec {
             info!(
