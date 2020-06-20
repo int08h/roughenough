@@ -137,21 +137,21 @@ pub mod inner {
 
     fn load_gcp_credential() -> Result<ServiceAccountKey, KmsError> {
         if let Ok(gac) = env::var(GOOGLE_APP_CREDS.to_string()) {
-            if Path::new(&gac).exists() {
+            return if Path::new(&gac).exists() {
                 match oauth2::service_account_key_from_file(&gac) {
-                    Ok(svc_acct_key) => return Ok(svc_acct_key),
+                    Ok(svc_acct_key) => Ok(svc_acct_key),
                     Err(e) => {
-                        return Err(KmsError::InvalidConfiguration(format!(
+                        Err(KmsError::InvalidConfiguration(format!(
                             "Can't load service account credential '{}': {:?}",
                             gac, e
                         )))
                     }
                 }
             } else {
-                return Err(KmsError::InvalidConfiguration(format!(
+                Err(KmsError::InvalidConfiguration(format!(
                     "{} ='{}' does not exist",
                     GOOGLE_APP_CREDS, gac
-                )));
+                )))
             }
         }
 
