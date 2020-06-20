@@ -45,8 +45,26 @@ macro_rules! check_ctrlc {
 
 fn polling_loop(config: Box<dyn ServerConfig>) {
     let mut server = Server::new(config);
-    let cfg = server.get_config(); // borrow config that was moved above
+    let cfg = server.get_config();
+    display_config(&server, cfg);
 
+    let kr = server.get_keep_running();
+    let kr0 = kr.clone();
+
+    ctrlc::set_handler(move || kr.store(false, Ordering::Release))
+        .expect("failed setting Ctrl-C handler");
+
+    let mut events = Events::with_capacity(1024);
+
+    loop {
+        check_ctrlc!(kr0);
+        if server.process_events(&mut events) {
+            return;
+        }
+    }
+}
+
+fn display_config(server: &Server, cfg: &dyn ServerConfig) {
     info!("Long-term public key       : {}", server.get_public_key());
     info!("Online public key          : {}", server.get_online_key());
     info!("Max response batch size    : {}", cfg.batch_size());
@@ -64,21 +82,6 @@ fn polling_loop(config: Box<dyn ServerConfig>) {
         info!("Deliberate response errors : ~{}%", cfg.fault_percentage());
     } else {
         info!("Deliberate response errors : disabled");
-    }
-
-    let kr = server.get_keep_running();
-    let kr_new = kr.clone();
-
-    ctrlc::set_handler(move || kr.store(false, Ordering::Release))
-        .expect("failed setting Ctrl-C handler");
-
-    let mut events = Events::with_capacity(64);
-
-    loop {
-        check_ctrlc!(kr_new);
-        if server.process_events(&mut events) {
-            return;
-        }
     }
 }
 
