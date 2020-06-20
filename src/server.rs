@@ -18,7 +18,7 @@
 
 use hex;
 use std::io::ErrorKind;
-use std::net::SocketAddr;
+use std::net::{SocketAddr, IpAddr};
 use std::process;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -40,7 +40,7 @@ use crate::grease::Grease;
 use crate::key::{LongTermKey, OnlineKey};
 use crate::kms;
 use crate::merkle::MerkleTree;
-use crate::stats::{AggregatedStats, PerClientStats, ServerStats};
+use crate::stats::{AggregatedStats, PerClientStats, ServerStats, ClientStatEntry};
 
 macro_rules! check_ctrlc {
     ($keep_running:expr) => {
@@ -273,7 +273,10 @@ impl Server {
                 }
 
                 STATUS => {
-                    for (addr, counts) in self.stats.iter() {
+                    let mut vec: Vec<(&IpAddr, &ClientStatEntry)> = self.stats.iter().collect();
+                    vec.sort_by(|lhs, rhs| lhs.1.valid_requests.cmp(&rhs.1.valid_requests));
+
+                    for (addr, counts) in vec {
                         info!(
                             "{:16}: {} valid, {} invalid requests; {} responses ({} sent)",
                             format!("{}", addr), counts.valid_requests, counts.invalid_requests,
