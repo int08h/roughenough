@@ -65,6 +65,7 @@ pub const DEFAULT_STATUS_INTERVAL: Duration = Duration::from_secs(600);
 /// sources. See:
 ///   * [FileConfig](struct.FileConfig.html) - configure via a YAML file
 ///   * [EnvironmentConfig](struct.EnvironmentConfig.html) - configure via environment variables
+///   * [MemoryConfig](struct.MemoryConfig.html) - in-memory configuration for testing
 ///
 pub trait ServerConfig {
     /// [Required] IP address or interface name to listen for client requests
