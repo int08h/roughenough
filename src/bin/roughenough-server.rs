@@ -25,7 +25,7 @@ extern crate log;
 
 use std::env;
 use std::process;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{Ordering, AtomicBool};
 
 use roughenough::config;
 use roughenough::config::ServerConfig;
@@ -33,32 +33,28 @@ use roughenough::roughenough_version;
 use roughenough::server::Server;
 
 use mio::Events;
-
-macro_rules! check_ctrlc {
-    ($keep_running:expr) => {
-        if !$keep_running.load(Ordering::Acquire) {
-            warn!("Ctrl-C caught, exiting...");
-            return;
-        }
-    };
-}
+use std::sync::Arc;
+use simple_logger::SimpleLogger;
+use log::LevelFilter;
 
 fn polling_loop(config: Box<dyn ServerConfig>) {
     let mut server = Server::new(config);
+    let keep_running = Arc::new(AtomicBool::new(true));
     let cfg = server.get_config();
+
     display_config(&server, cfg);
 
-    let kr = server.get_keep_running();
-    let kr0 = kr.clone();
-
-    ctrlc::set_handler(move || kr.store(false, Ordering::Release))
+    let kr_clone = keep_running.clone();
+    ctrlc::set_handler(move || kr_clone.store(false, Ordering::Release))
         .expect("failed setting Ctrl-C handler");
 
     let mut events = Events::with_capacity(1024);
 
     loop {
-        check_ctrlc!(kr0);
-        if server.process_events(&mut events) {
+        server.process_events(&mut events);
+
+        if !keep_running.load(Ordering::Acquire) {
+            warn!("Ctrl-C caught, exiting...");
             return;
         }
     }

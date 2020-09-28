@@ -21,8 +21,6 @@ use std::io::ErrorKind;
 use std::io::Write;
 use std::net::{IpAddr, Shutdown, SocketAddr};
 use std::process;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use byteorder::{LittleEndian, WriteBytesExt};
@@ -40,15 +38,6 @@ use crate::kms;
 use crate::merkle::MerkleTree;
 use crate::stats::{AggregatedStats, ClientStatEntry, PerClientStats, ServerStats};
 use crate::{Error, RtMessage, Tag, MIN_REQUEST_LENGTH};
-
-macro_rules! check_ctrlc {
-    ($keep_running:expr) => {
-        if !$keep_running.load(Ordering::Acquire) {
-            warn!("Ctrl-C caught, exiting...");
-            return true;
-        }
-    };
-}
 
 // mio event registrations
 const EVT_MESSAGE: Token = Token(0);
@@ -75,7 +64,6 @@ pub struct Server {
 
     socket: UdpSocket,
     health_listener: Option<TcpListener>,
-    keep_running: Arc<AtomicBool>,
     poll_duration: Option<Duration>,
     grease: Grease,
     timer: Timer<()>,
@@ -115,8 +103,6 @@ impl Server {
 
             long_term_key.make_cert(&online_key).encode().unwrap()
         };
-
-        let keep_running = Arc::new(AtomicBool::new(true));
 
         let sock_addr = config.udp_socket_addr().expect("udp sock addr");
         let socket = UdpSocket::bind(&sock_addr).expect("failed to bind to socket");
@@ -166,7 +152,6 @@ impl Server {
             socket,
             health_listener,
 
-            keep_running,
             poll_duration,
             grease,
             timer,
@@ -199,11 +184,6 @@ impl Server {
         self.config.as_ref()
     }
 
-    /// Returns a reference counted pointer the this server's `keep_running` value.
-    pub fn get_keep_running(&self) -> Arc<AtomicBool> {
-        self.keep_running.clone()
-    }
-
     #[cfg(fuzzing)]
     pub fn send_to_self(&mut self, data: &[u8]) {
         let res = self
@@ -213,10 +193,9 @@ impl Server {
     }
 
     /// The main processing function for incoming connections. This method should be
-    /// called repeatedly in a loop to process requests. It returns 'true' when the
-    /// server has shutdown (due to keep_running being set to 'false').
+    /// called repeatedly in a loop to process requests.
     ///
-    pub fn process_events(&mut self, events: &mut Events) -> bool {
+    pub fn process_events(&mut self, events: &mut Events) {
         self.poll
             .poll(events, self.poll_duration)
             .expect("server event poll failed; cannot recover");
@@ -224,8 +203,6 @@ impl Server {
         for msg in events.iter() {
             match msg.token() {
                 EVT_MESSAGE => loop {
-                    check_ctrlc!(self.keep_running);
-
                     self.merkle.reset();
                     self.requests.clear();
 
@@ -246,7 +223,6 @@ impl Server {
                 _ => unreachable!(),
             }
         }
-        false
     }
 
     // Read and process client requests from socket into `self.requests` and `self.merkle` until
