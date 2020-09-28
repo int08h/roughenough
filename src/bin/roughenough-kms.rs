@@ -92,6 +92,13 @@ fn get_kms(kms_key: &str) -> impl KmsProvider {
 pub fn main() {
     SimpleLogger::new().with_level(LevelFilter::Info).init().unwrap();
 
+    if !(cfg!(feature = "gcpkms") || cfg!(feature = "awskms")) {
+        warn!("KMS support was not compiled into this build; nothing to do.");
+        warn!("See the Roughenough documentation for information on KMS support.");
+        warn!("  https://github.com/int08h/roughenough/blob/master/doc/OPTIONAL-FEATURES.md");
+        return
+    }
+
     let matches = App::new("roughenough-kms")
         .version(roughenough_version().as_ref())
         .long_about("Encrypt and decrypt Roughenough long-term server seeds using a KMS")
@@ -117,13 +124,6 @@ pub fn main() {
                 .required(false)
                 .help("32 byte hex seed for the server's long-term identity"),
         ).get_matches();
-
-    if !(cfg!(feature = "gcpkms") || cfg!(feature = "awskms")) {
-        warn!("KMS support was not compiled into this build; nothing to do.");
-        warn!("See the Roughenough documentation for information on KMS support.");
-        warn!("  https://github.com/int08h/roughenough/blob/master/doc/OPTIONAL-FEATURES.md");
-        return
-    }
 
     let kms_key = matches.value_of("KEY_ID").expect("Invalid KMS key id");
 
