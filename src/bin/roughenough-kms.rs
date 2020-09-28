@@ -25,6 +25,8 @@ use clap::{App, Arg};
 #[allow(unused_imports)]
 use roughenough::kms::{EnvelopeEncryption, KmsProvider};
 use roughenough::roughenough_version;
+use simple_logger::SimpleLogger;
+use log::LevelFilter;
 
 #[cfg(not(any(feature = "awskms", feature = "gcpkms")))]
 fn encrypt_seed(_: &str, _: &str) {
@@ -88,9 +90,7 @@ fn get_kms(kms_key: &str) -> impl KmsProvider {
 
 #[allow(unused_variables)]
 pub fn main() {
-    use log::Level;
-
-    simple_logger::init_with_level(Level::Info).unwrap();
+    SimpleLogger::new().with_level(LevelFilter::Info).init().unwrap();
 
     let matches = App::new("roughenough-kms")
         .version(roughenough_version().as_ref())

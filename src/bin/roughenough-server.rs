@@ -86,9 +86,7 @@ fn display_config(server: &Server, cfg: &dyn ServerConfig) {
 }
 
 pub fn main() {
-    use log::Level;
-
-    simple_logger::init_with_level(Level::Info).unwrap();
+    SimpleLogger::new().with_level(LevelFilter::Info).init().unwrap();
 
     info!("Roughenough server v{} starting", roughenough_version());
 
