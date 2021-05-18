@@ -23,6 +23,7 @@ pub mod inner {
     use std::str::FromStr;
 
     use bytes::Bytes;
+    use futures::executor::block_on;
     use rusoto_core::Region;
     use rusoto_kms::{DecryptRequest, EncryptRequest, Kms, KmsClient};
 
@@ -72,13 +73,13 @@ pub mod inner {
 
             let mut encrypt_req: EncryptRequest = Default::default();
             encrypt_req.key_id = self.key_id.clone();
-            encrypt_req.plaintext = Bytes::from(plaintext_dek.as_slice());
+            encrypt_req.plaintext = Bytes::from(plaintext_dek.to_vec());
 
             let mut enc_context = HashMap::new();
             enc_context.insert("AD".to_string(), AD.to_string());
             encrypt_req.encryption_context = Some(enc_context);
 
-            match self.kms_client.encrypt(encrypt_req).sync() {
+            match block_on(self.kms_client.encrypt(encrypt_req)) {
                 Ok(result) => {
                     if let Some(ciphertext) = result.ciphertext_blob {
                         Ok(ciphertext.to_vec())
@@ -94,13 +95,13 @@ pub mod inner {
 
         fn decrypt_dek(&self, encrypted_dek: &EncryptedDEK) -> Result<PlaintextDEK, KmsError> {
             let mut decrypt_req: DecryptRequest = Default::default();
-            decrypt_req.ciphertext_blob = Bytes::from(encrypted_dek.as_slice());
+            decrypt_req.ciphertext_blob = Bytes::from(encrypted_dek.to_vec());
 
             let mut dec_context = HashMap::new();
             dec_context.insert("AD".to_string(), AD.to_string());
             decrypt_req.encryption_context = Some(dec_context);
 
-            match self.kms_client.decrypt(decrypt_req).sync() {
+            match block_on(self.kms_client.decrypt(decrypt_req)) {
                 Ok(result) => {
                     if let Some(plaintext_dek) = result.plaintext {
                         if plaintext_dek.len() == DEK_LEN_BYTES {
