@@ -1,4 +1,4 @@
-// Copyright 2017-2019 int08h LLC
+// Copyright 2017-2021 int08h LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,15 +16,15 @@
 //! Representations and management of Roughtime's online and long-term Ed25519 keys
 //!
 
-mod longterm;
-mod online;
-
 use std::fmt::Display;
 use std::fmt::Formatter;
 use std::str::FromStr;
 
 pub use self::longterm::LongTermKey;
 pub use self::online::OnlineKey;
+
+mod longterm;
+mod online;
 
 /// Methods for protecting the server's long-term identity
 #[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Clone)]
@@ -64,8 +64,9 @@ impl FromStr for KmsProtection {
 
 #[cfg(test)]
 mod test {
-    use crate::key::KmsProtection;
     use std::str::FromStr;
+
+    use crate::key::KmsProtection;
 
     #[test]
     fn convert_from_string() {

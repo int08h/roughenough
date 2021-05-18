@@ -1,4 +1,4 @@
-// Copyright 2017-2019 int08h LLC
+// Copyright 2017-2021 int08h LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,11 +19,11 @@
 use std::fmt;
 use std::fmt::Formatter;
 
+use crate::CERTIFICATE_CONTEXT;
 use crate::key::OnlineKey;
 use crate::message::RtMessage;
 use crate::sign::Signer;
 use crate::tag::Tag;
-use crate::CERTIFICATE_CONTEXT;
 
 ///
 /// Represents the server's long-term identity.
