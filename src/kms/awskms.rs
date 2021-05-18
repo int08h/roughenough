@@ -22,14 +22,14 @@ pub mod inner {
     use std::fmt::Formatter;
     use std::str::FromStr;
 
+    use bytes::Bytes;
     use rusoto_core::Region;
     use rusoto_kms::{DecryptRequest, EncryptRequest, Kms, KmsClient};
-    use bytes::Bytes;
 
-    use crate::kms::{EncryptedDEK, KmsError, KmsProvider, PlaintextDEK, AD, DEK_SIZE_BYTES};
+    use crate::kms::{AD, DEK_LEN_BYTES, EncryptedDEK, KmsError, KmsProvider, PlaintextDEK};
 
     /// Amazon Web Services Key Management Service
-    /// https://aws.amazon.com/kms/
+        /// https://aws.amazon.com/kms/
     pub struct AwsKms {
         kms_client: KmsClient,
         key_id: String,
@@ -63,7 +63,7 @@ pub mod inner {
 
     impl KmsProvider for AwsKms {
         fn encrypt_dek(&self, plaintext_dek: &PlaintextDEK) -> Result<EncryptedDEK, KmsError> {
-            if plaintext_dek.len() != DEK_SIZE_BYTES {
+            if plaintext_dek.len() != DEK_LEN_BYTES {
                 return Err(KmsError::InvalidKey(format!(
                     "provided DEK wrong length: {}",
                     plaintext_dek.len()
@@ -103,7 +103,7 @@ pub mod inner {
             match self.kms_client.decrypt(decrypt_req).sync() {
                 Ok(result) => {
                     if let Some(plaintext_dek) = result.plaintext {
-                        if plaintext_dek.len() == DEK_SIZE_BYTES {
+                        if plaintext_dek.len() == DEK_LEN_BYTES {
                             Ok(plaintext_dek.to_vec())
                         } else {
                             Err(KmsError::InvalidKey(format!(

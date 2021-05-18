@@ -14,12 +14,12 @@
 
 use std::io::{Cursor, Read, Write};
 
-use ring::aead::{open_in_place, seal_in_place, OpeningKey, SealingKey, AES_256_GCM};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use ring::aead::{Aad, AES_256_GCM, LessSafeKey, Nonce, UnboundKey};
 use ring::rand::{SecureRandom, SystemRandom};
 
+use crate::kms::{AD, DEK_LEN_BYTES, KmsError, KmsProvider, NONCE_LEN_BYTES, TAG_LEN_BYTES};
 use crate::SEED_LENGTH;
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use crate::kms::{KmsError, KmsProvider, AD, DEK_SIZE_BYTES, NONCE_SIZE_BYTES, TAG_SIZE_BYTES};
 
 const DEK_LEN_FIELD: usize = 2;
 const NONCE_LEN_FIELD: usize = 2;
@@ -31,13 +31,10 @@ const NONCE_LEN_FIELD: usize = 2;
 // n bytes - opaque (AEAD encrypted seed + tag)
 const MIN_PAYLOAD_SIZE: usize = DEK_LEN_FIELD
     + NONCE_LEN_FIELD
-    + DEK_SIZE_BYTES
-    + NONCE_SIZE_BYTES
+    + DEK_LEN_BYTES
+    + NONCE_LEN_BYTES
     + SEED_LENGTH as usize
-    + TAG_SIZE_BYTES;
-
-// No input prefix to skip, consume entire buffer
-const IN_PREFIX_LEN: usize = 0;
+    + TAG_LEN_BYTES;
 
 // Convenience function to create zero-filled Vec of given size
 fn vec_zero_filled(len: usize) -> Vec<u8> {
@@ -77,7 +74,7 @@ impl EnvelopeEncryption {
         let dek_len = tmp.read_u16::<LittleEndian>()? as usize;
         let nonce_len = tmp.read_u16::<LittleEndian>()? as usize;
 
-        if nonce_len != NONCE_SIZE_BYTES || dek_len > ciphertext_blob.len() {
+        if nonce_len != NONCE_LEN_BYTES || dek_len > ciphertext_blob.len() {
             return Err(KmsError::InvalidData(format!(
                 "invalid DEK ({}) or nonce ({}) length",
                 dek_len, nonce_len
@@ -89,8 +86,9 @@ impl EnvelopeEncryption {
         tmp.read_exact(&mut encrypted_dek)?;
 
         // Consume the nonce
-        let mut nonce = vec_zero_filled(nonce_len);
-        tmp.read_exact(&mut nonce)?;
+        let mut raw_nonce = [0u8; NONCE_LEN_BYTES];
+        tmp.read_exact(&mut raw_nonce)?;
+        let nonce = Nonce::assume_unique_for_key(raw_nonce);
 
         // Consume the encrypted seed + tag
         let mut encrypted_seed = Vec::new();
@@ -100,15 +98,10 @@ impl EnvelopeEncryption {
         let dek = kms.decrypt_dek(&encrypted_dek)?;
 
         // Decrypt the seed value using the DEK
-        let dek_open_key = OpeningKey::new(&AES_256_GCM, &dek)?;
-        match open_in_place(
-            &dek_open_key,
-            &nonce,
-            AD.as_bytes(),
-            IN_PREFIX_LEN,
-            &mut encrypted_seed,
-        ) {
-            Ok(plaintext_seed) => Ok(plaintext_seed.to_vec()),
+        let unbound_dek = UnboundKey::new(&AES_256_GCM, &dek)?;
+        let dek_opening_key = LessSafeKey::new(unbound_dek);
+        match dek_opening_key.open_in_place(nonce, Aad::from(AD), &mut encrypted_seed) {
+            Ok(plaintext) => Ok(plaintext.to_vec()),
             Err(_) => Err(KmsError::OperationFailed(
                 "failed to decrypt plaintext seed".to_string(),
             )),
@@ -124,47 +117,36 @@ impl EnvelopeEncryption {
     pub fn encrypt_seed(kms: &dyn KmsProvider, plaintext_seed: &[u8]) -> Result<Vec<u8>, KmsError> {
         // Generate random DEK and nonce
         let rng = SystemRandom::new();
-        let mut dek = [0u8; DEK_SIZE_BYTES];
-        let mut nonce = [0u8; NONCE_SIZE_BYTES];
-        rng.fill(&mut dek)?;
-        rng.fill(&mut nonce)?;
+        let mut raw_dek = [0u8; DEK_LEN_BYTES];
+        let mut raw_nonce = [0u8; NONCE_LEN_BYTES];
+        rng.fill(&mut raw_dek)?;
+        rng.fill(&mut raw_nonce)?;
 
-        // Ring will overwrite plaintext with ciphertext in this buffer
-        let mut plaintext_buf = plaintext_seed.to_vec();
+        // Ring will overwrite plaintext with ciphertext+tag in this buffer
+        let mut buf = plaintext_seed.to_vec();
 
-        // Reserve space for the authentication tag which will be appended after the ciphertext
-        plaintext_buf.reserve(TAG_SIZE_BYTES);
-        for _ in 0..TAG_SIZE_BYTES {
-            plaintext_buf.push(0);
-        }
+        // Encrypt the plaintext seed (in buf) using the DEK
+        let nonce = Nonce::assume_unique_for_key(raw_nonce);
+        let unbound_dek = UnboundKey::new(&AES_256_GCM, &raw_dek)?;
+        let dek_seal_key = LessSafeKey::new(unbound_dek);
 
-        // Encrypt the plaintext seed using the DEK
-        let dek_seal_key = SealingKey::new(&AES_256_GCM, &dek)?;
-        let encrypted_seed = match seal_in_place(
-            &dek_seal_key,
-            &nonce,
-            AD.as_bytes(),
-            &mut plaintext_buf,
-            TAG_SIZE_BYTES,
-        ) {
-            Ok(enc_len) => plaintext_buf[..enc_len].to_vec(),
-            Err(_) => {
-                return Err(KmsError::OperationFailed(
-                    "failed to encrypt plaintext seed".to_string(),
-                ))
-            }
+        // Output overwrites context of 'buf' and appends auth tag to 'buf'
+        if let Err(_) = dek_seal_key.seal_in_place_append_tag(nonce, Aad::from(AD), &mut buf) {
+            return Err(KmsError::OperationFailed(
+                "failed to encrypt plaintext seed".to_string(),
+            ))
         };
 
         // Use the KMS to wrap the DEK
-        let wrapped_dek = kms.encrypt_dek(&dek.to_vec())?;
+        let wrapped_dek = kms.encrypt_dek(&raw_dek.to_vec())?;
 
         // And coalesce everything together
         let mut output = Vec::new();
         output.write_u16::<LittleEndian>(wrapped_dek.len() as u16)?;
-        output.write_u16::<LittleEndian>(nonce.len() as u16)?;
+        output.write_u16::<LittleEndian>(raw_nonce.len() as u16)?;
         output.write_all(&wrapped_dek)?;
-        output.write_all(&nonce)?;
-        output.write_all(&encrypted_seed)?;
+        output.write_all(&raw_nonce)?;
+        output.write_all(&buf)?;
 
         Ok(output)
     }
@@ -172,9 +154,9 @@ impl EnvelopeEncryption {
 
 #[cfg(test)]
 mod test {
+    use crate::kms::{KmsError, KmsProvider};
     use crate::kms::envelope::{DEK_LEN_FIELD, MIN_PAYLOAD_SIZE, NONCE_LEN_FIELD};
     use crate::kms::EnvelopeEncryption;
-    use crate::kms::{KmsError, KmsProvider};
 
     struct MockKmsProvider {}
 

@@ -16,29 +16,26 @@
 //! A multi-step (init-update-finish) interface for Ed25519 signing and verification
 //!
 
-use ring::rand;
-use ring::rand::SecureRandom;
-use ring::signature;
-use ring::signature::Ed25519KeyPair;
-
-use untrusted::Input;
-
 use std::fmt;
 use std::fmt::Formatter;
+
+use ring::rand;
+use ring::rand::SecureRandom;
+use ring::signature::{self, Ed25519KeyPair, KeyPair};
 
 const INITIAL_BUF_SIZE: usize = 1024;
 
 /// A multi-step (init-update-finish) interface for verifying an Ed25519 signature
 #[derive(Debug)]
-pub struct Verifier<'a> {
-    pubkey: Input<'a>,
+pub struct Verifier {
+    pubkey: Vec<u8>,
     buf: Vec<u8>,
 }
 
-impl<'a> Verifier<'a> {
-    pub fn new(pubkey: &'a [u8]) -> Self {
+impl Verifier {
+    pub fn new(pubkey: &[u8]) -> Self {
         Verifier {
-            pubkey: Input::from(pubkey),
+            pubkey: Vec::from(pubkey),
             buf: Vec::with_capacity(INITIAL_BUF_SIZE),
         }
     }
@@ -49,10 +46,9 @@ impl<'a> Verifier<'a> {
     }
 
     pub fn verify(&self, expected_sig: &[u8]) -> bool {
-        let msg = Input::from(&self.buf);
-        let sig = Input::from(expected_sig);
+        let pk = signature::UnparsedPublicKey::new(&signature::ED25519, &self.pubkey);
 
-        match signature::verify(&signature::ED25519, self.pubkey, msg, sig) {
+        match pk.verify(&self.buf, expected_sig) {
             Ok(_) => true,
             _ => false,
         }
@@ -81,9 +77,8 @@ impl Signer {
     }
 
     pub fn from_seed(seed: &[u8]) -> Self {
-        let seed_input = Input::from(seed);
         Signer {
-            key_pair: Ed25519KeyPair::from_seed_unchecked(seed_input).unwrap(),
+            key_pair: Ed25519KeyPair::from_seed_unchecked(seed).unwrap(),
             buf: Vec::with_capacity(INITIAL_BUF_SIZE),
         }
     }
@@ -101,7 +96,7 @@ impl Signer {
     }
 
     pub fn public_key_bytes(&self) -> &[u8] {
-        self.key_pair.public_key_bytes()
+        self.key_pair.public_key().as_ref()
     }
 }
 
