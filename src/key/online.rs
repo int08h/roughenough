@@ -12,17 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::message::RtMessage;
-use crate::sign::Signer;
-use crate::tag::Tag;
-
-use crate::SIGNED_RESPONSE_CONTEXT;
+use std::fmt;
+use std::fmt::Formatter;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use byteorder::{LittleEndian, WriteBytesExt};
 
-use std::fmt;
-use std::fmt::Formatter;
-use std::time::{UNIX_EPOCH, SystemTime};
+use crate::message::RtMessage;
+use crate::sign::Signer;
+use crate::SIGNED_RESPONSE_CONTEXT;
+use crate::tag::Tag;
 
 ///
 /// Represents the delegated Roughtime ephemeral online key.
@@ -71,7 +70,9 @@ impl OnlineKey {
 
         // current epoch time in microseconds
         let midp_time = {
-            let d = now.duration_since(UNIX_EPOCH).expect("duration since epoch");
+            let d = now
+                .duration_since(UNIX_EPOCH)
+                .expect("duration since epoch");
             let secs = d.as_secs() * 1_000_000;
             let nsecs = (d.subsec_nanos() as u64) / 1_000;
 

@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::net::IpAddr;
-use std::collections::HashMap;
 use std::collections::hash_map::Iter;
+use std::collections::HashMap;
+use std::net::IpAddr;
 
 use crate::stats::ClientStatEntry;
 use crate::stats::ServerStats;
@@ -40,7 +40,6 @@ impl Default for AggregatedStats {
 }
 
 impl AggregatedStats {
-
     #[allow(dead_code)]
     pub fn new() -> Self {
         AggregatedStats {
@@ -49,7 +48,7 @@ impl AggregatedStats {
             health_checks: 0,
             responses_sent: 0,
             bytes_sent: 0,
-            empty_map: HashMap::new()
+            empty_map: HashMap::new(),
         }
     }
 }

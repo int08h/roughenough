@@ -16,26 +16,24 @@
 #[macro_use]
 extern crate clap;
 
-use ring::rand;
-use ring::rand::SecureRandom;
-
-use byteorder::{LittleEndian, ReadBytesExt};
-
-use chrono::offset::Utc;
-use chrono::{TimeZone, Local};
-
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::iter::Iterator;
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 
+use byteorder::{LittleEndian, ReadBytesExt};
+use chrono::{Local, TimeZone};
+use chrono::offset::Utc;
 use clap::{App, Arg};
+use ring::rand;
+use ring::rand::SecureRandom;
+
+use roughenough::{
+    CERTIFICATE_CONTEXT, roughenough_version, RtMessage, SIGNED_RESPONSE_CONTEXT, Tag,
+};
 use roughenough::merkle::root_from_paths;
 use roughenough::sign::Verifier;
-use roughenough::{
-    roughenough_version, RtMessage, Tag, CERTIFICATE_CONTEXT, SIGNED_RESPONSE_CONTEXT,
-};
 
 fn create_nonce() -> [u8; 64] {
     let rng = rand::SystemRandom::new();
@@ -62,7 +60,10 @@ fn receive_response(sock: &mut UdpSocket) -> RtMessage {
 
 fn stress_test_forever(addr: &SocketAddr) -> ! {
     if !addr.ip().is_loopback() {
-        panic!("Cannot use non-loopback address {} for stress testing", addr.ip());
+        panic!(
+            "Cannot use non-loopback address {} for stress testing",
+            addr.ip()
+        );
     }
 
     println!("Stress testing!");
@@ -177,7 +178,8 @@ impl ResponseHandler {
         let hash = root_from_paths(index as usize, &self.nonce, paths);
 
         assert_eq!(
-            hash, srep[&Tag::ROOT],
+            hash,
+            srep[&Tag::ROOT],
             "Nonce is not present in the response's merkle tree"
         );
     }
@@ -195,12 +197,16 @@ impl ResponseHandler {
         assert!(
             midpoint >= mint,
             "Response midpoint {} lies *before* delegation span ({}, {})",
-            midpoint, mint, maxt
+            midpoint,
+            mint,
+            maxt
         );
         assert!(
             midpoint <= maxt,
             "Response midpoint {} lies *after* delegation span ({}, {})",
-            midpoint, mint, maxt
+            midpoint,
+            mint,
+            maxt
         );
     }
 
@@ -353,4 +359,3 @@ fn main() {
         }
     }
 }
-

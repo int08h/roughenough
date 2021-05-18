@@ -59,7 +59,10 @@ pub struct EnvelopeEncryption;
 
 impl EnvelopeEncryption {
     /// Decrypt a seed previously encrypted with `encrypt_seed()`
-    pub fn decrypt_seed(kms: &dyn KmsProvider, ciphertext_blob: &[u8]) -> Result<Vec<u8>, KmsError> {
+    pub fn decrypt_seed(
+        kms: &dyn KmsProvider,
+        ciphertext_blob: &[u8],
+    ) -> Result<Vec<u8>, KmsError> {
         if ciphertext_blob.len() < MIN_PAYLOAD_SIZE {
             return Err(KmsError::InvalidData(format!(
                 "ciphertext too short: min {}, found {}",
@@ -134,7 +137,7 @@ impl EnvelopeEncryption {
         if let Err(_) = dek_seal_key.seal_in_place_append_tag(nonce, Aad::from(AD), &mut buf) {
             return Err(KmsError::OperationFailed(
                 "failed to encrypt plaintext seed".to_string(),
-            ))
+            ));
         };
 
         // Use the KMS to wrap the DEK

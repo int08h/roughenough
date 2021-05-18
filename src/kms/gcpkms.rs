@@ -25,14 +25,14 @@ pub mod inner {
     use std::path::Path;
     use std::result::Result;
 
-    use self::cloudkms1::CloudKMS;
+    use crate::kms::{AD, EncryptedDEK, KmsError, KmsProvider, PlaintextDEK};
+
     use self::cloudkms1::{DecryptRequest, EncryptRequest};
+    use self::cloudkms1::CloudKMS;
     use self::hyper::net::HttpsConnector;
     use self::hyper::status::StatusCode;
     use self::hyper_rustls::TlsClient;
     use self::oauth2::{ServiceAccountAccess, ServiceAccountKey};
-
-    use crate::kms::{EncryptedDEK, KmsError, KmsProvider, PlaintextDEK, AD};
 
     const GOOGLE_APP_CREDS: &str = &"GOOGLE_APPLICATION_CREDENTIALS";
 
@@ -140,19 +140,17 @@ pub mod inner {
             return if Path::new(&gac).exists() {
                 match oauth2::service_account_key_from_file(&gac) {
                     Ok(svc_acct_key) => Ok(svc_acct_key),
-                    Err(e) => {
-                        Err(KmsError::InvalidConfiguration(format!(
-                            "Can't load service account credential '{}': {:?}",
-                            gac, e
-                        )))
-                    }
+                    Err(e) => Err(KmsError::InvalidConfiguration(format!(
+                        "Can't load service account credential '{}': {:?}",
+                        gac, e
+                    ))),
                 }
             } else {
                 Err(KmsError::InvalidConfiguration(format!(
                     "{} ='{}' does not exist",
                     GOOGLE_APP_CREDS, gac
                 )))
-            }
+            };
         }
 
         // TODO: call to GCE metadata service to get default credential from

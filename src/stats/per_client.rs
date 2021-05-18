@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::net::IpAddr;
-use std::collections::HashMap;
 use std::collections::hash_map::Iter;
+use std::collections::HashMap;
+use std::net::IpAddr;
 
 use crate::stats::ClientStatEntry;
 use crate::stats::ServerStats;
@@ -39,7 +39,6 @@ impl Default for PerClientStats {
 }
 
 impl PerClientStats {
-
     /// Maximum number of entries to prevent unbounded memory growth.
     pub const MAX_CLIENTS: usize = 1_000_000;
 
@@ -113,7 +112,8 @@ impl ServerStats for PerClientStats {
         if self.too_many_entries() {
             return;
         }
-        let entry = self.clients
+        let entry = self
+            .clients
             .entry(*addr)
             .or_insert_with(ClientStatEntry::new);
 
@@ -122,38 +122,23 @@ impl ServerStats for PerClientStats {
     }
 
     fn total_valid_requests(&self) -> u64 {
-        self.clients
-            .values()
-            .map(|&v| v.valid_requests)
-            .sum()
+        self.clients.values().map(|&v| v.valid_requests).sum()
     }
 
     fn total_invalid_requests(&self) -> u64 {
-        self.clients
-            .values()
-            .map(|&v| v.invalid_requests)
-            .sum()
+        self.clients.values().map(|&v| v.invalid_requests).sum()
     }
 
     fn total_health_checks(&self) -> u64 {
-        self.clients
-            .values()
-            .map(|&v| v.health_checks)
-            .sum()
+        self.clients.values().map(|&v| v.health_checks).sum()
     }
 
     fn total_responses_sent(&self) -> u64 {
-        self.clients
-            .values()
-            .map(|&v| v.responses_sent)
-            .sum()
+        self.clients.values().map(|&v| v.responses_sent).sum()
     }
 
     fn total_bytes_sent(&self) -> usize {
-        self.clients
-            .values()
-            .map(|&v| v.bytes_sent)
-            .sum()
+        self.clients.values().map(|&v| v.bytes_sent).sum()
     }
 
     fn total_unique_clients(&self) -> u64 {
@@ -173,4 +158,3 @@ impl ServerStats for PerClientStats {
         self.num_overflows = 0;
     }
 }
-

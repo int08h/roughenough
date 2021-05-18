@@ -25,17 +25,17 @@ extern crate log;
 
 use std::env;
 use std::process;
-use std::sync::atomic::{Ordering, AtomicBool};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use log::LevelFilter;
+use mio::Events;
+use simple_logger::SimpleLogger;
 
 use roughenough::config;
 use roughenough::config::ServerConfig;
 use roughenough::roughenough_version;
 use roughenough::server::Server;
-
-use mio::Events;
-use std::sync::Arc;
-use simple_logger::SimpleLogger;
-use log::LevelFilter;
 
 fn polling_loop(config: Box<dyn ServerConfig>) {
     let mut server = Server::new(config);
@@ -64,15 +64,31 @@ fn display_config(server: &Server, cfg: &dyn ServerConfig) {
     info!("Long-term public key       : {}", server.get_public_key());
     info!("Online public key          : {}", server.get_online_key());
     info!("Max response batch size    : {}", cfg.batch_size());
-    info!("Status updates every       : {} seconds", cfg.status_interval().as_secs());
-    info!("Server listening on        : {}:{}", cfg.interface(), cfg.port());
+    info!(
+        "Status updates every       : {} seconds",
+        cfg.status_interval().as_secs()
+    );
+    info!(
+        "Server listening on        : {}:{}",
+        cfg.interface(),
+        cfg.port()
+    );
     if let Some(hc_port) = cfg.health_check_port() {
-        info!("TCP health check           : {}:{}", cfg.interface(), hc_port);
+        info!(
+            "TCP health check           : {}:{}",
+            cfg.interface(),
+            hc_port
+        );
     } else {
         info!("TCP health check           : disabled");
     }
-    info!("Client req/resp tracking   : {}",
-          if cfg.client_stats_enabled() { "per-client" } else { "aggregated" }
+    info!(
+        "Client req/resp tracking   : {}",
+        if cfg.client_stats_enabled() {
+            "per-client"
+        } else {
+            "aggregated"
+        }
     );
     if cfg.fault_percentage() > 0 {
         info!("Deliberate response errors : ~{}%", cfg.fault_percentage());
@@ -82,7 +98,10 @@ fn display_config(server: &Server, cfg: &dyn ServerConfig) {
 }
 
 pub fn main() {
-    SimpleLogger::new().with_level(LevelFilter::Info).init().unwrap();
+    SimpleLogger::new()
+        .with_level(LevelFilter::Info)
+        .init()
+        .unwrap();
 
     info!("Roughenough server v{} starting", roughenough_version());
 

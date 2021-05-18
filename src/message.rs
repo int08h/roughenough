@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::collections::HashMap;
 use std::io::{Cursor, Read, Write};
 use std::iter::once;
+
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use crate::error::Error;
 use crate::tag::Tag;
@@ -76,10 +77,7 @@ impl RtMessage {
     /// ecosystem](https://roughtime.googlesource.com/roughtime/+/HEAD/ECOSYSTEM.md#maintaining-a-healthy-software-ecosystem).
     ///
     pub fn new_deliberately_invalid(tags: Vec<Tag>, values: Vec<Vec<u8>>) -> Self {
-        RtMessage {
-            tags,
-            values,
-        }
+        RtMessage { tags, values }
     }
 
     /// Internal function to create a single tag message
@@ -301,9 +299,11 @@ impl RtMessage {
 
 #[cfg(test)]
 mod test {
-    use byteorder::{LittleEndian, ReadBytesExt};
-    use crate::message::*;
     use std::io::{Cursor, Read};
+
+    use byteorder::{LittleEndian, ReadBytesExt};
+
+    use crate::message::*;
     use crate::tag::Tag;
 
     #[test]
@@ -473,5 +473,4 @@ mod test {
         let bytes = &[0x02, 0, 0, 0, 4, 0, 0, 0, 0, 0];
         RtMessage::from_bytes(bytes).unwrap();
     }
-
 }

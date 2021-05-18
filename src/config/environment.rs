@@ -15,10 +15,10 @@
 use std::env;
 use std::time::Duration;
 
-use crate::config::ServerConfig;
 use crate::config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
-use crate::key::KmsProtection;
+use crate::config::ServerConfig;
 use crate::Error;
+use crate::key::KmsProtection;
 
 ///
 /// Obtain a Roughenough server configuration ([ServerConfig](trait.ServerConfig.html))
@@ -117,7 +117,7 @@ impl EnvironmentConfig {
 
         if let Ok(mut client_stats) = env::var(ROUGHENOUGH_CLIENT_STATS) {
             client_stats.make_ascii_lowercase();
-            
+
             cfg.client_stats = client_stats == "yes" || client_stats == "on";
         }
 

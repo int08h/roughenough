@@ -16,7 +16,6 @@
 //! Implements the Roughenough server functionality.
 //!
 
-use hex;
 use std::io::ErrorKind;
 use std::io::Write;
 use std::net::{IpAddr, Shutdown, SocketAddr};
@@ -24,20 +23,19 @@ use std::process;
 use std::time::{Duration, SystemTime};
 
 use byteorder::{LittleEndian, WriteBytesExt};
-
+use hex;
 use humansize::{file_size_opts as fsopts, FileSize};
-
-use mio::net::{TcpListener, UdpSocket};
 use mio::{Events, Poll, PollOpt, Ready, Token};
+use mio::net::{TcpListener, UdpSocket};
 use mio_extras::timer::Timer;
 
+use crate::{Error, MIN_REQUEST_LENGTH, RtMessage, Tag};
 use crate::config::ServerConfig;
 use crate::grease::Grease;
 use crate::key::{LongTermKey, OnlineKey};
 use crate::kms;
 use crate::merkle::MerkleTree;
 use crate::stats::{AggregatedStats, ClientStatEntry, PerClientStats, ServerStats};
-use crate::{Error, RtMessage, Tag, MIN_REQUEST_LENGTH};
 
 // mio event registrations
 const EVT_MESSAGE: Token = Token(0);
@@ -115,8 +113,13 @@ impl Server {
         let poll = Poll::new().unwrap();
         poll.register(&socket, EVT_MESSAGE, Ready::readable(), PollOpt::edge())
             .unwrap();
-        poll.register(&timer, EVT_STATUS_UPDATE, Ready::readable(), PollOpt::edge())
-            .unwrap();
+        poll.register(
+            &timer,
+            EVT_STATUS_UPDATE,
+            Ready::readable(),
+            PollOpt::edge(),
+        )
+        .unwrap();
 
         let health_listener = if let Some(hc_port) = config.health_check_port() {
             let hc_sock_addr: SocketAddr = format!("{}:{}", config.interface(), hc_port)
@@ -126,8 +129,13 @@ impl Server {
             let tcp_listener = TcpListener::bind(&hc_sock_addr)
                 .expect("failed to bind TCP listener for health check");
 
-            poll.register(&tcp_listener, EVT_HEALTH_CHECK, Ready::readable(), PollOpt::edge())
-                .unwrap();
+            poll.register(
+                &tcp_listener,
+                EVT_HEALTH_CHECK,
+                Ready::readable(),
+                PollOpt::edge(),
+            )
+            .unwrap();
 
             Some(tcp_listener)
         } else {
@@ -294,7 +302,11 @@ impl Server {
             let paths = self.merkle.get_paths(i);
             let resp_msg = {
                 let r = self.make_response(&srep, &self.cert_bytes, &paths, i as u32);
-                if self.grease.should_add_error() { self.grease.add_errors(&r) } else { r }
+                if self.grease.should_add_error() {
+                    self.grease.add_errors(&r)
+                } else {
+                    r
+                }
             };
             let resp_bytes = resp_msg.encode().unwrap();
 
@@ -316,7 +328,13 @@ impl Server {
         }
     }
 
-    fn make_response(&self, srep: &RtMessage, cert_bytes: &[u8], path: &[u8], idx: u32) -> RtMessage {
+    fn make_response(
+        &self,
+        srep: &RtMessage,
+        cert_bytes: &[u8],
+        path: &[u8],
+        idx: u32,
+    ) -> RtMessage {
         let mut index = [0; 4];
         (&mut index as &mut [u8])
             .write_u32::<LittleEndian>(idx)

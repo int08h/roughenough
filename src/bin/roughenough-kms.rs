@@ -21,12 +21,12 @@
 extern crate log;
 
 use clap::{App, Arg};
+use log::LevelFilter;
+use simple_logger::SimpleLogger;
 
 #[allow(unused_imports)]
 use roughenough::kms::{EnvelopeEncryption, KmsProvider};
 use roughenough::roughenough_version;
-use simple_logger::SimpleLogger;
-use log::LevelFilter;
 
 #[cfg(not(any(feature = "awskms", feature = "gcpkms")))]
 fn encrypt_seed(_: &str, _: &str) {
@@ -41,7 +41,10 @@ fn encrypt_seed(kms_key: &str, hex_seed: &str) {
     let plaintext_seed = hex::decode(hex_seed).expect("Error decoding hex seed value");
 
     if plaintext_seed.len() != 32 {
-        panic!("Seed must be 32 bytes long; provided seed is {}", plaintext_seed.len());
+        panic!(
+            "Seed must be 32 bytes long; provided seed is {}",
+            plaintext_seed.len()
+        );
     }
 
     match EnvelopeEncryption::encrypt_seed(&kms_client, &plaintext_seed) {
@@ -90,13 +93,16 @@ fn get_kms(kms_key: &str) -> impl KmsProvider {
 
 #[allow(unused_variables)]
 pub fn main() {
-    SimpleLogger::new().with_level(LevelFilter::Info).init().unwrap();
+    SimpleLogger::new()
+        .with_level(LevelFilter::Info)
+        .init()
+        .unwrap();
 
     if !(cfg!(feature = "gcpkms") || cfg!(feature = "awskms")) {
         warn!("KMS support was not compiled into this build; nothing to do.");
         warn!("See the Roughenough documentation for information on KMS support.");
         warn!("  https://github.com/int08h/roughenough/blob/master/doc/OPTIONAL-FEATURES.md");
-        return
+        return;
     }
 
     let matches = App::new("roughenough-kms")
@@ -108,33 +114,34 @@ pub fn main() {
                 .long("kms-key")
                 .takes_value(true)
                 .required(true)
-                .help("Identity of the KMS key to be used")
-        ).arg(
+                .help("Identity of the KMS key to be used"),
+        )
+        .arg(
             Arg::with_name("DECRYPT")
                 .short("d")
                 .long("decrypt")
                 .takes_value(true)
                 .required(false)
                 .help("Previously encrypted blob to decrypt to plaintext"),
-        ).arg(
+        )
+        .arg(
             Arg::with_name("SEED")
                 .short("s")
                 .long("seed")
                 .takes_value(true)
                 .required(false)
                 .help("32 byte hex seed for the server's long-term identity"),
-        ).get_matches();
+        )
+        .get_matches();
 
     let kms_key = matches.value_of("KEY_ID").expect("Invalid KMS key id");
 
     if matches.is_present("SEED") {
         let hex_seed = matches.value_of("SEED").expect("Invalid seed value");
         encrypt_seed(kms_key, hex_seed);
-
     } else if matches.is_present("DECRYPT") {
         let hex_blob = matches.value_of("DECRYPT").expect("Invalid blob value");
         decrypt_blob(kms_key, hex_blob);
-
     } else {
         error!("Neither seed encryption (-s) or blob decryption (-d) was specified.");
         error!("One of them is required.");

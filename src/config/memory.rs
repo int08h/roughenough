@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::config::ServerConfig;
-use crate::config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
-use crate::key::KmsProtection;
 use std::time::Duration;
 
 use hex;
+
+use crate::config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
+use crate::config::ServerConfig;
+use crate::key::KmsProtection;
 
 /// A purely in-memory Roughenough config for testing purposes.
 ///
@@ -46,7 +47,7 @@ impl MemoryConfig {
             kms_protection: KmsProtection::Plaintext,
             health_check_port: None,
             client_stats: false,
-            fault_percentage: 0
+            fault_percentage: 0,
         }
     }
 }

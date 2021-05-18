@@ -58,6 +58,10 @@
 #[macro_use]
 extern crate log;
 
+pub use crate::error::Error;
+pub use crate::message::RtMessage;
+pub use crate::tag::Tag;
+
 mod error;
 mod message;
 mod tag;
@@ -67,13 +71,9 @@ pub mod grease;
 pub mod key;
 pub mod kms;
 pub mod merkle;
-pub mod stats;
 pub mod server;
 pub mod sign;
-
-pub use crate::error::Error;
-pub use crate::message::RtMessage;
-pub use crate::tag::Tag;
+pub mod stats;
 
 /// Version of Roughenough
 pub const VERSION: &str = "1.1.8";

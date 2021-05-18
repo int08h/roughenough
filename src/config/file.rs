@@ -15,12 +15,13 @@
 use std::fs::File;
 use std::io::Read;
 use std::time::Duration;
+
 use yaml_rust::YamlLoader;
 
-use crate::config::ServerConfig;
 use crate::config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
-use crate::key::KmsProtection;
+use crate::config::ServerConfig;
 use crate::Error;
+use crate::key::KmsProtection;
 
 ///
 /// Read a Roughenough server configuration ([ServerConfig](trait.ServerConfig.html))
@@ -60,9 +61,10 @@ impl FileConfig {
             .unwrap_or_else(|_| panic!("could not parse config file '{}'", config_file));
 
         if cfg.len() != 1 {
-            return Err(Error::InvalidConfiguration(
-                format!("Empty or malformed config file '{}'", config_file),
-            ));
+            return Err(Error::InvalidConfiguration(format!(
+                "Empty or malformed config file '{}'",
+                config_file
+            )));
         }
 
         let mut config = FileConfig {
@@ -92,9 +94,10 @@ impl FileConfig {
                     config.status_interval = Duration::from_secs(val as u64)
                 }
                 "kms_protection" => {
-                    let val = value.as_str().unwrap().parse().unwrap_or_else(|_| {
-                        panic!("invalid kms_protection value: {:?}", value)
-                    });
+                    let val =
+                        value.as_str().unwrap().parse().unwrap_or_else(|_| {
+                            panic!("invalid kms_protection value: {:?}", value)
+                        });
                     config.kms_protection = val
                 }
                 "health_check_port" => {

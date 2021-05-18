@@ -22,20 +22,20 @@
 //! such as files or environment variables.
 //!
 
-mod environment;
-mod file;
-mod memory;
-
 use std::net::SocketAddr;
 use std::time::Duration;
+
+use crate::Error;
+use crate::key::KmsProtection;
+use crate::SEED_LENGTH;
 
 pub use self::environment::EnvironmentConfig;
 pub use self::file::FileConfig;
 pub use self::memory::MemoryConfig;
 
-use crate::key::KmsProtection;
-use crate::Error;
-use crate::SEED_LENGTH;
+mod environment;
+mod file;
+mod memory;
 
 /// Maximum number of requests to process in one batch and include the the Merkle tree.
 pub const DEFAULT_BATCH_SIZE: u8 = 64;
@@ -159,10 +159,17 @@ pub fn is_valid_config(cfg: &dyn ServerConfig) -> bool {
     if cfg.seed().is_empty() {
         error!("'seed' value is missing");
         is_valid = false;
-    } else if *cfg.kms_protection() == KmsProtection::Plaintext && cfg.seed().len() != SEED_LENGTH as usize {
-        error!("plaintext seed value must be 32 characters long, found {}", cfg.seed().len());
+    } else if *cfg.kms_protection() == KmsProtection::Plaintext
+        && cfg.seed().len() != SEED_LENGTH as usize
+    {
+        error!(
+            "plaintext seed value must be 32 characters long, found {}",
+            cfg.seed().len()
+        );
         is_valid = false;
-    } else if *cfg.kms_protection() != KmsProtection::Plaintext && cfg.seed().len() <= SEED_LENGTH as usize {
+    } else if *cfg.kms_protection() != KmsProtection::Plaintext
+        && cfg.seed().len() <= SEED_LENGTH as usize
+    {
         error!("KMS use enabled but seed value is too short to be an encrypted blob");
         is_valid = false;
     }
@@ -176,7 +183,10 @@ pub fn is_valid_config(cfg: &dyn ServerConfig) -> bool {
     }
 
     if cfg.fault_percentage() > 50 {
-        error!("fault_percentage {} is invalid; valid range 0-50", cfg.fault_percentage());
+        error!(
+            "fault_percentage {} is invalid; valid range 0-50",
+            cfg.fault_percentage()
+        );
         is_valid = false;
     }
 

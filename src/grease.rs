@@ -23,13 +23,13 @@
 use rand::{FromEntropy, Rng};
 use rand::distributions::Bernoulli;
 use rand::rngs::SmallRng;
-use rand::seq::SliceRandom;
 use rand::seq::index::sample as index_sample;
+use rand::seq::SliceRandom;
 
-use crate::RtMessage;
-use crate::tag::Tag;
 use crate::grease::Pathologies::*;
+use crate::RtMessage;
 use crate::SIGNATURE_LENGTH;
+use crate::tag::Tag;
 
 ///
 /// Ways that a message can be made invalid.
@@ -41,14 +41,10 @@ pub enum Pathologies {
 
     /// Replace the server's signature (value of the SIG tag) with random garbage.
     CorruptResponseSignature,
-
     // TODO(stuart) semantic pathologies
 }
 
-static ALL_PATHOLOGIES: &[Pathologies] = &[
-    RandomlyOrderTags,
-    CorruptResponseSignature
-];
+static ALL_PATHOLOGIES: &[Pathologies] = &[RandomlyOrderTags, CorruptResponseSignature];
 
 ///
 /// Adds deliberate errors to client responses as part of the
@@ -77,7 +73,11 @@ impl Grease {
     ///
     #[inline]
     pub fn should_add_error(&mut self) -> bool {
-        if self.enabled { self.prng.sample(self.dist) } else { false }
+        if self.enabled {
+            self.prng.sample(self.dist)
+        } else {
+            false
+        }
     }
 
     ///
@@ -90,7 +90,7 @@ impl Grease {
         match ALL_PATHOLOGIES.choose(&mut self.prng) {
             Some(CorruptResponseSignature) => self.corrupt_response_signature(src_msg),
             Some(RandomlyOrderTags) => self.randomly_order_tags(src_msg),
-            None => unreachable!()
+            None => unreachable!(),
         }
     }
 
@@ -129,10 +129,18 @@ impl Grease {
 
         let mut new_msg = RtMessage::new(src_msg.num_fields());
         new_msg.add_field(Tag::SIG, &random_sig).unwrap();
-        new_msg.add_field(Tag::PATH, src_msg.get_field(Tag::PATH).unwrap()).unwrap();
-        new_msg.add_field(Tag::SREP, src_msg.get_field(Tag::SREP).unwrap()).unwrap();
-        new_msg.add_field(Tag::CERT, src_msg.get_field(Tag::CERT).unwrap()).unwrap();
-        new_msg.add_field(Tag::INDX, src_msg.get_field(Tag::INDX).unwrap()).unwrap();
+        new_msg
+            .add_field(Tag::PATH, src_msg.get_field(Tag::PATH).unwrap())
+            .unwrap();
+        new_msg
+            .add_field(Tag::SREP, src_msg.get_field(Tag::SREP).unwrap())
+            .unwrap();
+        new_msg
+            .add_field(Tag::CERT, src_msg.get_field(Tag::CERT).unwrap())
+            .unwrap();
+        new_msg
+            .add_field(Tag::INDX, src_msg.get_field(Tag::INDX).unwrap())
+            .unwrap();
 
         new_msg
     }
@@ -162,7 +170,11 @@ mod test {
             assert_eq!(
                 percentage > lower && percentage < upper,
                 true,
-                "target {}, actual {} [{}, {}]", target, percentage, lower, upper
+                "target {}, actual {} [{}, {}]",
+                target,
+                percentage,
+                lower,
+                upper
             );
         }
     }
@@ -183,7 +195,7 @@ mod test {
             (Tag::CERT, [b'a']),
             (Tag::MAXT, [b'b']),
             (Tag::INDX, [b'c']),
-            (Tag::PAD, [b'd'])
+            (Tag::PAD, [b'd']),
         ];
 
         let mut msg = RtMessage::new(14);
@@ -204,7 +216,10 @@ mod test {
 
         // tag still points to same value
         for (tag, _) in pairs.iter() {
-            assert_eq!(msg.get_field(*tag).unwrap(), reordered.get_field(*tag).unwrap());
+            assert_eq!(
+                msg.get_field(*tag).unwrap(),
+                reordered.get_field(*tag).unwrap()
+            );
         }
     }
 
@@ -220,8 +235,15 @@ mod test {
         let grease = Grease::new(1);
         let changed = grease.corrupt_response_signature(&msg);
 
-        println!("orig: {:?}\nnew:  {:?}", msg.get_field(Tag::SIG), changed.get_field(Tag::SIG));
+        println!(
+            "orig: {:?}\nnew:  {:?}",
+            msg.get_field(Tag::SIG),
+            changed.get_field(Tag::SIG)
+        );
 
-        assert_ne!(msg.get_field(Tag::SIG).unwrap(), changed.get_field(Tag::SIG).unwrap());
+        assert_ne!(
+            msg.get_field(Tag::SIG).unwrap(),
+            changed.get_field(Tag::SIG).unwrap()
+        );
     }
 }

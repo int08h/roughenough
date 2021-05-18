@@ -17,6 +17,7 @@
 //!
 
 use ring::digest;
+
 use super::{HASH_LENGTH, TREE_LEAF_TWEAK, TREE_NODE_TWEAK};
 
 type Data = Vec<u8>;
