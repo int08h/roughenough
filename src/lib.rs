@@ -76,7 +76,7 @@ pub mod sign;
 pub mod stats;
 
 /// Version of Roughenough
-pub const VERSION: &str = "1.1.8";
+pub const VERSION: &str = "1.1.9";
 
 /// Roughenough version string enriched with any compile-time optional features
 pub fn roughenough_version() -> String {

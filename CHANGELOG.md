@@ -1,3 +1,10 @@
+## Version 1.1.9
+
+Housekeeping:
+* 8f088f1 Overdue Ring update 0.13 -> 0.16
+* 43b1de3 GCK KMS updated to the latest dependencies
+* 7ff2e53 AWS KMS also updated to latest dependencies 
+
 ## Version 1.1.8
 
 New feature:
