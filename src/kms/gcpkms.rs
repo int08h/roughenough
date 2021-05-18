@@ -15,6 +15,7 @@
 #[cfg(feature = "gcpkms")]
 pub mod inner {
     extern crate base64;
+    extern crate futures;
     extern crate google_cloudkms1 as cloudkms1;
     extern crate hyper;
     extern crate hyper_rustls;
@@ -27,12 +28,11 @@ pub mod inner {
 
     use crate::kms::{AD, EncryptedDEK, KmsError, KmsProvider, PlaintextDEK};
 
-    use self::cloudkms1::{DecryptRequest, EncryptRequest};
+    use self::cloudkms1::api::{DecryptRequest, EncryptRequest};
     use self::cloudkms1::CloudKMS;
-    use self::hyper::net::HttpsConnector;
-    use self::hyper::status::StatusCode;
-    use self::hyper_rustls::TlsClient;
-    use self::oauth2::{ServiceAccountAccess, ServiceAccountKey};
+    use self::futures::executor::block_on;
+    use self::hyper::{Body, StatusCode};
+    use self::oauth2::ServiceAccountKey;
 
     const GOOGLE_APP_CREDS: &str = &"GOOGLE_APPLICATION_CREDENTIALS";
 
@@ -57,19 +57,23 @@ pub mod inner {
             })
         }
 
-        fn new_hub(&self) -> CloudKMS<hyper::Client, ServiceAccountAccess<hyper::Client>> {
-            let client1 = hyper::Client::with_connector(HttpsConnector::new(TlsClient::new()));
-            let access = oauth2::ServiceAccountAccess::new(self.service_account.clone(), client1);
+        fn new_hub(&self) -> CloudKMS {
+            let client =
+                hyper::Client::builder().build(hyper_rustls::HttpsConnector::with_native_roots());
 
-            let client2 = hyper::Client::with_connector(HttpsConnector::new(TlsClient::new()));
-            CloudKMS::new(client2, access)
+            let auth = block_on(async {
+                oauth2::ServiceAccountAuthenticator::builder(self.service_account.clone())
+                    .build()
+                    .await
+                    .expect("failed to create service account authenticator")
+            });
+
+            return CloudKMS::new(client, auth);
         }
 
-        fn pretty_http_error(&self, resp: &hyper::client::Response) -> KmsError {
-            let code = resp.status;
-            let url = &resp.url;
-
-            KmsError::OperationFailed(format!("Response {} from {}", code, url))
+        fn pretty_http_error(&self, resp: &hyper::Response<Body>) -> KmsError {
+            let code = resp.status();
+            KmsError::OperationFailed(format!("Response {} for {:?}", code, resp))
         }
     }
 
@@ -80,14 +84,16 @@ pub mod inner {
             request.additional_authenticated_data = Some(base64::encode(AD));
 
             let hub = self.new_hub();
-            let result = hub
-                .projects()
-                .locations_key_rings_crypto_keys_encrypt(request, &self.key_resource_id)
-                .doit();
+            let result = block_on(async {
+                hub.projects()
+                    .locations_key_rings_crypto_keys_encrypt(request, &self.key_resource_id)
+                    .doit()
+                    .await
+            });
 
             match result {
                 Ok((http_resp, enc_resp)) => {
-                    if http_resp.status == StatusCode::Ok {
+                    if http_resp.status() == StatusCode::OK {
                         let ciphertext = enc_resp.ciphertext.unwrap();
                         let ct = base64::decode(&ciphertext)?;
                         Ok(ct)
@@ -105,14 +111,16 @@ pub mod inner {
             request.additional_authenticated_data = Some(base64::encode(AD));
 
             let hub = self.new_hub();
-            let result = hub
-                .projects()
-                .locations_key_rings_crypto_keys_decrypt(request, &self.key_resource_id)
-                .doit();
+            let result = block_on(async {
+                hub.projects()
+                    .locations_key_rings_crypto_keys_decrypt(request, &self.key_resource_id)
+                    .doit()
+                    .await
+            });
 
             match result {
                 Ok((http_resp, enc_resp)) => {
-                    if http_resp.status == StatusCode::Ok {
+                    if http_resp.status() == StatusCode::OK {
                         let plaintext = enc_resp.plaintext.unwrap();
                         let ct = base64::decode(&plaintext)?;
                         Ok(ct)
@@ -138,7 +146,7 @@ pub mod inner {
     fn load_gcp_credential() -> Result<ServiceAccountKey, KmsError> {
         if let Ok(gac) = env::var(GOOGLE_APP_CREDS.to_string()) {
             return if Path::new(&gac).exists() {
-                match oauth2::service_account_key_from_file(&gac) {
+                match block_on(oauth2::read_service_account_key(&gac)) {
                     Ok(svc_acct_key) => Ok(svc_acct_key),
                     Err(e) => Err(KmsError::InvalidConfiguration(format!(
                         "Can't load service account credential '{}': {:?}",
