@@ -13,36 +13,42 @@
 // limitations under the License.
 
 //!
-//! Merkle Tree implementation using SHA-512 and the Roughtime leaf and node tweak values.
+//! Merkle Tree implementation that uses the Roughtime leaf and node tweak values.
 //!
 
 use ring::digest;
 
-use super::{HASH_LENGTH, TREE_LEAF_TWEAK, TREE_NODE_TWEAK};
+use super::{TREE_LEAF_TWEAK, TREE_NODE_TWEAK};
 
 type Data = Vec<u8>;
 type Hash = Data;
 
 ///
-/// Merkle Tree implementation using SHA-512 and the Roughtime leaf and node tweak values.
+/// Merkle Tree implementation that uses the Roughtime leaf and node tweak values.
 ///
 pub struct MerkleTree {
     levels: Vec<Vec<Data>>,
-}
-
-impl Default for MerkleTree {
-    fn default() -> Self {
-        Self::new()
-    }
+    algorithm: &'static digest::Algorithm,
 }
 
 impl MerkleTree {
     ///
-    /// Create a new empty Merkle Tree
+    /// Create a new empty Merkle Tree based on SHA-256
     ///
-    pub fn new() -> MerkleTree {
+    pub fn new_sha256() -> MerkleTree {
         MerkleTree {
             levels: vec![vec![]],
+            algorithm: &digest::SHA256,
+        }
+    }
+
+    ///
+    /// Create a new empty Merkle Tree based on SHA-512
+    ///
+    pub fn new_sha512() -> MerkleTree {
+        MerkleTree {
+            levels: vec![vec![]],
+            algorithm: &digest::SHA512,
         }
     }
 
@@ -52,7 +58,7 @@ impl MerkleTree {
     }
 
     pub fn get_paths(&self, mut index: usize) -> Vec<u8> {
-        let mut paths = Vec::with_capacity(self.levels.len() * 64);
+        let mut paths = Vec::with_capacity(self.levels.len() * self.algorithm.output_len);
         let mut level = 0;
 
         while !self.levels[level].is_empty() {
@@ -82,7 +88,7 @@ impl MerkleTree {
             }
 
             if node_count % 2 != 0 {
-                self.levels[level - 1].push(vec![0; HASH_LENGTH as usize]);
+                self.levels[level - 1].push(vec![0; self.algorithm.output_len]);
                 node_count += 1;
             }
 
@@ -116,43 +122,43 @@ impl MerkleTree {
     }
 
     fn hash(&self, to_hash: &[&[u8]]) -> Data {
-        let mut ctx = digest::Context::new(&digest::SHA512);
+        let mut ctx = digest::Context::new(self.algorithm);
         for data in to_hash {
             ctx.update(data);
         }
         Data::from(ctx.finish().as_ref())
     }
-}
 
-pub fn root_from_paths(mut index: usize, data: &[u8], paths: &[u8]) -> Hash {
-    let mut hash = {
-        let mut ctx = digest::Context::new(&digest::SHA512);
-        ctx.update(TREE_LEAF_TWEAK);
-        ctx.update(data);
-        Hash::from(ctx.finish().as_ref())
-    };
+    pub fn root_from_paths(&self, mut index: usize, data: &[u8], paths: &[u8]) -> Hash {
+        let mut hash = {
+            let mut ctx = digest::Context::new(self.algorithm);
+            ctx.update(TREE_LEAF_TWEAK);
+            ctx.update(data);
+            Hash::from(ctx.finish().as_ref())
+        };
 
-    assert_eq!(paths.len() % 64, 0);
+        assert_eq!(paths.len() % self.algorithm.output_len, 0);
 
-    for path in paths.chunks(64) {
-        let mut ctx = digest::Context::new(&digest::SHA512);
-        ctx.update(TREE_NODE_TWEAK);
+        for path in paths.chunks(self.algorithm.output_len) {
+            let mut ctx = digest::Context::new(self.algorithm);
+            ctx.update(TREE_NODE_TWEAK);
 
-        if index & 1 == 0 {
-            // Left
-            ctx.update(&hash);
-            ctx.update(path);
-        } else {
-            // Right
-            ctx.update(path);
-            ctx.update(&hash);
+            if index & 1 == 0 {
+                // Left
+                ctx.update(&hash);
+                ctx.update(path);
+            } else {
+                // Right
+                ctx.update(path);
+                ctx.update(&hash);
+            }
+
+            hash = Hash::from(ctx.finish().as_ref());
+            index >>= 1;
         }
 
-        hash = Hash::from(ctx.finish().as_ref());
-        index >>= 1;
+        hash
     }
-
-    hash
 }
 
 #[cfg(test)]
@@ -160,21 +166,22 @@ mod test {
     use crate::merkle::*;
 
     fn test_paths_with_num(num: usize) {
-        let mut merkle = MerkleTree::new();
+        for mut merkle_impl in [MerkleTree::new_sha256(), MerkleTree::new_sha512()] {
+            for i in 0..num {
+                merkle_impl.push_leaf(&[i as u8]);
+            }
 
-        for i in 0..num {
-            merkle.push_leaf(&[i as u8]);
+            let root = merkle_impl.compute_root();
+
+            for i in 0..num {
+                println!("Testing {:?} {:?} {:?}", merkle_impl.algorithm, num, i);
+                let paths: Vec<u8> = merkle_impl.get_paths(i);
+                let computed_root = merkle_impl.root_from_paths(i, &[i as u8], &paths);
+
+                assert_eq!(root, computed_root);
+            }
         }
 
-        let root = merkle.compute_root();
-
-        for i in 0..num {
-            println!("Testing {:?} {:?}", num, i);
-            let paths: Vec<u8> = merkle.get_paths(i);
-            let computed_root = root_from_paths(i, &[i as u8], &paths);
-
-            assert_eq!(root, computed_root);
-        }
     }
 
     #[test]

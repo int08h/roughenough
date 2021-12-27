@@ -149,7 +149,7 @@ impl Server {
         };
 
         let grease = Grease::new(config.fault_percentage());
-        let merkle = MerkleTree::new();
+        let merkle = MerkleTree::new_sha512();
         let requests = Vec::with_capacity(config.batch_size() as usize);
 
         Server {

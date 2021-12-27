@@ -29,10 +29,8 @@ use clap::{App, Arg};
 use ring::rand;
 use ring::rand::SecureRandom;
 
-use roughenough::{
-    CERTIFICATE_CONTEXT, roughenough_version, RtMessage, SIGNED_RESPONSE_CONTEXT, Tag,
-};
-use roughenough::merkle::root_from_paths;
+use roughenough::{CERTIFICATE_CONTEXT, roughenough_version, RtMessage, SIGNED_RESPONSE_CONTEXT, Tag};
+use roughenough::merkle::MerkleTree;
 use roughenough::sign::Verifier;
 
 fn create_nonce() -> [u8; 64] {
@@ -175,7 +173,8 @@ impl ResponseHandler {
             .unwrap();
         let paths = &self.msg[&Tag::PATH];
 
-        let hash = root_from_paths(index as usize, &self.nonce, paths);
+        let hash = MerkleTree::new_sha512()
+            .root_from_paths(index as usize, &self.nonce, paths);
 
         assert_eq!(
             hash,
