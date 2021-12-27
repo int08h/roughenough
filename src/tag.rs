@@ -39,23 +39,38 @@ pub enum Tag {
 }
 
 impl Tag {
+    const BYTES_CERT: &'static [u8] = b"CERT";
+    const BYTES_DELE: &'static [u8] = b"DELE";
+    const BYTES_INDX: &'static [u8] = b"INDX";
+    const BYTES_MAXT: &'static [u8] = b"MAXT";
+    const BYTES_MIDP: &'static [u8] = b"MIDP";
+    const BYTES_MINT: &'static [u8] = b"MINT";
+    const BYTES_NONC: &'static [u8] = b"NONC";
+    const BYTES_PAD: &'static [u8] = b"PAD\xff";
+    const BYTES_PATH: &'static [u8] = b"PATH";
+    const BYTES_PUBK: &'static [u8] = b"PUBK";
+    const BYTES_RADI: &'static [u8] = b"RADI";
+    const BYTES_ROOT: &'static [u8] = b"ROOT";
+    const BYTES_SIG: &'static [u8] = b"SIG\x00";
+    const BYTES_SREP: &'static [u8] = b"SREP";
+
     /// Translates a tag into its on-the-wire representation
     pub fn wire_value(self) -> &'static [u8] {
         match self {
-            Tag::CERT => b"CERT",
-            Tag::DELE => b"DELE",
-            Tag::INDX => b"INDX",
-            Tag::MAXT => b"MAXT",
-            Tag::MIDP => b"MIDP",
-            Tag::MINT => b"MINT",
-            Tag::NONC => b"NONC",
-            Tag::PAD => b"PAD\xff",
-            Tag::PATH => b"PATH",
-            Tag::PUBK => b"PUBK",
-            Tag::RADI => b"RADI",
-            Tag::ROOT => b"ROOT",
-            Tag::SIG => b"SIG\x00",
-            Tag::SREP => b"SREP",
+            Tag::CERT => Tag::BYTES_CERT,
+            Tag::DELE => Tag::BYTES_DELE,
+            Tag::INDX => Tag::BYTES_INDX,
+            Tag::MAXT => Tag::BYTES_MAXT,
+            Tag::MIDP => Tag::BYTES_MIDP,
+            Tag::MINT => Tag::BYTES_MINT,
+            Tag::NONC => Tag::BYTES_NONC,
+            Tag::PAD => Tag::BYTES_PAD,
+            Tag::PATH => Tag::BYTES_PATH,
+            Tag::PUBK => Tag::BYTES_PUBK,
+            Tag::RADI => Tag::BYTES_RADI,
+            Tag::ROOT => Tag::BYTES_ROOT,
+            Tag::SIG => Tag::BYTES_SIG,
+            Tag::SREP => Tag::BYTES_SREP,
         }
     }
 
@@ -63,20 +78,20 @@ impl Tag {
     /// `Error::InvalidTag` if `bytes` do not correspond to a valid tag.
     pub fn from_wire(bytes: &[u8]) -> Result<Self, Error> {
         match bytes {
-            b"CERT" => Ok(Tag::CERT),
-            b"DELE" => Ok(Tag::DELE),
-            b"INDX" => Ok(Tag::INDX),
-            b"MAXT" => Ok(Tag::MAXT),
-            b"MIDP" => Ok(Tag::MIDP),
-            b"MINT" => Ok(Tag::MINT),
-            b"NONC" => Ok(Tag::NONC),
-            b"PAD\xff" => Ok(Tag::PAD),
-            b"PATH" => Ok(Tag::PATH),
-            b"PUBK" => Ok(Tag::PUBK),
-            b"RADI" => Ok(Tag::RADI),
-            b"ROOT" => Ok(Tag::ROOT),
-            b"SIG\x00" => Ok(Tag::SIG),
-            b"SREP" => Ok(Tag::SREP),
+            Tag::BYTES_CERT => Ok(Tag::CERT),
+            Tag::BYTES_DELE => Ok(Tag::DELE),
+            Tag::BYTES_INDX => Ok(Tag::INDX),
+            Tag::BYTES_MAXT => Ok(Tag::MAXT),
+            Tag::BYTES_MIDP => Ok(Tag::MIDP),
+            Tag::BYTES_MINT => Ok(Tag::MINT),
+            Tag::BYTES_NONC => Ok(Tag::NONC),
+            Tag::BYTES_PAD => Ok(Tag::PAD),
+            Tag::BYTES_PATH => Ok(Tag::PATH),
+            Tag::BYTES_PUBK => Ok(Tag::PUBK),
+            Tag::BYTES_RADI => Ok(Tag::RADI),
+            Tag::BYTES_ROOT => Ok(Tag::ROOT),
+            Tag::BYTES_SIG => Ok(Tag::SIG),
+            Tag::BYTES_SREP => Ok(Tag::SREP),
             _ => Err(Error::InvalidTag(Box::from(bytes))),
         }
     }
