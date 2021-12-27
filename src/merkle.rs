@@ -1,4 +1,4 @@
-// Copyright 2017-2021 int08h LLC
+// Copyright 2017-2022 int08h LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -33,12 +33,13 @@ pub struct MerkleTree {
 
 impl MerkleTree {
     ///
-    /// Create a new empty Merkle Tree based on SHA-256
+    /// Create a new empty Merkle Tree based on SHA-512/256
+    /// **TODO** lobby to have "SHA512[0:32] replaced with SHA-512/256"
     ///
-    pub fn new_sha256() -> MerkleTree {
+    pub fn new_sha512_256() -> MerkleTree {
         MerkleTree {
             levels: vec![vec![]],
-            algorithm: &digest::SHA256,
+            algorithm: &digest::SHA512_256,
         }
     }
 
@@ -166,7 +167,7 @@ mod test {
     use crate::merkle::*;
 
     fn test_paths_with_num(num: usize) {
-        for mut merkle_impl in [MerkleTree::new_sha256(), MerkleTree::new_sha512()] {
+        for mut merkle_impl in [MerkleTree::new_sha512_256(), MerkleTree::new_sha512()] {
             for i in 0..num {
                 merkle_impl.push_leaf(&[i as u8]);
             }

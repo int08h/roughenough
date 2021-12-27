@@ -1,4 +1,4 @@
-// Copyright 2017-2021 int08h LLC
+// Copyright 2017-2022 int08h LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -29,13 +29,14 @@ use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio::net::{TcpListener, UdpSocket};
 use mio_extras::timer::Timer;
 
-use crate::{Error, MIN_REQUEST_LENGTH, RtMessage, Tag};
+use crate::{Error, MIN_REQUEST_LENGTH, RFC_REQUEST_FRAME_BYTES, RtMessage, Tag};
 use crate::config::ServerConfig;
 use crate::grease::Grease;
 use crate::key::{LongTermKey, OnlineKey};
 use crate::kms;
 use crate::merkle::MerkleTree;
 use crate::stats::{AggregatedStats, ClientStatEntry, PerClientStats, ServerStats};
+use crate::version::Version;
 
 // mio event registrations
 const EVT_MESSAGE: Token = Token(0);
@@ -66,8 +67,10 @@ pub struct Server {
     grease: Grease,
     timer: Timer<()>,
     poll: Poll,
-    merkle: MerkleTree,
-    requests: Vec<(Vec<u8>, SocketAddr)>,
+    merkle_rfc: MerkleTree,
+    merkle_classic: MerkleTree,
+    requests_rfc: Vec<(Vec<u8>, SocketAddr)>,
+    requests_classic: Vec<(Vec<u8>, SocketAddr)>,
     buf: [u8; 65_536],
 
     public_key: String,
@@ -149,8 +152,10 @@ impl Server {
         };
 
         let grease = Grease::new(config.fault_percentage());
-        let merkle = MerkleTree::new_sha512();
-        let requests = Vec::with_capacity(config.batch_size() as usize);
+        let merkle_rfc = MerkleTree::new_sha512_256();
+        let merkle_classic = MerkleTree::new_sha512();
+        let requests_rfc = Vec::with_capacity(config.batch_size() as usize);
+        let requests_classic = Vec::with_capacity(config.batch_size() as usize);
 
         Server {
             config,
@@ -164,8 +169,10 @@ impl Server {
             grease,
             timer,
             poll,
-            merkle,
-            requests,
+            merkle_rfc,
+            merkle_classic,
+            requests_rfc,
+            requests_classic,
             buf: [0u8; 65_536],
 
             public_key,
@@ -211,12 +218,14 @@ impl Server {
         for msg in events.iter() {
             match msg.token() {
                 EVT_MESSAGE => loop {
-                    self.merkle.reset();
-                    self.requests.clear();
+                    self.merkle_rfc.reset();
+                    self.merkle_classic.reset();
+                    self.requests_rfc.clear();
+                    self.requests_classic.clear();
 
                     let socket_now_empty = self.collect_requests();
 
-                    if self.requests.is_empty() {
+                    if self.requests_rfc.is_empty() && self.requests_classic.is_empty() {
                         break;
                     }
 
@@ -233,25 +242,29 @@ impl Server {
         }
     }
 
-    // Read and process client requests from socket into `self.requests` and `self.merkle` until
-    // socket is empty or 'batch_size' number of requests have been read.
+    // Read and process client requests from socket until socket is empty or 'batch_size' number
+    // of requests have been read.
     fn collect_requests(&mut self) -> bool {
         for i in 0..self.config.batch_size() {
             match self.socket.recv_from(&mut self.buf) {
                 Ok((num_bytes, src_addr)) => {
-                    match self.nonce_from_request(&self.buf, num_bytes) {
-                        Ok(nonce) => {
-                            self.stats.add_valid_request(&src_addr.ip());
-                            self.requests.push((Vec::from(nonce), src_addr));
-                            self.merkle.push_leaf(nonce);
-                        }
+                    match Server::nonce_from_request(&self.buf, num_bytes) {
+                        Ok((nonce, Version::Rfc)) => {
+                            self.stats.add_rfc_request(&src_addr.ip());
+                            self.requests_rfc.push((Vec::from(nonce), src_addr));
+                            self.merkle_rfc.push_leaf(nonce);
+                        },
+                        Ok((nonce, Version::Classic)) => {
+                            self.stats.add_classic_request(&src_addr.ip());
+                            self.requests_classic.push((Vec::from(nonce), src_addr));
+                            self.merkle_classic.push_leaf(nonce);
+                        },
                         Err(e) => {
                             self.stats.add_invalid_request(&src_addr.ip());
 
                             info!(
-                                "Invalid request: '{:?}' ({} bytes) from {} (#{} in batch, resp #{})",
-                                e, num_bytes, src_addr, i,
-                                self.stats.total_responses_sent() + u64::from(i)
+                                "Invalid request: '{:?}' ({} bytes) from {} (#{} in batch)",
+                                e, num_bytes, src_addr, i
                             );
                         }
                     }
@@ -272,34 +285,53 @@ impl Server {
     }
 
     // extract the client's nonce from its request
-    fn nonce_from_request<'a>(&self, buf: &'a [u8], num_bytes: usize) -> Result<&'a [u8], Error> {
+    fn nonce_from_request(buf: &[u8], num_bytes: usize) -> Result<(&[u8], Version), Error> {
         if num_bytes < MIN_REQUEST_LENGTH as usize {
             return Err(Error::RequestTooShort);
         }
 
-        let tag_count = &buf[..4];
+        match Server::guess_protocol_version(buf) {
+            Version::Classic => Server::nonce_from_classic_request(buf),
+            Version::Rfc => Server::nonce_from_rfc_request(buf),
+        }
+    }
+
+    fn guess_protocol_version(buf: &[u8]) -> crate::version::Version {
+        if &buf[0..8] == RFC_REQUEST_FRAME_BYTES {
+            Version::Rfc
+        } else {
+            Version::Classic
+        }
+    }
+
+    fn nonce_from_classic_request(buf: &[u8]) -> Result<(&[u8], Version), Error> {
+        let tag_count = &buf[0..4];
         let expected_nonc = &buf[8..12];
         let expected_pad = &buf[12..16];
 
         let tag_count_is_2 = tag_count == [0x02, 0x00, 0x00, 0x00];
         let tag1_is_nonc = expected_nonc == Tag::NONC.wire_value();
-        let tag2_is_pad = expected_pad == Tag::PAD.wire_value();
+        let tag2_is_pad = expected_pad == Tag::PAD_CLASSIC.wire_value();
 
         if tag_count_is_2 && tag1_is_nonc && tag2_is_pad {
-            Ok(&buf[0x10..0x50])
+            Ok((&buf[0x10..0x50], Version::Classic))
         } else {
             Err(Error::InvalidRequest)
         }
     }
 
+    fn nonce_from_rfc_request(_: &[u8]) -> Result<(&[u8], Version), Error> {
+        todo!()
+    }
+
     fn send_responses(&mut self) {
-        let merkle_root = self.merkle.compute_root();
+        let merkle_root = self.merkle_classic.compute_root();
 
         // The SREP tag is identical for each response
         let srep = self.online_key.make_srep(SystemTime::now(), &merkle_root);
 
-        for (i, &(ref nonce, ref src_addr)) in self.requests.iter().enumerate() {
-            let paths = self.merkle.get_paths(i);
+        for (i, &(ref nonce, ref src_addr)) in self.requests_classic.iter().enumerate() {
+            let paths = self.merkle_classic.get_paths(i);
             let resp_msg = {
                 let r = self.make_response(&srep, &self.cert_bytes, &paths, i as u32);
                 if self.grease.should_add_error() {
@@ -315,7 +347,7 @@ impl Server {
                 .send_to(&resp_bytes, &src_addr)
                 .expect("send_to failed");
 
-            self.stats.add_response(&src_addr.ip(), bytes_sent);
+            self.stats.add_classic_response(&src_addr.ip(), bytes_sent);
 
             info!(
                 "Responded {} bytes to {} for '{}..' (#{} in batch, resp #{})",
@@ -382,15 +414,15 @@ impl Server {
     fn handle_status_update(&mut self) {
         let mut vec: Vec<(&IpAddr, &ClientStatEntry)> = self.stats.iter().collect();
         // sort in descending order
-        vec.sort_by(|lhs, rhs| rhs.1.valid_requests.cmp(&lhs.1.valid_requests));
+        vec.sort_by(|lhs, rhs| rhs.1.classic_requests.cmp(&lhs.1.classic_requests));
 
         for (addr, counts) in vec {
             info!(
                 "{:16}: {} valid, {} invalid requests; {} responses ({} sent)",
                 format!("{}", addr),
-                counts.valid_requests,
+                counts.classic_requests,
                 counts.invalid_requests,
-                counts.responses_sent,
+                counts.classic_responses_sent,
                 counts.bytes_sent.file_size(fsopts::BINARY).unwrap()
             );
         }

@@ -25,10 +25,12 @@ use crate::stats::ServerStats;
 ///
 #[allow(dead_code)]
 pub struct AggregatedStats {
-    valid_requests: u64,
+    rfc_requests: u64,
+    classic_requests: u64,
     invalid_requests: u64,
     health_checks: u64,
-    responses_sent: u64,
+    rfc_responses_sent: u64,
+    classic_responses_sent: u64,
     bytes_sent: usize,
     empty_map: HashMap<IpAddr, ClientStatEntry>,
 }
@@ -43,10 +45,12 @@ impl AggregatedStats {
     #[allow(dead_code)]
     pub fn new() -> Self {
         AggregatedStats {
-            valid_requests: 0,
+            rfc_requests: 0,
+            classic_requests: 0,
             invalid_requests: 0,
             health_checks: 0,
-            responses_sent: 0,
+            rfc_responses_sent: 0,
+            classic_responses_sent: 0,
             bytes_sent: 0,
             empty_map: HashMap::new(),
         }
@@ -54,8 +58,12 @@ impl AggregatedStats {
 }
 
 impl ServerStats for AggregatedStats {
-    fn add_valid_request(&mut self, _: &IpAddr) {
-        self.valid_requests += 1
+    fn add_rfc_request(&mut self, _: &IpAddr) {
+        self.rfc_requests += 1
+    }
+
+    fn add_classic_request(&mut self, _: &IpAddr) {
+        self.classic_requests += 1
     }
 
     fn add_invalid_request(&mut self, _: &IpAddr) {
@@ -66,13 +74,26 @@ impl ServerStats for AggregatedStats {
         self.health_checks += 1
     }
 
-    fn add_response(&mut self, _: &IpAddr, bytes_sent: usize) {
+    fn add_rfc_response(&mut self, _: &IpAddr, bytes_sent: usize) {
         self.bytes_sent += bytes_sent;
-        self.responses_sent += 1;
+        self.rfc_responses_sent += 1;
+    }
+
+    fn add_classic_response(&mut self, _: &IpAddr, bytes_sent: usize) {
+        self.bytes_sent += bytes_sent;
+        self.classic_responses_sent += 1;
     }
 
     fn total_valid_requests(&self) -> u64 {
-        self.valid_requests
+        self.rfc_requests + self.classic_requests
+    }
+
+    fn num_rfc_requests(&self) -> u64 {
+        self.rfc_requests
+    }
+
+    fn num_classic_requests(&self) -> u64 {
+        self.classic_requests
     }
 
     fn total_invalid_requests(&self) -> u64 {
@@ -84,7 +105,15 @@ impl ServerStats for AggregatedStats {
     }
 
     fn total_responses_sent(&self) -> u64 {
-        self.responses_sent
+        self.rfc_responses_sent + self.classic_responses_sent
+    }
+
+    fn num_rfc_responses_sent(&self) -> u64 {
+        self.rfc_responses_sent
+    }
+
+    fn num_classic_responses_sent(&self) -> u64 {
+        self.classic_responses_sent
     }
 
     fn total_bytes_sent(&self) -> usize {
@@ -104,4 +133,5 @@ impl ServerStats for AggregatedStats {
     }
 
     fn clear(&mut self) {}
+
 }

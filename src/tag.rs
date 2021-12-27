@@ -1,4 +1,4 @@
-// Copyright 2017-2021 int08h LLC
+// Copyright 2017-2022 int08h LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
 use crate::error::Error;
 
 /// An unsigned 32-bit value (key) that maps to a byte-string (value).
+#[allow(non_camel_case_types)]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Clone, Copy)]
 pub enum Tag {
     // Enforcement of the "tags in strictly increasing order" rule is done using the
@@ -22,12 +23,17 @@ pub enum Tag {
     // 'NONC' is 0x434e4f4e.
     //
     // Tags are written here in ascending order
+    PAD_RFC,
     SIG,
+    VER,
+    DUT1,
     NONC,
     DELE,
     PATH,
+    DTAI,
     RADI,
     PUBK,
+    LEAP,
     MIDP,
     SREP,
     MINT,
@@ -35,7 +41,7 @@ pub enum Tag {
     CERT,
     MAXT,
     INDX,
-    PAD,
+    PAD_CLASSIC,
 }
 
 impl Tag {
@@ -46,13 +52,18 @@ impl Tag {
     const BYTES_MIDP: &'static [u8] = b"MIDP";
     const BYTES_MINT: &'static [u8] = b"MINT";
     const BYTES_NONC: &'static [u8] = b"NONC";
-    const BYTES_PAD: &'static [u8] = b"PAD\xff";
+    const BYTES_PAD_CLASSIC: &'static [u8] = b"PAD\xff";
+    const BYTES_PAD_RFC: &'static [u8] = b"PAD\x00";
     const BYTES_PATH: &'static [u8] = b"PATH";
     const BYTES_PUBK: &'static [u8] = b"PUBK";
     const BYTES_RADI: &'static [u8] = b"RADI";
     const BYTES_ROOT: &'static [u8] = b"ROOT";
     const BYTES_SIG: &'static [u8] = b"SIG\x00";
     const BYTES_SREP: &'static [u8] = b"SREP";
+    const BYTES_VER: &'static [u8] = b"VER\x00";
+    const BYTES_DUT1: &'static [u8] = b"DUT1";
+    const BYTES_DTAI: &'static [u8] = b"DTAI";
+    const BYTES_LEAP: &'static [u8] = b"LEAP";
 
     /// Translates a tag into its on-the-wire representation
     pub fn wire_value(self) -> &'static [u8] {
@@ -64,13 +75,18 @@ impl Tag {
             Tag::MIDP => Tag::BYTES_MIDP,
             Tag::MINT => Tag::BYTES_MINT,
             Tag::NONC => Tag::BYTES_NONC,
-            Tag::PAD => Tag::BYTES_PAD,
+            Tag::PAD_CLASSIC => Tag::BYTES_PAD_CLASSIC,
+            Tag::PAD_RFC => Tag::BYTES_PAD_RFC,
             Tag::PATH => Tag::BYTES_PATH,
             Tag::PUBK => Tag::BYTES_PUBK,
             Tag::RADI => Tag::BYTES_RADI,
             Tag::ROOT => Tag::BYTES_ROOT,
             Tag::SIG => Tag::BYTES_SIG,
             Tag::SREP => Tag::BYTES_SREP,
+            Tag::VER => Tag::BYTES_VER,
+            Tag::DUT1 => Tag::BYTES_DUT1,
+            Tag::DTAI => Tag::BYTES_DTAI,
+            Tag::LEAP => Tag::BYTES_LEAP,
         }
     }
 
@@ -85,13 +101,18 @@ impl Tag {
             Tag::BYTES_MIDP => Ok(Tag::MIDP),
             Tag::BYTES_MINT => Ok(Tag::MINT),
             Tag::BYTES_NONC => Ok(Tag::NONC),
-            Tag::BYTES_PAD => Ok(Tag::PAD),
+            Tag::BYTES_PAD_CLASSIC => Ok(Tag::PAD_CLASSIC),
+            Tag::BYTES_PAD_RFC => Ok(Tag::PAD_RFC),
             Tag::BYTES_PATH => Ok(Tag::PATH),
             Tag::BYTES_PUBK => Ok(Tag::PUBK),
             Tag::BYTES_RADI => Ok(Tag::RADI),
             Tag::BYTES_ROOT => Ok(Tag::ROOT),
             Tag::BYTES_SIG => Ok(Tag::SIG),
             Tag::BYTES_SREP => Ok(Tag::SREP),
+            Tag::BYTES_VER => Ok(Tag::VER),
+            Tag::BYTES_DUT1 => Ok(Tag::DUT1),
+            Tag::BYTES_DTAI => Ok(Tag::DTAI),
+            Tag::BYTES_LEAP => Ok(Tag::LEAP),
             _ => Err(Error::InvalidTag(Box::from(bytes))),
         }
     }

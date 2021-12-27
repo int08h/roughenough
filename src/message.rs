@@ -1,4 +1,4 @@
-// Copyright 2017-2021 int08h LLC
+// Copyright 2017-2022 int08h LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -48,7 +48,7 @@ impl RtMessage {
     ///
     /// ## Arguments
     ///
-    /// * `bytes` - On-the-wire representation
+    /// * `bytes` - On-the-wire representation with any framing removed
     ///
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
         let bytes_len = bytes.len();
@@ -288,10 +288,10 @@ impl RtMessage {
             // a 32-bit offset value to be written
             padding_needed -= 4;
         }
-        padding_needed -= Tag::PAD.wire_value().len();
+        padding_needed -= Tag::PAD_CLASSIC.wire_value().len();
         let padding = vec![0; padding_needed];
 
-        self.add_field(Tag::PAD, &padding).unwrap();
+        self.add_field(Tag::PAD_CLASSIC, &padding).unwrap();
 
         assert_eq!(self.encoded_size(), 1024);
     }
@@ -329,7 +329,7 @@ mod test {
     fn two_field_message_size() {
         let mut msg = RtMessage::new(2);
         msg.add_field(Tag::NONC, "1234".as_bytes()).unwrap();
-        msg.add_field(Tag::PAD, "abcd".as_bytes()).unwrap();
+        msg.add_field(Tag::PAD_CLASSIC, "abcd".as_bytes()).unwrap();
 
         assert_eq!(msg.num_fields(), 2);
         // Two tag message
@@ -457,7 +457,7 @@ mod test {
     fn from_bytes_offset_past_end_of_message() {
         let mut msg = RtMessage::new(2);
         msg.add_field(Tag::NONC, "1111".as_bytes()).unwrap();
-        msg.add_field(Tag::PAD, "aaaaaaaaa".as_bytes()).unwrap();
+        msg.add_field(Tag::PAD_CLASSIC, "aaaaaaaaa".as_bytes()).unwrap();
 
         let mut bytes = msg.encode().unwrap();
         // set the PAD value offset to beyond end of the message

@@ -26,7 +26,7 @@ fn create_two_field_message(c: &mut Criterion) {
         b.iter(|| {
             let mut msg = RtMessage::new(2);
             msg.add_field(Tag::NONC, "1234".as_bytes()).unwrap();
-            msg.add_field(Tag::PAD, "abcd".as_bytes()).unwrap();
+            msg.add_field(Tag::PAD_CLASSIC, "abcd".as_bytes()).unwrap();
         })
     });
 }
@@ -56,7 +56,7 @@ fn create_nested_message(c: &mut Criterion) {
 
             let mut msg2 = RtMessage::new(2);
             msg2.add_field(Tag::PUBK, "1234567890".as_bytes()).unwrap();
-            msg2.add_field(Tag::PAD, pad.as_ref()).unwrap();
+            msg2.add_field(Tag::PAD_CLASSIC, pad.as_ref()).unwrap();
         })
     });
 }

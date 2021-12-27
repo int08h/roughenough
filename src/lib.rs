@@ -74,9 +74,10 @@ pub mod merkle;
 pub mod server;
 pub mod sign;
 pub mod stats;
+pub mod version;
 
 /// Version of Roughenough
-pub const VERSION: &str = "1.1.9";
+pub const VERSION: &str = "1.2.0";
 
 /// Roughenough version string enriched with any compile-time optional features
 pub fn roughenough_version() -> String {
@@ -125,3 +126,6 @@ pub const TREE_LEAF_TWEAK: &[u8] = &[0x00];
 
 /// Value prepended to nodes prior to hashing
 pub const TREE_NODE_TWEAK: &[u8] = &[0x01];
+
+/// RFC first field magic value
+pub const RFC_REQUEST_FRAME_BYTES: &[u8] = b"ROUGHTIM";

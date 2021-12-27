@@ -195,7 +195,7 @@ mod test {
             (Tag::CERT, [b'a']),
             (Tag::MAXT, [b'b']),
             (Tag::INDX, [b'c']),
-            (Tag::PAD, [b'd']),
+            (Tag::PAD_CLASSIC, [b'd']),
         ];
 
         let mut msg = RtMessage::new(14);

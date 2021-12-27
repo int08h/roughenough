@@ -30,20 +30,24 @@ mod per_client;
 ///
 #[derive(Debug, Clone, Copy)]
 pub struct ClientStatEntry {
-    pub valid_requests: u64,
+    pub rfc_requests: u64,
+    pub classic_requests: u64,
     pub invalid_requests: u64,
     pub health_checks: u64,
-    pub responses_sent: u64,
+    pub rfc_responses_sent: u64,
+    pub classic_responses_sent: u64,
     pub bytes_sent: usize,
 }
 
 impl ClientStatEntry {
     fn new() -> Self {
         ClientStatEntry {
-            valid_requests: 0,
+            rfc_requests: 0,
+            classic_requests: 0,
             invalid_requests: 0,
             health_checks: 0,
-            responses_sent: 0,
+            rfc_responses_sent: 0,
+            classic_responses_sent: 0,
             bytes_sent: 0,
         }
     }
@@ -53,21 +57,33 @@ impl ClientStatEntry {
 /// Implementations of this trait record client activity
 ///
 pub trait ServerStats {
-    fn add_valid_request(&mut self, addr: &IpAddr);
+    fn add_rfc_request(&mut self, addr: &IpAddr);
+
+    fn add_classic_request(&mut self, addr: &IpAddr);
 
     fn add_invalid_request(&mut self, addr: &IpAddr);
 
     fn add_health_check(&mut self, addr: &IpAddr);
 
-    fn add_response(&mut self, addr: &IpAddr, bytes_sent: usize);
+    fn add_rfc_response(&mut self, addr: &IpAddr, bytes_sent: usize);
+
+    fn add_classic_response(&mut self, addr: &IpAddr, bytes_sent: usize);
 
     fn total_valid_requests(&self) -> u64;
+
+    fn num_rfc_requests(&self) -> u64;
+
+    fn num_classic_requests(&self) -> u64;
 
     fn total_invalid_requests(&self) -> u64;
 
     fn total_health_checks(&self) -> u64;
 
     fn total_responses_sent(&self) -> u64;
+
+    fn num_rfc_responses_sent(&self) -> u64;
+
+    fn num_classic_responses_sent(&self) -> u64;
 
     fn total_bytes_sent(&self) -> usize;
 
@@ -107,16 +123,16 @@ mod test {
         let ip2 = "127.0.0.2".parse().unwrap();
         let ip3 = "127.0.0.3".parse().unwrap();
 
-        stats.add_valid_request(&ip1);
-        stats.add_valid_request(&ip2);
-        stats.add_valid_request(&ip3);
-        assert_eq!(stats.total_valid_requests(), 3);
+        stats.add_classic_request(&ip1);
+        stats.add_classic_request(&ip2);
+        stats.add_classic_request(&ip3);
+        stats.add_rfc_request(&ip3);
+        assert_eq!(stats.total_valid_requests(), 4);
+        assert_eq!(stats.num_classic_requests(), 3);
+        assert_eq!(stats.num_rfc_requests(), 1);
 
         stats.add_invalid_request(&ip2);
         assert_eq!(stats.total_invalid_requests(), 1);
-
-        stats.add_response(&ip2, 8192);
-        assert_eq!(stats.total_bytes_sent(), 8192);
 
         assert_eq!(stats.total_unique_clients(), 3);
     }
@@ -126,15 +142,17 @@ mod test {
         let mut stats = PerClientStats::new();
         let ip = "127.0.0.3".parse().unwrap();
 
-        stats.add_valid_request(&ip);
-        stats.add_response(&ip, 2048);
-        stats.add_response(&ip, 1024);
+        stats.add_classic_request(&ip);
+        stats.add_rfc_response(&ip, 2048);
+        stats.add_classic_response(&ip, 1024);
+        stats.add_classic_response(&ip, 1024);
 
         let entry = stats.stats_for_client(&ip).unwrap();
-        assert_eq!(entry.valid_requests, 1);
+        assert_eq!(entry.classic_requests, 1);
         assert_eq!(entry.invalid_requests, 0);
-        assert_eq!(entry.responses_sent, 2);
-        assert_eq!(entry.bytes_sent, 3072);
+        assert_eq!(entry.rfc_responses_sent, 1);
+        assert_eq!(entry.classic_responses_sent, 2);
+        assert_eq!(entry.bytes_sent, 4096);
     }
 
     #[test]
@@ -145,7 +163,7 @@ mod test {
             let ipv4 = Ipv4Addr::from(i as u32);
             let addr = IpAddr::from(ipv4);
 
-            stats.add_valid_request(&addr);
+            stats.add_classic_request(&addr);
         }
 
         assert_eq!(stats.total_unique_clients(), 100);
