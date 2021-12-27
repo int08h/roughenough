@@ -23,7 +23,7 @@ Requires latest stable Rust to compile. Contributions welcome, see
 
 ## Building and Running
 
-### Rust 1.31 or above required
+### Minimum Supported Rust Version (MSRV)
 
 Roughenough uses [2018 edition](https://rust-lang-nursery.github.io/edition-guide/rust-2018/index.html) 
 features and requires Rust 1.31 or newer to build.
