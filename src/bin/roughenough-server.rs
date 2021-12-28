@@ -38,11 +38,10 @@ use roughenough::roughenough_version;
 use roughenough::server::Server;
 
 fn polling_loop(config: Box<dyn ServerConfig>) {
-    let mut server = Server::new(config);
+    let mut server = Server::new(config.as_ref());
     let keep_running = Arc::new(AtomicBool::new(true));
-    let cfg = server.get_config();
 
-    display_config(&server, cfg);
+    display_config(&server, config.as_ref());
 
     let kr_clone = keep_running.clone();
     ctrlc::set_handler(move || kr_clone.store(false, Ordering::Release))

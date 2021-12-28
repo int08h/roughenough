@@ -75,6 +75,8 @@ pub mod server;
 pub mod sign;
 pub mod stats;
 pub mod version;
+pub mod responder;
+pub mod request;
 
 /// Version of Roughenough
 pub const VERSION: &str = "1.2.0";
@@ -102,9 +104,6 @@ pub const SEED_LENGTH: u32 = 32;
 
 /// Size (in bytes) of an Ed25519 public key
 pub const PUBKEY_LENGTH: u32 = 32;
-
-/// Size (in bytes) of the client's nonce
-pub const NONCE_LENGTH: u32 = 64;
 
 /// Size (in bytes) of an Ed25519 signature
 pub const SIGNATURE_LENGTH: u32 = 64;

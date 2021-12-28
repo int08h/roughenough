@@ -52,6 +52,9 @@ pub enum Error {
 
     /// Runtime configuration is invalid for the reason provided
     InvalidConfiguration(String),
+
+    /// The message length reported by the frame length != the actual message payload length
+    LengthMismatch(u32, u32)
 }
 
 impl From<std::io::Error> for Error {

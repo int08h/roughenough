@@ -19,22 +19,18 @@
 use std::io::ErrorKind;
 use std::io::Write;
 use std::net::{IpAddr, Shutdown, SocketAddr};
-use std::process;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
-use byteorder::{LittleEndian, WriteBytesExt};
-use hex;
 use humansize::{file_size_opts as fsopts, FileSize};
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio::net::{TcpListener, UdpSocket};
 use mio_extras::timer::Timer;
 
-use crate::{Error, MIN_REQUEST_LENGTH, RFC_REQUEST_FRAME_BYTES, RtMessage, Tag};
 use crate::config::ServerConfig;
-use crate::grease::Grease;
 use crate::key::{LongTermKey, OnlineKey};
 use crate::kms;
-use crate::merkle::MerkleTree;
+use crate::request;
+use crate::responder::Responder;
 use crate::stats::{AggregatedStats, ClientStatEntry, PerClientStats, ServerStats};
 use crate::version::Version;
 
@@ -57,23 +53,16 @@ const HTTP_RESPONSE: &str = "HTTP/1.1 200 OK\nContent-Length: 0\nConnection: clo
 /// See [the config module](../config/index.html) for more information.
 ///
 pub struct Server {
-    config: Box<dyn ServerConfig>,
-    online_key: OnlineKey,
-    cert_bytes: Vec<u8>,
-
+    batch_size: u8,
     socket: UdpSocket,
     health_listener: Option<TcpListener>,
     poll_duration: Option<Duration>,
-    grease: Grease,
+    status_interval: Duration,
     timer: Timer<()>,
     poll: Poll,
-    merkle_rfc: MerkleTree,
-    merkle_classic: MerkleTree,
-    requests_rfc: Vec<(Vec<u8>, SocketAddr)>,
-    requests_classic: Vec<(Vec<u8>, SocketAddr)>,
+    responder_rfc: Responder,
+    responder_classic: Responder,
     buf: [u8; 65_536],
-
-    public_key: String,
 
     stats: Box<dyn ServerStats>,
 
@@ -87,24 +76,7 @@ impl Server {
     /// Create a new server instance from the provided
     /// [`ServerConfig`](../config/trait.ServerConfig.html) trait object instance.
     ///
-    pub fn new(config: Box<dyn ServerConfig>) -> Server {
-        let online_key = OnlineKey::new();
-        let public_key: String;
-
-        let cert_bytes = {
-            let seed = match kms::load_seed(config.as_ref()) {
-                Ok(seed) => seed,
-                Err(e) => {
-                    error!("Failed to load seed: {:#?}", e);
-                    process::exit(1);
-                }
-            };
-            let mut long_term_key = LongTermKey::new(&seed);
-            public_key = hex::encode(long_term_key.public_key());
-
-            long_term_key.make_cert(&online_key).encode().unwrap()
-        };
-
+    pub fn new(config: &dyn ServerConfig) -> Server {
         let sock_addr = config.udp_socket_addr().expect("udp sock addr");
         let socket = UdpSocket::bind(&sock_addr).expect("failed to bind to socket");
 
@@ -114,15 +86,8 @@ impl Server {
         timer.set_timeout(config.status_interval(), ());
 
         let poll = Poll::new().unwrap();
-        poll.register(&socket, EVT_MESSAGE, Ready::readable(), PollOpt::edge())
-            .unwrap();
-        poll.register(
-            &timer,
-            EVT_STATUS_UPDATE,
-            Ready::readable(),
-            PollOpt::edge(),
-        )
-        .unwrap();
+        poll.register(&socket, EVT_MESSAGE, Ready::readable(), PollOpt::edge()).unwrap();
+        poll.register(&timer, EVT_STATUS_UPDATE, Ready::readable(), PollOpt::edge()).unwrap();
 
         let health_listener = if let Some(hc_port) = config.health_check_port() {
             let hc_sock_addr: SocketAddr = format!("{}:{}", config.interface(), hc_port)
@@ -132,13 +97,7 @@ impl Server {
             let tcp_listener = TcpListener::bind(&hc_sock_addr)
                 .expect("failed to bind TCP listener for health check");
 
-            poll.register(
-                &tcp_listener,
-                EVT_HEALTH_CHECK,
-                Ready::readable(),
-                PollOpt::edge(),
-            )
-            .unwrap();
+            poll.register(&tcp_listener, EVT_HEALTH_CHECK, Ready::readable(), PollOpt::edge()).unwrap();
 
             Some(tcp_listener)
         } else {
@@ -151,31 +110,28 @@ impl Server {
             Box::new(AggregatedStats::new())
         };
 
-        let grease = Grease::new(config.fault_percentage());
-        let merkle_rfc = MerkleTree::new_sha512_256();
-        let merkle_classic = MerkleTree::new_sha512();
-        let requests_rfc = Vec::with_capacity(config.batch_size() as usize);
-        let requests_classic = Vec::with_capacity(config.batch_size() as usize);
+        let mut long_term_key = {
+            let seed = kms::load_seed(config).expect("failed loading seed");
+            LongTermKey::new(&seed)
+        };
+
+        let responder_rfc = Responder::new(Version::Rfc, config, &mut long_term_key);
+        let responder_classic = Responder::new(Version::Classic, config, &mut long_term_key);
+
+        let batch_size = config.batch_size();
+        let status_interval = config.status_interval();
 
         Server {
-            config,
-            online_key,
-            cert_bytes,
-
+            batch_size,
             socket,
             health_listener,
-
             poll_duration,
-            grease,
+            status_interval,
             timer,
             poll,
-            merkle_rfc,
-            merkle_classic,
-            requests_rfc,
-            requests_classic,
+            responder_rfc,
+            responder_classic,
             buf: [0u8; 65_536],
-
-            public_key,
 
             stats,
 
@@ -186,17 +142,12 @@ impl Server {
 
     /// Returns a reference to the server's long-term public key
     pub fn get_public_key(&self) -> &str {
-        &self.public_key
+        &self.responder_rfc.get_public_key()
     }
 
     /// Returns a reference to the server's on-line (delegated) key
     pub fn get_online_key(&self) -> &OnlineKey {
-        &self.online_key
-    }
-
-    /// Returns a reference to the `ServerConfig` this server was configured with
-    pub fn get_config(&self) -> &dyn ServerConfig {
-        self.config.as_ref()
+        &self.responder_rfc.get_online_key()
     }
 
     #[cfg(fuzzing)]
@@ -218,18 +169,17 @@ impl Server {
         for msg in events.iter() {
             match msg.token() {
                 EVT_MESSAGE => loop {
-                    self.merkle_rfc.reset();
-                    self.merkle_classic.reset();
-                    self.requests_rfc.clear();
-                    self.requests_classic.clear();
+                    self.responder_rfc.reset();
+                    self.responder_classic.reset();
 
                     let socket_now_empty = self.collect_requests();
 
-                    if self.requests_rfc.is_empty() && self.requests_classic.is_empty() {
+                    if self.responder_rfc.is_empty() && self.responder_classic.is_empty() {
                         break;
                     }
 
-                    self.send_responses();
+                    self.responder_rfc.send_responses(&mut self.socket);
+                    self.responder_classic.send_responses(&mut self.socket);
 
                     if socket_now_empty {
                         break;
@@ -245,20 +195,18 @@ impl Server {
     // Read and process client requests from socket until socket is empty or 'batch_size' number
     // of requests have been read.
     fn collect_requests(&mut self) -> bool {
-        for i in 0..self.config.batch_size() {
+        for i in 0..self.batch_size {
             match self.socket.recv_from(&mut self.buf) {
                 Ok((num_bytes, src_addr)) => {
-                    match Server::nonce_from_request(&self.buf, num_bytes) {
+                    match request::nonce_from_request(&self.buf, num_bytes) {
                         Ok((nonce, Version::Rfc)) => {
+                            self.responder_rfc.add_request(nonce, src_addr);
                             self.stats.add_rfc_request(&src_addr.ip());
-                            self.requests_rfc.push((Vec::from(nonce), src_addr));
-                            self.merkle_rfc.push_leaf(nonce);
-                        },
+                        }
                         Ok((nonce, Version::Classic)) => {
+                            self.responder_classic.add_request(nonce, src_addr);
                             self.stats.add_classic_request(&src_addr.ip());
-                            self.requests_classic.push((Vec::from(nonce), src_addr));
-                            self.merkle_classic.push_leaf(nonce);
-                        },
+                        }
                         Err(e) => {
                             self.stats.add_invalid_request(&src_addr.ip());
 
@@ -282,107 +230,6 @@ impl Server {
         }
 
         false
-    }
-
-    // extract the client's nonce from its request
-    fn nonce_from_request(buf: &[u8], num_bytes: usize) -> Result<(&[u8], Version), Error> {
-        if num_bytes < MIN_REQUEST_LENGTH as usize {
-            return Err(Error::RequestTooShort);
-        }
-
-        match Server::guess_protocol_version(buf) {
-            Version::Classic => Server::nonce_from_classic_request(buf),
-            Version::Rfc => Server::nonce_from_rfc_request(buf),
-        }
-    }
-
-    fn guess_protocol_version(buf: &[u8]) -> crate::version::Version {
-        if &buf[0..8] == RFC_REQUEST_FRAME_BYTES {
-            Version::Rfc
-        } else {
-            Version::Classic
-        }
-    }
-
-    fn nonce_from_classic_request(buf: &[u8]) -> Result<(&[u8], Version), Error> {
-        let tag_count = &buf[0..4];
-        let expected_nonc = &buf[8..12];
-        let expected_pad = &buf[12..16];
-
-        let tag_count_is_2 = tag_count == [0x02, 0x00, 0x00, 0x00];
-        let tag1_is_nonc = expected_nonc == Tag::NONC.wire_value();
-        let tag2_is_pad = expected_pad == Tag::PAD_CLASSIC.wire_value();
-
-        if tag_count_is_2 && tag1_is_nonc && tag2_is_pad {
-            Ok((&buf[0x10..0x50], Version::Classic))
-        } else {
-            Err(Error::InvalidRequest)
-        }
-    }
-
-    fn nonce_from_rfc_request(_: &[u8]) -> Result<(&[u8], Version), Error> {
-        todo!()
-    }
-
-    fn send_responses(&mut self) {
-        let merkle_root = self.merkle_classic.compute_root();
-
-        // The SREP tag is identical for each response
-        let srep = self.online_key.make_srep(SystemTime::now(), &merkle_root);
-
-        for (i, &(ref nonce, ref src_addr)) in self.requests_classic.iter().enumerate() {
-            let paths = self.merkle_classic.get_paths(i);
-            let resp_msg = {
-                let r = self.make_response(&srep, &self.cert_bytes, &paths, i as u32);
-                if self.grease.should_add_error() {
-                    self.grease.add_errors(&r)
-                } else {
-                    r
-                }
-            };
-            let resp_bytes = resp_msg.encode().unwrap();
-
-            let bytes_sent = self
-                .socket
-                .send_to(&resp_bytes, &src_addr)
-                .expect("send_to failed");
-
-            self.stats.add_classic_response(&src_addr.ip(), bytes_sent);
-
-            info!(
-                "Responded {} bytes to {} for '{}..' (#{} in batch, resp #{})",
-                bytes_sent,
-                src_addr,
-                hex::encode(&nonce[0..4]),
-                i + 1,
-                self.stats.total_responses_sent()
-            );
-        }
-    }
-
-    fn make_response(
-        &self,
-        srep: &RtMessage,
-        cert_bytes: &[u8],
-        path: &[u8],
-        idx: u32,
-    ) -> RtMessage {
-        let mut index = [0; 4];
-        (&mut index as &mut [u8])
-            .write_u32::<LittleEndian>(idx)
-            .unwrap();
-
-        let sig_bytes = srep.get_field(Tag::SIG).unwrap();
-        let srep_bytes = srep.get_field(Tag::SREP).unwrap();
-
-        let mut response = RtMessage::new(5);
-        response.add_field(Tag::SIG, sig_bytes).unwrap();
-        response.add_field(Tag::PATH, path).unwrap();
-        response.add_field(Tag::SREP, srep_bytes).unwrap();
-        response.add_field(Tag::CERT, cert_bytes).unwrap();
-        response.add_field(Tag::INDX, &index).unwrap();
-
-        response
     }
 
     fn handle_health_check(&mut self) {
@@ -414,31 +261,39 @@ impl Server {
     fn handle_status_update(&mut self) {
         let mut vec: Vec<(&IpAddr, &ClientStatEntry)> = self.stats.iter().collect();
         // sort in descending order
-        vec.sort_by(|lhs, rhs| rhs.1.classic_requests.cmp(&lhs.1.classic_requests));
+        vec.sort_by(|lhs, rhs| {
+            let lhs_total = lhs.1.classic_requests + lhs.1.rfc_requests;
+            let rhs_total = rhs.1.classic_requests + rhs.1.rfc_requests;
+            rhs_total.cmp(&lhs_total)
+        });
 
         for (addr, counts) in vec {
             info!(
-                "{:16}: {} valid, {} invalid requests; {} responses ({} sent)",
+                "{:16}: {} classic req, {} rfc req; {} invalid requests; {} classic resp, {} rfc resp ({} sent)",
                 format!("{}", addr),
                 counts.classic_requests,
+                counts.rfc_requests,
                 counts.invalid_requests,
                 counts.classic_responses_sent,
+                counts.rfc_responses_sent,
                 counts.bytes_sent.file_size(fsopts::BINARY).unwrap()
             );
         }
 
         info!(
-            "Totals: {} unique clients; {} valid, {} invalid requests; {} responses ({} sent)",
+            "Totals: {} unique clients; {} total req ({} classic req, {} rfc req); {} invalid requests; {} total resp ({} classic resp, {} rfc resp); {} sent",
             self.stats.total_unique_clients(),
             self.stats.total_valid_requests(),
+            self.stats.num_classic_requests(),
+            self.stats.num_rfc_requests(),
             self.stats.total_invalid_requests(),
             self.stats.total_responses_sent(),
-            self.stats
-                .total_bytes_sent()
-                .file_size(fsopts::BINARY)
-                .unwrap()
+            self.stats.num_classic_responses_sent(),
+            self.stats.num_rfc_responses_sent(),
+            self.stats.total_bytes_sent().file_size(fsopts::BINARY) .unwrap()
         );
 
-        self.timer.set_timeout(self.config.status_interval(), ());
+        self.timer.set_timeout(self.status_interval, ());
     }
+
 }
