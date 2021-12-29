@@ -49,7 +49,7 @@ impl OnlineKey {
         let max = [0xff; 8];
         let pub_key_bytes = self.signer.public_key_bytes();
 
-        let mut dele_msg = RtMessage::new(3);
+        let mut dele_msg = RtMessage::with_capacity(3);
         dele_msg.add_field(Tag::PUBK, pub_key_bytes).unwrap();
         dele_msg.add_field(Tag::MINT, &zeros).unwrap();
         dele_msg.add_field(Tag::MAXT, &max).unwrap();
@@ -85,7 +85,7 @@ impl OnlineKey {
 
         // Signed response SREP
         let srep_bytes = {
-            let mut srep_msg = RtMessage::new(3);
+            let mut srep_msg = RtMessage::with_capacity(3);
             srep_msg.add_field(Tag::RADI, &radi).unwrap();
             srep_msg.add_field(Tag::MIDP, &midp).unwrap();
             srep_msg.add_field(Tag::ROOT, merkle_root).unwrap();
@@ -100,7 +100,7 @@ impl OnlineKey {
             self.signer.sign()
         };
 
-        let mut result = RtMessage::new(2);
+        let mut result = RtMessage::with_capacity(2);
         result.add_field(Tag::SIG, &srep_signature).unwrap();
         result.add_field(Tag::SREP, &srep_bytes).unwrap();
 

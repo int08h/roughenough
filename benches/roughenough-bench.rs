@@ -9,13 +9,15 @@ use roughenough::RtMessage;
 use roughenough::Tag;
 
 fn create_empty_message(c: &mut Criterion) {
-    c.bench_function("create empty message", |b| b.iter(|| RtMessage::new(0)));
+    c.bench_function("create empty message", |b| {
+        b.iter(|| RtMessage::with_capacity(0))
+    });
 }
 
 fn create_single_field_message(c: &mut Criterion) {
     c.bench_function("create single field message", |b| {
         b.iter(|| {
-            let mut msg = RtMessage::new(1);
+            let mut msg = RtMessage::with_capacity(1);
             msg.add_field(Tag::NONC, "1234".as_bytes()).unwrap();
         })
     });
@@ -24,7 +26,7 @@ fn create_single_field_message(c: &mut Criterion) {
 fn create_two_field_message(c: &mut Criterion) {
     c.bench_function("create two field message", |b| {
         b.iter(|| {
-            let mut msg = RtMessage::new(2);
+            let mut msg = RtMessage::with_capacity(2);
             msg.add_field(Tag::NONC, "1234".as_bytes()).unwrap();
             msg.add_field(Tag::PAD_CLASSIC, "abcd".as_bytes()).unwrap();
         })
@@ -34,7 +36,7 @@ fn create_two_field_message(c: &mut Criterion) {
 fn create_four_field_message(c: &mut Criterion) {
     c.bench_function("create four field message", |b| {
         b.iter(|| {
-            let mut msg = RtMessage::new(4);
+            let mut msg = RtMessage::with_capacity(4);
             msg.add_field(Tag::SIG, "0987".as_bytes()).unwrap();
             msg.add_field(Tag::NONC, "wxyz".as_bytes()).unwrap();
             msg.add_field(Tag::DELE, "1234".as_bytes()).unwrap();
@@ -48,13 +50,13 @@ fn create_nested_message(c: &mut Criterion) {
 
     c.bench_function("create nested message", move |b| {
         b.iter(|| {
-            let mut msg1 = RtMessage::new(4);
+            let mut msg1 = RtMessage::with_capacity(4);
             msg1.add_field(Tag::SIG, "0987".as_bytes()).unwrap();
             msg1.add_field(Tag::NONC, "wxyz".as_bytes()).unwrap();
             msg1.add_field(Tag::DELE, "1234".as_bytes()).unwrap();
             msg1.add_field(Tag::PATH, "abcd".as_bytes()).unwrap();
 
-            let mut msg2 = RtMessage::new(2);
+            let mut msg2 = RtMessage::with_capacity(2);
             msg2.add_field(Tag::PUBK, "1234567890".as_bytes()).unwrap();
             msg2.add_field(Tag::PAD_CLASSIC, pad.as_ref()).unwrap();
         })

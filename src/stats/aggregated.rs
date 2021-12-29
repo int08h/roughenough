@@ -133,5 +133,4 @@ impl ServerStats for AggregatedStats {
     }
 
     fn clear(&mut self) {}
-
 }

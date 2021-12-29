@@ -13,12 +13,16 @@
 // limitations under the License.
 
 use std::collections::HashMap;
+use std::fmt;
+use std::fmt::{Display, Formatter};
 use std::io::{Cursor, Read, Write};
 use std::iter::once;
+use std::string::String;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use crate::error::Error;
+use crate::RFC_REQUEST_FRAME_BYTES;
 use crate::tag::Tag;
 
 ///
@@ -31,13 +35,13 @@ pub struct RtMessage {
 }
 
 impl RtMessage {
-    /// Construct a new RtMessage
+    /// Construct a new RtMessage with the specified capacity.
     ///
     /// ## Arguments
     ///
     /// * `num_fields` - Reserve space for this many fields.
     ///
-    pub fn new(num_fields: u32) -> Self {
+    pub fn with_capacity(num_fields: u32) -> Self {
         RtMessage {
             tags: Vec::with_capacity(num_fields as usize),
             values: Vec::with_capacity(num_fields as usize),
@@ -63,7 +67,7 @@ impl RtMessage {
         let num_tags = msg.read_u32::<LittleEndian>()?;
 
         match num_tags {
-            0 => Ok(RtMessage::new(0)),
+            0 => Ok(RtMessage::with_capacity(0)),
             1 => RtMessage::single_tag_message(bytes, &mut msg),
             2..=1024 => RtMessage::multi_tag_message(num_tags, bytes, &mut msg),
             _ => Err(Error::InvalidNumTags(num_tags)),
@@ -93,7 +97,7 @@ impl RtMessage {
         msg.read_to_end(&mut value)?;
 
         let tag = Tag::from_wire(&bytes[pos..pos + 4])?;
-        let mut rt_msg = RtMessage::new(1);
+        let mut rt_msg = RtMessage::with_capacity(1);
         rt_msg.add_field(tag, &value)?;
 
         Ok(rt_msg)
@@ -147,7 +151,7 @@ impl RtMessage {
         // as an offset from the end of the header
         let msg_end = bytes.len() - header_end;
 
-        let mut rt_msg = RtMessage::new(num_tags);
+        let mut rt_msg = RtMessage::with_capacity(num_tags);
 
         for (tag, (value_start, value_end)) in tags.into_iter().zip(
             once(&0)
@@ -227,6 +231,17 @@ impl RtMessage {
         self.tags.into_iter().zip(self.values.into_iter()).collect()
     }
 
+    /// Encode this message into an on-the-wire representation prefixed with RFC framing.
+    pub fn encode_framed(&self) -> Result<Vec<u8>, Error> {
+        let encoded = self.encode()?;
+        let mut frame = Vec::with_capacity(RFC_REQUEST_FRAME_BYTES.len() + 4 + encoded.len());
+        frame.write_all(RFC_REQUEST_FRAME_BYTES)?;
+        frame.write_u32::<LittleEndian>(encoded.len() as u32)?;
+        frame.write_all(&encoded)?;
+
+        Ok(frame)
+    }
+
     /// Encode this message into its on-the-wire representation.
     pub fn encode(&self) -> Result<Vec<u8>, Error> {
         let num_tags = self.tags.len();
@@ -271,15 +286,12 @@ impl RtMessage {
         4 + tags_size + offsets_size + values_size
     }
 
-    /// Adds a PAD tag to the end of this message, with a length
-    /// set such that the final encoded size of this message is 1KB
-    ///
-    /// If the encoded size of this message is already >= 1KB,
-    /// this method does nothing
-    pub fn pad_to_kilobyte(&mut self) {
+    /// Calculate the length of PAD value such that the final encoded size of this message
+    /// will be at least 1KB.
+    pub fn calculate_padding_length(&mut self) -> usize {
         let size = self.encoded_size();
         if size >= 1024 {
-            return;
+            return 0;
         }
 
         let mut padding_needed = 1024 - size;
@@ -288,12 +300,56 @@ impl RtMessage {
             // a 32-bit offset value to be written
             padding_needed -= 4;
         }
-        padding_needed -= Tag::PAD_CLASSIC.wire_value().len();
-        let padding = vec![0; padding_needed];
 
-        self.add_field(Tag::PAD_CLASSIC, &padding).unwrap();
+        padding_needed
+    }
 
-        assert_eq!(self.encoded_size(), 1024);
+    /// Clears this message, removing all tags and values
+    pub fn clear(&mut self) {
+        self.tags.clear();
+        self.values.clear();
+    }
+
+    pub fn to_string(&self, indent_level: usize) -> String {
+        assert!(
+            indent_level > 0,
+            "indent level must be >= 1 (indent_level={})",
+            indent_level
+        );
+
+        let indent1 = " ".repeat(2 * (indent_level - 1));
+        let indent2 = " ".repeat(2 * indent_level);
+
+        let mut result = String::from("RtMessage|");
+        result.push_str(&self.num_fields().to_string());
+        result.push_str("|{\n");
+
+        for (tag, value) in self.tags.iter().zip(self.values.iter()) {
+            result.push_str(&indent2);
+            result.push_str(&tag.to_string());
+            result.push_str("(");
+            result.push_str(&value.len().to_string());
+            result.push_str(") = ");
+
+            if tag.is_nested() {
+                let nested_msg = RtMessage::from_bytes(value).unwrap();
+                result.push_str(&nested_msg.to_string(indent_level + 1))
+            } else {
+                result.push_str(&hex::encode(value));
+                result.push_str("\n");
+            }
+        }
+
+        result.push_str(&indent1);
+        result.push_str("}\n");
+
+        result
+    }
+}
+
+impl Display for RtMessage {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_string(1))
     }
 }
 
@@ -308,7 +364,7 @@ mod test {
 
     #[test]
     fn empty_message_size() {
-        let msg = RtMessage::new(0);
+        let msg = RtMessage::with_capacity(0);
 
         assert_eq!(msg.num_fields(), 0);
         // Empty message is 4 bytes, a single num_tags value
@@ -317,7 +373,7 @@ mod test {
 
     #[test]
     fn single_field_message_size() {
-        let mut msg = RtMessage::new(1);
+        let mut msg = RtMessage::with_capacity(1);
         msg.add_field(Tag::NONC, "1234".as_bytes()).unwrap();
 
         assert_eq!(msg.num_fields(), 1);
@@ -326,8 +382,24 @@ mod test {
     }
 
     #[test]
+    fn clear_message() {
+        let mut msg = RtMessage::with_capacity(1);
+        msg.add_field(Tag::NONC, "abcdefg".as_bytes()).unwrap();
+
+        assert_eq!(msg.num_fields(), 1);
+        assert_eq!(msg.tags().len(), 1);
+        assert_eq!(msg.values().len(), 1);
+
+        msg.clear();
+
+        assert_eq!(msg.num_fields(), 0);
+        assert_eq!(msg.tags().len(), 0);
+        assert_eq!(msg.values().len(), 0);
+    }
+
+    #[test]
     fn two_field_message_size() {
-        let mut msg = RtMessage::new(2);
+        let mut msg = RtMessage::with_capacity(2);
         msg.add_field(Tag::NONC, "1234".as_bytes()).unwrap();
         msg.add_field(Tag::PAD_CLASSIC, "abcd".as_bytes()).unwrap();
 
@@ -342,7 +414,7 @@ mod test {
 
     #[test]
     fn empty_message_encoding() {
-        let msg = RtMessage::new(0);
+        let msg = RtMessage::with_capacity(0);
         let mut encoded = Cursor::new(msg.encode().unwrap());
 
         assert_eq!(encoded.read_u32::<LittleEndian>().unwrap(), 0);
@@ -351,7 +423,7 @@ mod test {
     #[test]
     fn single_field_message_encoding() {
         let value = vec![b'a'; 64];
-        let mut msg = RtMessage::new(1);
+        let mut msg = RtMessage::with_capacity(1);
 
         msg.add_field(Tag::CERT, &value).unwrap();
 
@@ -382,7 +454,7 @@ mod test {
         let dele_value = vec![b'a'; 24];
         let maxt_value = vec![b'z'; 32];
 
-        let mut msg = RtMessage::new(2);
+        let mut msg = RtMessage::with_capacity(2);
         msg.add_field(Tag::DELE, &dele_value).unwrap();
         msg.add_field(Tag::MAXT, &maxt_value).unwrap();
 
@@ -443,7 +515,7 @@ mod test {
         let val1 = b"aabbccddeeffgg";
         let val2 = b"0987654321";
 
-        let mut msg = RtMessage::new(2);
+        let mut msg = RtMessage::with_capacity(2);
         msg.add_field(Tag::NONC, val1).unwrap();
         msg.add_field(Tag::MAXT, val2).unwrap();
 
@@ -455,9 +527,10 @@ mod test {
     #[test]
     #[should_panic(expected = "InvalidAlignment")]
     fn from_bytes_offset_past_end_of_message() {
-        let mut msg = RtMessage::new(2);
+        let mut msg = RtMessage::with_capacity(2);
         msg.add_field(Tag::NONC, "1111".as_bytes()).unwrap();
-        msg.add_field(Tag::PAD_CLASSIC, "aaaaaaaaa".as_bytes()).unwrap();
+        msg.add_field(Tag::PAD_CLASSIC, "aaaaaaaaa".as_bytes())
+            .unwrap();
 
         let mut bytes = msg.encode().unwrap();
         // set the PAD value offset to beyond end of the message

@@ -61,7 +61,6 @@ fn polling_loop(config: Box<dyn ServerConfig>) {
 
 fn display_config(server: &Server, cfg: &dyn ServerConfig) {
     info!("Long-term public key       : {}", server.get_public_key());
-    info!("Online public key          : {}", server.get_online_key());
     info!("Max response batch size    : {}", cfg.batch_size());
     info!(
         "Status updates every       : {} seconds",
@@ -99,6 +98,7 @@ fn display_config(server: &Server, cfg: &dyn ServerConfig) {
 pub fn main() {
     SimpleLogger::new()
         .with_level(LevelFilter::Info)
+        .with_utc_timestamps()
         .init()
         .unwrap();
 

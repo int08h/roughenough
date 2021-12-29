@@ -146,7 +146,10 @@ impl ServerStats for PerClientStats {
     }
 
     fn total_valid_requests(&self) -> u64 {
-        self.clients.values().map(|&v| v.rfc_requests + v.classic_requests).sum()
+        self.clients
+            .values()
+            .map(|&v| v.rfc_requests + v.classic_requests)
+            .sum()
     }
 
     fn num_rfc_requests(&self) -> u64 {
@@ -166,7 +169,10 @@ impl ServerStats for PerClientStats {
     }
 
     fn total_responses_sent(&self) -> u64 {
-        self.clients.values().map(|&v| v.rfc_responses_sent + v.classic_responses_sent).sum()
+        self.clients
+            .values()
+            .map(|&v| v.rfc_responses_sent + v.classic_responses_sent)
+            .sum()
     }
 
     fn num_rfc_responses_sent(&self) -> u64 {
@@ -174,7 +180,10 @@ impl ServerStats for PerClientStats {
     }
 
     fn num_classic_responses_sent(&self) -> u64 {
-        self.clients.values().map(|&v| v.classic_responses_sent).sum()
+        self.clients
+            .values()
+            .map(|&v| v.classic_responses_sent)
+            .sum()
     }
 
     fn total_bytes_sent(&self) -> usize {

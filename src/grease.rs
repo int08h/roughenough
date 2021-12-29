@@ -127,7 +127,7 @@ impl Grease {
 
         prng.fill(&mut random_sig);
 
-        let mut new_msg = RtMessage::new(src_msg.num_fields());
+        let mut new_msg = RtMessage::with_capacity(src_msg.num_fields());
         new_msg.add_field(Tag::SIG, &random_sig).unwrap();
         new_msg
             .add_field(Tag::PATH, src_msg.get_field(Tag::PATH).unwrap())
@@ -198,7 +198,7 @@ mod test {
             (Tag::PAD_CLASSIC, [b'd']),
         ];
 
-        let mut msg = RtMessage::new(14);
+        let mut msg = RtMessage::with_capacity(14);
         for pair in &pairs {
             msg.add_field(pair.0, &pair.1).unwrap();
         }
@@ -225,7 +225,7 @@ mod test {
 
     #[test]
     fn check_signature_corruption() {
-        let mut msg = RtMessage::new(5);
+        let mut msg = RtMessage::with_capacity(5);
         msg.add_field(Tag::SIG, &[b'a']).unwrap();
         msg.add_field(Tag::PATH, &[b'0']).unwrap();
         msg.add_field(Tag::SREP, &[b'1']).unwrap();

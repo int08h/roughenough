@@ -28,12 +28,13 @@ pub fn nonce_from_request(buf: &[u8], num_bytes: usize) -> Result<(Vec<u8>, Vers
     }
 
     match guess_protocol_version(buf) {
-        Version::Classic => nonce_from_classic_request(buf),
-        Version::Rfc => nonce_from_rfc_request(buf),
+        Version::Classic => nonce_from_classic_request(&buf[..num_bytes]),
+        Version::Rfc => nonce_from_rfc_request(&buf[..num_bytes]),
     }
 }
 
-fn guess_protocol_version(buf: &[u8]) -> crate::version::Version {
+/// Inspect the message in `buf` and guess which Roughtime protocol it corresponds to.
+fn guess_protocol_version(buf: &[u8]) -> Version {
     if &buf[0..8] == RFC_REQUEST_FRAME_BYTES {
         Version::Rfc
     } else {
@@ -45,7 +46,7 @@ fn nonce_from_classic_request(buf: &[u8]) -> Result<(Vec<u8>, Version), Error> {
     let msg = RtMessage::from_bytes(buf)?;
     match msg.get_field(Tag::NONC) {
         Some(nonce) => Ok((nonce.to_vec(), Version::Classic)),
-        None => Err(Error::InvalidRequest)
+        None => Err(Error::InvalidRequest),
     }
 }
 
@@ -60,9 +61,28 @@ fn nonce_from_rfc_request(buf: &[u8]) -> Result<(Vec<u8>, Version), Error> {
     }
 
     let msg = RtMessage::from_bytes(&buf[12..])?;
+
+    if !has_supported_version(&msg) {
+        return Err(Error::NoCompatibleVersion);
+    }
+
     match msg.get_field(Tag::NONC) {
         Some(nonce) => Ok((nonce.to_vec(), Version::Rfc)),
-        None => Err(Error::InvalidRequest)
+        None => Err(Error::InvalidRequest),
     }
 }
 
+fn has_supported_version(msg: &RtMessage) -> bool {
+    let expected_ver_bytes = Version::Rfc.wire_bytes();
+
+    if let Some(tag_bytes) = msg.get_field(Tag::VER) {
+        // Iterate the list of supplied versions, looking for a match
+        for found_ver_bytes in tag_bytes.chunks(4) {
+            if found_ver_bytes == expected_ver_bytes {
+                return true;
+            }
+        }
+    }
+
+    false
+}

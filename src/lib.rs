@@ -71,12 +71,12 @@ pub mod grease;
 pub mod key;
 pub mod kms;
 pub mod merkle;
+pub mod request;
+pub mod responder;
 pub mod server;
 pub mod sign;
 pub mod stats;
 pub mod version;
-pub mod responder;
-pub mod request;
 
 /// Version of Roughenough
 pub const VERSION: &str = "1.2.0";

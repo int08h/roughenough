@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::fmt::{Display, Formatter};
+
 use crate::error::Error;
 
 /// An unsigned 32-bit value (key) that maps to a byte-string (value).
@@ -115,5 +117,27 @@ impl Tag {
             Tag::BYTES_LEAP => Ok(Tag::LEAP),
             _ => Err(Error::InvalidTag(Box::from(bytes))),
         }
+    }
+
+    /// Tags for which values are themselves an `RtMessage`
+    pub fn is_nested(&self) -> bool {
+        *self == Tag::CERT || *self == Tag::DELE || *self == Tag::SREP
+    }
+
+    /// A short (non canonical) string representation of the tag
+    fn to_string(&self) -> String {
+        match self {
+            Tag::PAD_RFC => String::from("PAD00"),
+            Tag::PAD_CLASSIC => String::from("PADff"),
+            Tag::SIG => String::from("SIG"),
+            Tag::VER => String::from("VER"),
+            _ => String::from_utf8(self.wire_value().to_vec()).unwrap(),
+        }
+    }
+}
+
+impl Display for Tag {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_string())
     }
 }

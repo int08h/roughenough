@@ -49,7 +49,7 @@ impl LongTermKey {
 
         let dele_signature = self.signer.sign();
 
-        let mut cert_msg = RtMessage::new(2);
+        let mut cert_msg = RtMessage::with_capacity(2);
         cert_msg.add_field(Tag::SIG, &dele_signature).unwrap();
         cert_msg.add_field(Tag::DELE, &dele_bytes).unwrap();
 

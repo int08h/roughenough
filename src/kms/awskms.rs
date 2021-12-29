@@ -30,7 +30,7 @@ pub mod inner {
     use crate::kms::{AD, DEK_LEN_BYTES, EncryptedDEK, KmsError, KmsProvider, PlaintextDEK};
 
     /// Amazon Web Services Key Management Service
-        /// https://aws.amazon.com/kms/
+    /// https://aws.amazon.com/kms/
     pub struct AwsKms {
         kms_client: KmsClient,
         key_id: String,

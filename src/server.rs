@@ -27,7 +27,7 @@ use mio::net::{TcpListener, UdpSocket};
 use mio_extras::timer::Timer;
 
 use crate::config::ServerConfig;
-use crate::key::{LongTermKey, OnlineKey};
+use crate::key::LongTermKey;
 use crate::kms;
 use crate::request;
 use crate::responder::Responder;
@@ -86,8 +86,15 @@ impl Server {
         timer.set_timeout(config.status_interval(), ());
 
         let poll = Poll::new().unwrap();
-        poll.register(&socket, EVT_MESSAGE, Ready::readable(), PollOpt::edge()).unwrap();
-        poll.register(&timer, EVT_STATUS_UPDATE, Ready::readable(), PollOpt::edge()).unwrap();
+        poll.register(&socket, EVT_MESSAGE, Ready::readable(), PollOpt::edge())
+            .unwrap();
+        poll.register(
+            &timer,
+            EVT_STATUS_UPDATE,
+            Ready::readable(),
+            PollOpt::edge(),
+        )
+        .unwrap();
 
         let health_listener = if let Some(hc_port) = config.health_check_port() {
             let hc_sock_addr: SocketAddr = format!("{}:{}", config.interface(), hc_port)
@@ -97,7 +104,13 @@ impl Server {
             let tcp_listener = TcpListener::bind(&hc_sock_addr)
                 .expect("failed to bind TCP listener for health check");
 
-            poll.register(&tcp_listener, EVT_HEALTH_CHECK, Ready::readable(), PollOpt::edge()).unwrap();
+            poll.register(
+                &tcp_listener,
+                EVT_HEALTH_CHECK,
+                Ready::readable(),
+                PollOpt::edge(),
+            )
+            .unwrap();
 
             Some(tcp_listener)
         } else {
@@ -145,11 +158,6 @@ impl Server {
         &self.responder_rfc.get_public_key()
     }
 
-    /// Returns a reference to the server's on-line (delegated) key
-    pub fn get_online_key(&self) -> &OnlineKey {
-        &self.responder_rfc.get_online_key()
-    }
-
     #[cfg(fuzzing)]
     pub fn send_to_self(&mut self, data: &[u8]) {
         let res = self
@@ -173,10 +181,6 @@ impl Server {
                     self.responder_classic.reset();
 
                     let socket_now_empty = self.collect_requests();
-
-                    if self.responder_rfc.is_empty() && self.responder_classic.is_empty() {
-                        break;
-                    }
 
                     self.responder_rfc.send_responses(&mut self.socket);
                     self.responder_classic.send_responses(&mut self.socket);
@@ -295,5 +299,4 @@ impl Server {
 
         self.timer.set_timeout(self.status_interval, ());
     }
-
 }

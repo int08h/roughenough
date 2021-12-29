@@ -50,11 +50,17 @@ pub enum Error {
     /// Otherwise invalid request
     InvalidRequest,
 
+    /// Otherwise invalid response
+    InvalidResponse,
+
     /// Runtime configuration is invalid for the reason provided
     InvalidConfiguration(String),
 
     /// The message length reported by the frame length != the actual message payload length
-    LengthMismatch(u32, u32)
+    LengthMismatch(u32, u32),
+
+    /// Request did not provide versions compatible with this implementation
+    NoCompatibleVersion,
 }
 
 impl From<std::io::Error> for Error {
