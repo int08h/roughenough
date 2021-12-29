@@ -144,7 +144,7 @@ impl Responder {
 
         if self.version == Version::Rfc {
             response
-                .add_field(Tag::VER, &[0x01, 0x00, 0x00, 0x00])
+                .add_field(Tag::VER, self.version.wire_bytes())
                 .unwrap();
         }
 
