@@ -54,12 +54,6 @@ impl MerkleTree {
     }
 
     pub fn push_leaf(&mut self, data: &[u8]) {
-        assert_eq!(
-            data.len(),
-            self.algorithm.output_len,
-            "nonce vs hash length inconsistency"
-        );
-
         let hash = self.hash_leaf(data);
         self.levels[0].push(hash);
     }
