@@ -50,7 +50,6 @@ impl Responder {
         let merkle = if version == Version::Classic {
             MerkleTree::new_sha512()
         } else {
-            // MerkleTree::new_sha512_256()
             MerkleTree::new_sha512_256()
         };
 
