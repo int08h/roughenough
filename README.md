@@ -4,7 +4,7 @@
 [![Build Status](https://img.shields.io/travis/int08h/roughenough/master.svg?style=flat-square)](https://travis-ci.org/int08h/roughenough)
 [![Apache License 2](https://img.shields.io/badge/license-ASF2-blue.svg?style=flat-square)](https://www.apache.org/licenses/LICENSE-2.0.txt)
 
-**Roughenough** is a [Roughtime](https://roughtime.googlesource.com/roughtime) secure time 
+**Roughenough** is an RFC-draft compliant [Roughtime](https://roughtime.googlesource.com/roughtime) secure time 
 synchronization client and server implementation in Rust. 
 
 Roughenough's server and client are functionally complete and 
@@ -12,6 +12,32 @@ at feature parity with the reference C++ and Golang implementations.
 
 Requires latest stable Rust to compile. Contributions welcome, see
 [CONTRIBUTING](../master/CONTRIBUTING.md) for instructions and [limitations](#limitations) for areas that could use attention.
+
+## RFC Work-In-Progress
+
+Roughenough implements the Roughtime protocol as specified in [the draft-5 RFC](https://www.ietf.org/archive/id/draft-ietf-ntp-roughtime-05.html).
+  
+**Important differences from the draft RFC**
+1. Roughenough uses SHA-512/256 to compute the Merkle tree. Draft-5 of the RFC uses a
+   bespoke 32-byte SHA-512 prefix without rationale or justification. Given that  
+   standardized 32-byte SHA-512/256 exists and is already implemented widely, I'm 
+   sticking with it while I advocate for the RFC to move away from the custom prefix
+   and adopt SHA-512/256.
+2. The server and client send/expect RFC protocol version `1` (VER tag is `0x00000001`) 
+   instead of the draft's suggested `0x80000000 + version`.
+
+The Roughenough server operates both the "classic" protocol **and** the RFC compliant 
+protocol at the same time on a single serving port (the 8-byte magic frame value added 
+by the RFC is used to distinguish classic vs. rfc requests).
+
+The new `-p/--protocol` flag of `roughenough-client` controls the protocol version to
+use in requests (`0` = classic protocol, `1` = RFC protocol). The default is `0` the
+"classic" protocol, until the RFC is finalized:
+
+```
+# send RFC protocol Roughtime requests
+$ roughenough-client -p 1 roughtime.int08h.com 2002
+```
 
 ## Links
 * [Roughenough Github repo](https://github.com/int08h/roughenough)

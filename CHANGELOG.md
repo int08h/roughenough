@@ -1,3 +1,30 @@
+## Version 1.2.0
+* Roughenough (mostly) implements the Roughtime protocol as specified in [the draft-5 RFC](https://www.ietf.org/archive/id/draft-ietf-ntp-roughtime-05.html).
+  
+  **Important differences from the draft RFC**
+  1. Roughenough uses SHA-512/256 to compute the Merkle tree. Draft-5 of the RFC uses a
+     bespoke 32-byte SHA-512 prefix without rationale or justification. Given that  
+     standardized 32-byte SHA-512/256 exists and is already implemented widely, I'm 
+     sticking with it while I advocate for the RFC to move away from the custom prefix
+     and adopt SHA-512/256.
+  2. The server and client send/expect RFC protocol version `1` (VER tag is `0x00000001`) 
+     instead of the draft's suggested `0x80000000 + version`.
+
+* The Roughenough server operates both the "classic" protocol **and** the RFC compliant 
+  protocol at the same time on a single serving port (the 8-byte magic frame value added 
+  by the RFC is used to distinguish classic vs. rfc requests).
+
+  The new `-p/--protocol` flag of `roughenough-client` controls the protocol version to
+  use in requests (`0` = classic protocol, `1` = RFC protocol). The default is `0` the
+  "classic" protocol, until the RFC is finalized:
+
+  ```
+  # send RFC protocol Roughtime requests
+  $ roughenough-client -p 1 roughtime.int08h.com 2002
+  ```
+* Added `-d/--dump` to `roughenough-client` that will pretty-print text representations 
+  of the messages it sends and receives.
+
 ## Version 1.1.9
 
 Housekeeping:
