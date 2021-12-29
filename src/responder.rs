@@ -27,6 +27,7 @@ use crate::config::ServerConfig;
 use crate::grease::Grease;
 use crate::key::{LongTermKey, OnlineKey};
 use crate::merkle::MerkleTree;
+use crate::stats::ServerStats;
 use crate::version::Version;
 
 pub struct Responder {
@@ -82,7 +83,7 @@ impl Responder {
     }
 
     /// Send responses for all queued requests
-    pub fn send_responses(&mut self, socket: &mut UdpSocket) {
+    pub fn send_responses(&mut self, socket: &mut UdpSocket, stats: &mut Box<dyn ServerStats>) {
         if self.is_empty() {
             return;
         }
@@ -120,6 +121,11 @@ impl Responder {
                 hex::encode(&nonce[0..4]),
                 idx + 1,
             );
+
+            match self.version  {
+                Version::Classic => stats.add_classic_response(&src_addr.ip(), bytes_sent) ,
+                Version::Rfc => stats.add_rfc_response(&src_addr.ip(), bytes_sent),
+            }
         }
     }
 
