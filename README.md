@@ -19,7 +19,7 @@ Roughenough implements the Roughtime protocol as specified in [the draft-5 RFC](
   
 **Important differences from the draft RFC**
 1. Roughenough uses SHA-512/256 to compute the Merkle tree. Draft-5 of the RFC uses a
-   bespoke 32-byte SHA-512 prefix without rationale or justification. Given that  
+   bespoke 32-byte SHA-512 prefix without rationale or justification. Given that 
    standardized 32-byte SHA-512/256 exists and is already implemented widely, I'm 
    sticking with it while I advocate for the RFC to move away from the custom prefix
    and adopt SHA-512/256.
