@@ -98,15 +98,12 @@ fn make_request(ver: Version, nonce: &Nonce, text_dump: bool) -> Vec<u8> {
     }
 }
 
-fn receive_response(ver: Version, sock: &mut UdpSocket) -> RtMessage {
-    let mut buf = [0; 4096];
-    let resp_len = sock.recv_from(&mut buf).unwrap().0;
-
+fn receive_response(ver: Version, buf: &[u8], buf_len: usize) -> RtMessage {
     match ver {
-        Version::Classic => RtMessage::from_bytes(&buf[0..resp_len]).unwrap(),
+        Version::Classic => RtMessage::from_bytes(&buf[0..buf_len]).unwrap(),
         Version::Rfc => {
             verify_framing(&buf).unwrap();
-            RtMessage::from_bytes(&buf[12..resp_len]).unwrap()
+            RtMessage::from_bytes(&buf[12..buf_len]).unwrap()
         }
     }
 }
@@ -345,11 +342,17 @@ fn main() {
             .long("stress")
             .help("Stress test the server by sending the same request as fast as possible. Please only use this on your own server.")
         )
-        .arg(Arg::with_name("output")
+        .arg(Arg::with_name("output-requests")
             .short("o")
-            .long("output")
+            .long("output-requests")
             .takes_value(true)
             .help("Writes all requests to the specified file, in addition to sending them to the server. Useful for generating fuzzer inputs.")
+        )
+        .arg(Arg::with_name("output-responses")
+            .short("O")
+            .long("output-responses")
+            .takes_value(true)
+            .help("Writes all server responses to the specified file, in addition to processing them. Useful for generating fuzzer inputs.")
         )
         .arg(Arg::with_name("protocol")
             .short("p")
@@ -376,7 +379,8 @@ fn main() {
     let pub_key = matches
         .value_of("public-key")
         .map(|pkey| hex::decode(pkey).expect("Error parsing public key!"));
-    let out = matches.value_of("output");
+    let output_requests = matches.value_of("output-requests");
+    let output_responses = matches.value_of("output-responses");
     let protocol = value_t_or_exit!(matches.value_of("protocol"), u8);
     let use_utc = matches.is_present("zulu");
 
@@ -397,14 +401,15 @@ fn main() {
     }
 
     let mut requests = Vec::with_capacity(num_requests);
-    let mut file = out.map(|o| File::create(o).expect("Failed to create file!"));
+    let mut file_for_requests = output_requests.map(|o| File::create(o).expect("Failed to create file!"));
+    let mut file_for_responses = output_responses.map(|o| File::create(o).expect("Failed to create file!"));
 
     for _ in 0..num_requests {
         let nonce = create_nonce(version);
         let socket = UdpSocket::bind("0.0.0.0:0").expect("Couldn't open UDP socket");
         let request = make_request(version, &nonce, text_dump);
 
-        if let Some(f) = file.as_mut() {
+        if let Some(f) = file_for_requests.as_mut() {
             f.write_all(&request).expect("Failed to write to file!")
         }
 
@@ -415,8 +420,15 @@ fn main() {
         socket.send_to(request, addr).unwrap();
     }
 
-    for (nonce, _, mut socket) in requests {
-        let resp = receive_response(version, &mut socket);
+    for (nonce, _, socket) in requests {
+        let mut buf = [0u8; 4096];
+        let resp_len = socket.recv_from(&mut buf).unwrap().0;
+
+        if let Some(f) = file_for_responses.as_mut() {
+            f.write_all(&buf[0..resp_len]).expect("Failed to write to file!")
+        }
+
+        let resp = receive_response(version, &buf, resp_len);
 
         if text_dump {
             eprintln!("Response = {}", resp);
