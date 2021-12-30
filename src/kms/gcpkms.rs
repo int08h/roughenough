@@ -14,19 +14,19 @@
 
 #[cfg(feature = "gcpkms")]
 pub mod inner {
-    extern crate base64;
     extern crate futures;
     extern crate google_cloudkms1 as cloudkms1;
     extern crate hyper;
     extern crate hyper_rustls;
-    extern crate yup_oauth2 as oauth2;
     extern crate tokio;
+    extern crate yup_oauth2 as oauth2;
 
     use std::default::Default;
     use std::env;
     use std::path::Path;
     use std::result::Result;
 
+    use data_encoding::BASE64;
     use tokio::runtime::Runtime;
 
     use crate::kms::{AD, EncryptedDEK, KmsError, KmsProvider, PlaintextDEK};
@@ -88,8 +88,8 @@ pub mod inner {
     impl KmsProvider for GcpKms {
         fn encrypt_dek(&self, plaintext_dek: &PlaintextDEK) -> Result<EncryptedDEK, KmsError> {
             let mut request = EncryptRequest::default();
-            request.plaintext = Some(base64::encode(plaintext_dek));
-            request.additional_authenticated_data = Some(base64::encode(AD));
+            request.plaintext = Some(BASE64.encode(plaintext_dek));
+            request.additional_authenticated_data = Some(BASE64.encode(AD.as_bytes()));
 
             let hub = self.new_hub();
             let result = self.runtime.block_on(async {
@@ -103,7 +103,7 @@ pub mod inner {
                 Ok((http_resp, enc_resp)) => {
                     if http_resp.status() == StatusCode::OK {
                         let ciphertext = enc_resp.ciphertext.unwrap();
-                        let ct = base64::decode(&ciphertext)?;
+                        let ct = BASE64.decode(ciphertext.as_bytes())?;
                         Ok(ct)
                     } else {
                         Err(self.pretty_http_error(&http_resp))
@@ -115,8 +115,8 @@ pub mod inner {
 
         fn decrypt_dek(&self, encrypted_dek: &EncryptedDEK) -> Result<PlaintextDEK, KmsError> {
             let mut request = DecryptRequest::default();
-            request.ciphertext = Some(base64::encode(encrypted_dek));
-            request.additional_authenticated_data = Some(base64::encode(AD));
+            request.ciphertext = Some(BASE64.encode(encrypted_dek));
+            request.additional_authenticated_data = Some(BASE64.encode(AD.as_bytes()));
 
             let hub = self.new_hub();
             let result = self.runtime.block_on(async {
@@ -130,7 +130,7 @@ pub mod inner {
                 Ok((http_resp, enc_resp)) => {
                     if http_resp.status() == StatusCode::OK {
                         let plaintext = enc_resp.plaintext.unwrap();
-                        let ct = base64::decode(&plaintext)?;
+                        let ct = BASE64.decode(plaintext.as_bytes())?;
                         Ok(ct)
                     } else {
                         Err(self.pretty_http_error(&http_resp))

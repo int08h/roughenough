@@ -15,10 +15,14 @@
 use std::env;
 use std::time::Duration;
 
+use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
+
 use crate::config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
 use crate::config::ServerConfig;
 use crate::Error;
 use crate::key::KmsProtection;
+
+const HEX: Encoding = HEXLOWER_PERMISSIVE;
 
 ///
 /// Obtain a Roughenough server configuration ([ServerConfig](trait.ServerConfig.html))
@@ -83,8 +87,9 @@ impl EnvironmentConfig {
         };
 
         if let Ok(seed) = env::var(ROUGHENOUGH_SEED) {
-            cfg.seed =
-                hex::decode(&seed).expect("invalid seed value; 'seed' should be a hex value");
+            cfg.seed = HEX
+                .decode(seed.as_bytes())
+                .expect("invalid seed value; 'seed' should be a hex value");
         };
 
         if let Ok(batch_size) = env::var(ROUGHENOUGH_BATCH_SIZE) {

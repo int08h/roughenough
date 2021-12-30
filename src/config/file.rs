@@ -16,12 +16,15 @@ use std::fs::File;
 use std::io::Read;
 use std::time::Duration;
 
+use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
 use yaml_rust::YamlLoader;
 
 use crate::config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
 use crate::config::ServerConfig;
 use crate::Error;
 use crate::key::KmsProtection;
+
+const HEX: Encoding = HEXLOWER_PERMISSIVE;
 
 ///
 /// Read a Roughenough server configuration ([ServerConfig](trait.ServerConfig.html))
@@ -86,7 +89,8 @@ impl FileConfig {
                 "batch_size" => config.batch_size = value.as_i64().unwrap() as u8,
                 "seed" => {
                     let val = value.as_str().unwrap().to_string();
-                    config.seed = hex::decode(val)
+                    config.seed = HEX
+                        .decode(val.as_bytes())
                         .expect("seed value invalid; 'seed' must be a valid hex value");
                 }
                 "status_interval" => {

@@ -14,11 +14,13 @@
 
 use std::time::Duration;
 
-use hex;
+use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
 
 use crate::config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
 use crate::config::ServerConfig;
 use crate::key::KmsProtection;
+
+const HEX: Encoding = HEXLOWER_PERMISSIVE;
 
 /// A purely in-memory Roughenough config for testing purposes.
 ///
@@ -37,11 +39,11 @@ pub struct MemoryConfig {
 
 impl MemoryConfig {
     pub fn new(port: u16) -> Self {
+        let seed = b"a32049da0ffde0ded92ce10a0230d35fe615ec8461c14986baa63fe3b3bac3db";
         MemoryConfig {
             port,
             interface: "127.0.0.1".to_string(),
-            seed: hex::decode("a32049da0ffde0ded92ce10a0230d35fe615ec8461c14986baa63fe3b3bac3db")
-                .unwrap(),
+            seed: HEX.decode(seed).unwrap(),
             batch_size: DEFAULT_BATCH_SIZE,
             status_interval: DEFAULT_STATUS_INTERVAL,
             kms_protection: KmsProtection::Plaintext,

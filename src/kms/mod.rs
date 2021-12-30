@@ -55,7 +55,7 @@
 
 use std;
 
-use base64;
+use data_encoding;
 use ring;
 
 use crate::config::ServerConfig;
@@ -91,8 +91,8 @@ impl From<ring::error::Unspecified> for KmsError {
     }
 }
 
-impl From<base64::DecodeError> for KmsError {
-    fn from(error: base64::DecodeError) -> Self {
+impl From<data_encoding::DecodeError> for KmsError {
+    fn from(error: data_encoding::DecodeError) -> Self {
         KmsError::OperationFailed(format!("base64: {}", error))
     }
 }

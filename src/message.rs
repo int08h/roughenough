@@ -20,10 +20,13 @@ use std::iter::once;
 use std::string::String;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
 
 use crate::error::Error;
 use crate::RFC_REQUEST_FRAME_BYTES;
 use crate::tag::Tag;
+
+const HEX: Encoding = HEXLOWER_PERMISSIVE;
 
 ///
 /// A Roughtime protocol message; a map of u32 tags to arbitrary byte-strings.
@@ -335,7 +338,7 @@ impl RtMessage {
                 let nested_msg = RtMessage::from_bytes(value).unwrap();
                 result.push_str(&nested_msg.to_string(indent_level + 1))
             } else {
-                result.push_str(&hex::encode(value));
+                result.push_str(&HEX.encode(value));
                 result.push_str("\n");
             }
         }

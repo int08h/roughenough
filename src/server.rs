@@ -182,8 +182,10 @@ impl Server {
 
                     let socket_now_empty = self.collect_requests();
 
-                    self.responder_rfc.send_responses(&mut self.socket, &mut self.stats);
-                    self.responder_classic.send_responses(&mut self.socket, &mut self.stats);
+                    self.responder_rfc
+                        .send_responses(&mut self.socket, &mut self.stats);
+                    self.responder_classic
+                        .send_responses(&mut self.socket, &mut self.stats);
 
                     if socket_now_empty {
                         break;

@@ -21,12 +21,15 @@
 extern crate log;
 
 use clap::{App, Arg};
+use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
 use log::LevelFilter;
 use simple_logger::SimpleLogger;
 
 #[allow(unused_imports)]
 use roughenough::kms::{EnvelopeEncryption, KmsProvider};
 use roughenough::roughenough_version;
+
+const HEX: Encoding = HEXLOWER_PERMISSIVE;
 
 #[cfg(not(any(feature = "awskms", feature = "gcpkms")))]
 fn encrypt_seed(_: &str, _: &str) {
@@ -38,7 +41,7 @@ fn encrypt_seed(_: &str, _: &str) {
 fn encrypt_seed(kms_key: &str, hex_seed: &str) {
     let kms_client = get_kms(kms_key);
 
-    let plaintext_seed = hex::decode(hex_seed).expect("Error decoding hex seed value");
+    let plaintext_seed = HEX.decode(hex_seed.as_ref()).expect("Error decoding hex seed value");
 
     if plaintext_seed.len() != 32 {
         panic!(
@@ -50,7 +53,7 @@ fn encrypt_seed(kms_key: &str, hex_seed: &str) {
     match EnvelopeEncryption::encrypt_seed(&kms_client, &plaintext_seed) {
         Ok(encrypted_blob) => {
             println!("kms_protection: \"{}\"", kms_key);
-            println!("seed: {}", hex::encode(&encrypted_blob));
+            println!("seed: {}", HEX.encode(&encrypted_blob));
         }
         Err(e) => {
             error!("Error: {:?}", e);
@@ -67,11 +70,11 @@ fn decrypt_blob(_: &str, _: &str) {
 #[cfg(any(feature = "awskms", feature = "gcpkms"))]
 fn decrypt_blob(kms_key: &str, hex_blob: &str) {
     let kms_client = get_kms(kms_key);
-    let ciphertext = hex::decode(hex_blob).expect("Error decoding hex blob value");
+    let ciphertext = HEX.decode(hex_blob.as_ref()).expect("Error decoding hex blob value");
 
     match EnvelopeEncryption::decrypt_seed(&kms_client, ciphertext.as_ref()) {
         Ok(plaintext) => {
-            println!("{}", hex::encode(plaintext));
+            println!("{}", HEX.encode(&plaintext));
         }
         Err(e) => {
             error!("Error: {:?}", e);

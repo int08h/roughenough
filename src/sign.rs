@@ -19,9 +19,12 @@
 use std::fmt;
 use std::fmt::Formatter;
 
+use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
 use ring::rand;
 use ring::rand::SecureRandom;
 use ring::signature::{self, Ed25519KeyPair, KeyPair};
+
+const HEX: Encoding = HEXLOWER_PERMISSIVE;
 
 const INITIAL_BUF_SIZE: usize = 1024;
 
@@ -102,7 +105,7 @@ impl Signer {
 
 impl fmt::Display for Signer {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}", hex::encode(self.public_key_bytes()))
+        write!(f, "{}", HEX.encode(self.public_key_bytes()))
     }
 }
 
@@ -111,7 +114,7 @@ impl fmt::Debug for Signer {
         write!(
             f,
             "Signer({}, {:?})",
-            hex::encode(self.public_key_bytes()),
+            HEX.encode(self.public_key_bytes()),
             self.buf
         )
     }

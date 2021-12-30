@@ -20,6 +20,7 @@ use std::net::SocketAddr;
 use std::time::SystemTime;
 
 use byteorder::{LittleEndian, WriteBytesExt};
+use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
 use mio::net::UdpSocket;
 
 use crate::{RtMessage, Tag};
@@ -29,6 +30,8 @@ use crate::key::{LongTermKey, OnlineKey};
 use crate::merkle::MerkleTree;
 use crate::stats::ServerStats;
 use crate::version::Version;
+
+const HEX: Encoding = HEXLOWER_PERMISSIVE;
 
 pub struct Responder {
     version: Version,
@@ -44,7 +47,7 @@ impl Responder {
     pub fn new(version: Version, config: &dyn ServerConfig, ltk: &mut LongTermKey) -> Responder {
         let online_key = OnlineKey::new();
         let cert_bytes = ltk.make_cert(&online_key).encode().expect("make_cert");
-        let long_term_public_key = hex::encode(ltk.public_key());
+        let long_term_public_key = HEX.encode(ltk.public_key());
         let requests = Vec::with_capacity(config.batch_size() as usize);
         let grease = Grease::new(config.fault_percentage());
 
@@ -118,12 +121,12 @@ impl Responder {
                 self.version,
                 bytes_sent,
                 src_addr,
-                hex::encode(&nonce[0..4]),
+                HEX.encode(&nonce[0..4]),
                 idx + 1,
             );
 
-            match self.version  {
-                Version::Classic => stats.add_classic_response(&src_addr.ip(), bytes_sent) ,
+            match self.version {
+                Version::Classic => stats.add_classic_response(&src_addr.ip(), bytes_sent),
                 Version::Rfc => stats.add_rfc_response(&src_addr.ip(), bytes_sent),
             }
         }

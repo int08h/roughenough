@@ -26,6 +26,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use chrono::{Local, TimeZone};
 use chrono::offset::Utc;
 use clap::{App, Arg};
+use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
 use ring::rand;
 use ring::rand::SecureRandom;
 
@@ -36,6 +37,8 @@ use roughenough::{
 use roughenough::merkle::MerkleTree;
 use roughenough::sign::Verifier;
 use roughenough::version::Version;
+
+const HEX: Encoding = HEXLOWER_PERMISSIVE;
 
 type Nonce = Vec<u8>;
 
@@ -376,9 +379,10 @@ fn main() {
     let num_requests = value_t_or_exit!(matches.value_of("num-requests"), u16) as usize;
     let time_format = matches.value_of("time-format").unwrap();
     let stress = matches.is_present("stress");
-    let pub_key = matches
-        .value_of("public-key")
-        .map(|pkey| hex::decode(pkey).expect("Error parsing public key!"));
+    let pub_key = matches.value_of("public-key").map(|pkey| {
+        HEX.decode(pkey.as_ref())
+            .expect("Error parsing public key!")
+    });
     let output_requests = matches.value_of("output-requests");
     let output_responses = matches.value_of("output-responses");
     let protocol = value_t_or_exit!(matches.value_of("protocol"), u8);
@@ -401,8 +405,10 @@ fn main() {
     }
 
     let mut requests = Vec::with_capacity(num_requests);
-    let mut file_for_requests = output_requests.map(|o| File::create(o).expect("Failed to create file!"));
-    let mut file_for_responses = output_responses.map(|o| File::create(o).expect("Failed to create file!"));
+    let mut file_for_requests =
+        output_requests.map(|o| File::create(o).expect("Failed to create file!"));
+    let mut file_for_responses =
+        output_responses.map(|o| File::create(o).expect("Failed to create file!"));
 
     for _ in 0..num_requests {
         let nonce = create_nonce(version);
@@ -425,7 +431,8 @@ fn main() {
         let resp_len = socket.recv_from(&mut buf).unwrap().0;
 
         if let Some(f) = file_for_responses.as_mut() {
-            f.write_all(&buf[0..resp_len]).expect("Failed to write to file!")
+            f.write_all(&buf[0..resp_len])
+                .expect("Failed to write to file!")
         }
 
         let resp = receive_response(version, &buf, resp_len);
