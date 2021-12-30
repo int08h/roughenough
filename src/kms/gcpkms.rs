@@ -20,17 +20,19 @@ pub mod inner {
     extern crate hyper;
     extern crate hyper_rustls;
     extern crate yup_oauth2 as oauth2;
+    extern crate tokio;
 
     use std::default::Default;
     use std::env;
     use std::path::Path;
     use std::result::Result;
 
+    use tokio::runtime::Runtime;
+
     use crate::kms::{AD, EncryptedDEK, KmsError, KmsProvider, PlaintextDEK};
 
     use self::cloudkms1::api::{DecryptRequest, EncryptRequest};
     use self::cloudkms1::CloudKMS;
-    use self::futures::executor::block_on;
     use self::hyper::{Body, StatusCode};
     use self::oauth2::ServiceAccountKey;
 
@@ -41,6 +43,7 @@ pub mod inner {
     pub struct GcpKms {
         key_resource_id: String,
         service_account: ServiceAccountKey,
+        runtime: Runtime,
     }
 
     impl GcpKms {
@@ -49,11 +52,16 @@ pub mod inner {
         /// `projects/*/locations/*/keyRings/*/cryptoKeys/*`
         ///
         pub fn from_resource_id(resource_id: &str) -> Result<Self, KmsError> {
-            let svc_acct = load_gcp_credential()?;
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?;
+
+            let svc_acct = load_gcp_credential(&rt)?;
 
             Ok(GcpKms {
                 key_resource_id: resource_id.to_string(),
                 service_account: svc_acct,
+                runtime: rt,
             })
         }
 
@@ -61,7 +69,7 @@ pub mod inner {
             let client =
                 hyper::Client::builder().build(hyper_rustls::HttpsConnector::with_native_roots());
 
-            let auth = block_on(async {
+            let auth = self.runtime.block_on(async {
                 oauth2::ServiceAccountAuthenticator::builder(self.service_account.clone())
                     .build()
                     .await
@@ -84,7 +92,7 @@ pub mod inner {
             request.additional_authenticated_data = Some(base64::encode(AD));
 
             let hub = self.new_hub();
-            let result = block_on(async {
+            let result = self.runtime.block_on(async {
                 hub.projects()
                     .locations_key_rings_crypto_keys_encrypt(request, &self.key_resource_id)
                     .doit()
@@ -111,7 +119,7 @@ pub mod inner {
             request.additional_authenticated_data = Some(base64::encode(AD));
 
             let hub = self.new_hub();
-            let result = block_on(async {
+            let result = self.runtime.block_on(async {
                 hub.projects()
                     .locations_key_rings_crypto_keys_decrypt(request, &self.key_resource_id)
                     .doit()
@@ -143,10 +151,10 @@ pub mod inner {
     /// TODO attempt to load GCE default credentials from metadata server.
     /// This will be a bearer token instead of service account credential.
 
-    fn load_gcp_credential() -> Result<ServiceAccountKey, KmsError> {
+    fn load_gcp_credential(runtime: &Runtime) -> Result<ServiceAccountKey, KmsError> {
         if let Ok(gac) = env::var(GOOGLE_APP_CREDS.to_string()) {
             return if Path::new(&gac).exists() {
-                match block_on(oauth2::read_service_account_key(&gac)) {
+                match runtime.block_on(oauth2::read_service_account_key(&gac)) {
                     Ok(svc_acct_key) => Ok(svc_acct_key),
                     Err(e) => Err(KmsError::InvalidConfiguration(format!(
                         "Can't load service account credential '{}': {:?}",
