@@ -85,6 +85,14 @@ You can use the `date` utility on Linux machines to set the system time to the t
 sudo date --utc --set "$(roughenough-client -z roughtime.int08h.com 2002)"
 ```
 
+### Setting The System Time on FreeBSD
+
+You can use the `date` utility on FreeBSD machines to set the system time to the time determined by the Roughenough client:
+
+```bash
+sudo date -u "$(roughenough-client -z roughtime.int08h.com 2002 -f %Y%m%d%H%M.%S)"
+```
+
 ### Validating Server Responses 
 
 Use the `-p` flag with the client to validate the server's response with its public key.
