@@ -381,7 +381,7 @@ fn main() {
     let stress = matches.is_present("stress");
     let pub_key = matches.value_of("public-key").map(|pkey| {
         HEX.decode(pkey.as_ref())
-            .or_else(|i| BASE64.decode(pkey.as_ref()))
+            .or_else(|_| BASE64.decode(pkey.as_ref()))
             .expect("Error parsing public key!")
     });
     let output_requests = matches.value_of("output-requests");
