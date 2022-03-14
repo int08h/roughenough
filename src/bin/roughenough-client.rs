@@ -26,7 +26,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use chrono::{Local, TimeZone};
 use chrono::offset::Utc;
 use clap::{App, Arg};
-use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
+use data_encoding::{Encoding, HEXLOWER_PERMISSIVE, BASE64};
 use ring::rand;
 use ring::rand::SecureRandom;
 
@@ -381,6 +381,7 @@ fn main() {
     let stress = matches.is_present("stress");
     let pub_key = matches.value_of("public-key").map(|pkey| {
         HEX.decode(pkey.as_ref())
+            .or_else(|i| BASE64.decode(pkey.as_ref()))
             .expect("Error parsing public key!")
     });
     let output_requests = matches.value_of("output-requests");
