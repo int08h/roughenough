@@ -24,6 +24,10 @@
   ```
 * Added `-d/--dump` to `roughenough-client` that will pretty-print text representations 
   of the messages it sends and receives.
+* Add support for IPv6 in `roughtime-client`. Contributed by @unrelentingtechn #28.
+* Document how to set the time on FreeBSD. By @unrelentingtech in #29
+* Support base64 encoded public keys in `roughtime-client`. Contributed by @lachesis
+  in #31. 
 
 ## Version 1.1.9
 
