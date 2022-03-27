@@ -139,7 +139,7 @@ fn stress_test_forever(ver: Version, addr: &SocketAddr) -> ! {
     println!("Stress testing!");
 
     let nonce = create_nonce(ver);
-    let socket = UdpSocket::bind("0.0.0.0:0").expect("Couldn't open UDP socket");
+    let socket = UdpSocket::bind(if addr.is_ipv6() { "[::]:0" } else { "0.0.0.0:0" }).expect("Couldn't open UDP socket");
     let request = make_request(ver, &nonce, false);
     loop {
         socket.send_to(&request, addr).unwrap();
@@ -412,7 +412,7 @@ fn main() {
 
     for _ in 0..num_requests {
         let nonce = create_nonce(version);
-        let socket = UdpSocket::bind("0.0.0.0:0").expect("Couldn't open UDP socket");
+        let socket = UdpSocket::bind(if addr.is_ipv6() { "[::]:0" } else { "0.0.0.0:0" }).expect("Couldn't open UDP socket");
         let request = make_request(version, &nonce, text_dump);
 
         if let Some(f) = file_for_requests.as_mut() {
