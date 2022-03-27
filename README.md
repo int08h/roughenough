@@ -233,6 +233,8 @@ created by Adam Langley and Robert Obryk.
 * Peter Todd (pete {at} petertodd.org)
 * Muncan90 (github.com/muncan90)
 * Zicklag (github.com/zicklag)
+* Greg at Unrelenting Tech (github.com/unrelentingtech)
+* Eric Swanson (github.com/lachesis)
 
 ## Copyright and License
 Roughenough is copyright (c) 2017-2021 int08h LLC. All rights reserved. 
