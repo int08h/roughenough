@@ -27,3 +27,5 @@ jobs:
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
+    - name: Aqua Security Trivy
+      uses: aquasecurity/trivy-action@0.2.2
