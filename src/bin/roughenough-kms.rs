@@ -29,6 +29,7 @@ use simple_logger::SimpleLogger;
 use roughenough::kms::{EnvelopeEncryption, KmsProvider};
 use roughenough::roughenough_version;
 
+#[allow(dead_code)]
 const HEX: Encoding = HEXLOWER_PERMISSIVE;
 
 #[cfg(not(any(feature = "awskms", feature = "gcpkms")))]
