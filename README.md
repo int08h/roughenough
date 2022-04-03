@@ -1,7 +1,7 @@
 # Roughenough 
 
 [![crates.io](https://img.shields.io/crates/v/roughenough.svg?style=flat-square)](https://crates.io/crates/roughenough)
-[![Build](https://github.com/int08h/roughenough/actions/workflows/rust.yml/badge.svg)](https://github.com/int08h/roughenough/actions/workflows/rust.yml)
+[![Build](https://github.com/int08h/roughenough/actions/workflows/rust.yml/badge.svg?branch=master)](https://github.com/int08h/roughenough/actions/workflows/rust.yml)
 [![Apache License 2](https://img.shields.io/badge/license-ASF2-blue.svg?style=flat-square)](https://www.apache.org/licenses/LICENSE-2.0.txt)
 
 **Roughenough** is an RFC-draft compliant [Roughtime](https://roughtime.googlesource.com/roughtime) secure time 
