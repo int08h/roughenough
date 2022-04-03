@@ -103,7 +103,7 @@ $ host -t TXT roughtime.int08h.com
 roughtime.int08h.com descriptive text "AW5uAoTSTDfG5NfY1bTh08GUnOqlRb+HVhbJ3ODJvsE="
 
 # Validate the server response using its public key
-$ target/release/roughenough-client -v roughtime.int08h.com 2002 -p "AW5uAoTSTDfG5NfY1bTh08GUnOqlRb+HVhbJ3ODJvsE="
+$ target/release/roughenough-client -v roughtime.int08h.com 2002 -k "AW5uAoTSTDfG5NfY1bTh08GUnOqlRb+HVhbJ3ODJvsE="
 Requesting time from: "roughtime.int08h.com":2002
 Received time from server: midpoint="Oct 26 2018 23:22:20", radius=1000000, verified=Yes (merkle_index=0)
 Oct 26 2018 23:22:20
