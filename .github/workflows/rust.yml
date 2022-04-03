@@ -16,7 +16,7 @@ jobs:
 
     strategy:
       matrix:
-        feature: ["", "gcpkms", "awskms"]
+        feature: ["default", "gcpkms", "awskms"]
     steps:
     - uses: actions/cache@v2
       with:
