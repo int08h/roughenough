@@ -1,4 +1,4 @@
-name: Rust
+name: Build
 
 on:
   push:
@@ -11,12 +11,11 @@ env:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     strategy:
       matrix:
         feature: ["default", "gcpkms", "awskms"]
+        toolchain: ["stable", "beta"]
     steps:
     - uses: actions/cache@v2
       with:
@@ -26,9 +25,15 @@ jobs:
           target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - uses: actions/checkout@v2
-    - name: Build
-      run: cargo build --verbose --features ${{ matrix.feature }}
-    - name: Run tests
-      run: cargo test --verbose --features ${{ matrix.feature }}
+    - name: Install Rust ${{ matrix.toolchain }} 
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: ${{ matrix.toolchain }}
+        override: true
+        profile: minimal
+    - name: Build using Rust ${{ matrix.toolchain }}
+      run: cargo build --verbose --features ${{ matrix.feature }} --release
+    - name: Run tests using Rust ${{ matrix.toolchain }}
+      run: cargo test --verbose --features ${{ matrix.feature }} --release
     - name: Aqua Security Trivy
       uses: aquasecurity/trivy-action@0.2.2
