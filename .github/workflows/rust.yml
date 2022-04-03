@@ -14,6 +14,9 @@ jobs:
 
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        feature: ["", "gcpkms", "awskms"]
     steps:
     - uses: actions/cache@v2
       with:
@@ -24,8 +27,8 @@ jobs:
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - uses: actions/checkout@v2
     - name: Build
-      run: cargo build --verbose
+      run: cargo build --verbose --features ${{ matrix.feature }}
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test --verbose --features ${{ matrix.feature }}
     - name: Aqua Security Trivy
       uses: aquasecurity/trivy-action@0.2.2
