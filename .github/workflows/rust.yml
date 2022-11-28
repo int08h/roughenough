@@ -35,5 +35,4 @@ jobs:
       run: cargo build --verbose --features ${{ matrix.feature }} --release
     - name: Run tests using Rust ${{ matrix.toolchain }}
       run: cargo test --verbose --features ${{ matrix.feature }} --release
-    - name: Aqua Security Trivy
-      uses: aquasecurity/trivy-action@0.2.2
+
