@@ -37,6 +37,7 @@ pub struct ClientStatEntry {
     pub rfc_responses_sent: u64,
     pub classic_responses_sent: u64,
     pub bytes_sent: usize,
+    pub failed_send_attempts: u64,
 }
 
 impl ClientStatEntry {
@@ -49,6 +50,7 @@ impl ClientStatEntry {
             rfc_responses_sent: 0,
             classic_responses_sent: 0,
             bytes_sent: 0,
+            failed_send_attempts: 0,
         }
     }
 }
@@ -62,6 +64,8 @@ pub trait ServerStats {
     fn add_classic_request(&mut self, addr: &IpAddr);
 
     fn add_invalid_request(&mut self, addr: &IpAddr);
+
+    fn add_failed_send_attempt(&mut self, addr: &IpAddr);
 
     fn add_health_check(&mut self, addr: &IpAddr);
 
@@ -78,6 +82,8 @@ pub trait ServerStats {
     fn total_invalid_requests(&self) -> u64;
 
     fn total_health_checks(&self) -> u64;
+
+    fn total_failed_send_attempts(&self) -> u64;
 
     fn total_responses_sent(&self) -> u64;
 
@@ -112,6 +118,7 @@ mod test {
         assert_eq!(stats.total_responses_sent(), 0);
         assert_eq!(stats.total_bytes_sent(), 0);
         assert_eq!(stats.total_unique_clients(), 0);
+        assert_eq!(stats.total_failed_send_attempts(), 0);
         assert_eq!(stats.num_overflows(), 0);
     }
 
@@ -146,6 +153,7 @@ mod test {
         stats.add_rfc_response(&ip, 2048);
         stats.add_classic_response(&ip, 1024);
         stats.add_classic_response(&ip, 1024);
+        stats.add_failed_send_attempt(&ip);
 
         let entry = stats.stats_for_client(&ip).unwrap();
         assert_eq!(entry.classic_requests, 1);
@@ -153,6 +161,7 @@ mod test {
         assert_eq!(entry.rfc_responses_sent, 1);
         assert_eq!(entry.classic_responses_sent, 2);
         assert_eq!(entry.bytes_sent, 4096);
+        assert_eq!(entry.failed_send_attempts, 1);
     }
 
     #[test]

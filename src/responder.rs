@@ -112,11 +112,14 @@ impl Responder {
                 Version::Rfc => resp_msg.encode_framed().unwrap(),
             };
 
-            let bytes_sent = socket
-                .send_to(&resp_bytes, &src_addr)
-                .expect("send_to failed");
+            let mut bytes_sent: usize = 0;
+            let mut successful_send: bool = true;
+            match socket.send_to(&resp_bytes, &src_addr) {
+                Ok(n_bytes) => bytes_sent = n_bytes,
+                Err(_) => successful_send = false,
+            }
 
-            info!(
+            debug!(
                 "Responded {} {} bytes to {} for '{}..' (#{} in batch)",
                 self.version,
                 bytes_sent,
@@ -125,9 +128,13 @@ impl Responder {
                 idx + 1,
             );
 
-            match self.version {
-                Version::Classic => stats.add_classic_response(&src_addr.ip(), bytes_sent),
-                Version::Rfc => stats.add_rfc_response(&src_addr.ip(), bytes_sent),
+            if successful_send {
+                match self.version {
+                    Version::Classic => stats.add_classic_response(&src_addr.ip(), bytes_sent),
+                    Version::Rfc => stats.add_rfc_response(&src_addr.ip(), bytes_sent),
+                }
+            } else {
+                stats.add_failed_send_attempt(&src_addr.ip());
             }
         }
     }

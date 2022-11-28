@@ -275,19 +275,20 @@ impl Server {
 
         for (addr, counts) in vec {
             info!(
-                "{:16}: {} classic req, {} rfc req; {} invalid requests; {} classic resp, {} rfc resp ({} sent)",
+                "{:16}: {} classic req, {} rfc req; {} invalid requests; {} classic resp, {} rfc resp ({} sent); {} failed sends",
                 format!("{}", addr),
                 counts.classic_requests,
                 counts.rfc_requests,
                 counts.invalid_requests,
                 counts.classic_responses_sent,
                 counts.rfc_responses_sent,
-                counts.bytes_sent.file_size(fsopts::BINARY).unwrap()
+                counts.bytes_sent.file_size(fsopts::BINARY).unwrap(),
+                counts.failed_send_attempts
             );
         }
 
         info!(
-            "Totals: {} unique clients; {} total req ({} classic req, {} rfc req); {} invalid requests; {} total resp ({} classic resp, {} rfc resp); {} sent",
+            "Totals: {} unique clients; {} total req ({} classic req, {} rfc req); {} invalid requests; {} total resp ({} classic resp, {} rfc resp); {} sent; {} failed sends",
             self.stats.total_unique_clients(),
             self.stats.total_valid_requests(),
             self.stats.num_classic_requests(),
@@ -296,7 +297,8 @@ impl Server {
             self.stats.total_responses_sent(),
             self.stats.num_classic_responses_sent(),
             self.stats.num_rfc_responses_sent(),
-            self.stats.total_bytes_sent().file_size(fsopts::BINARY) .unwrap()
+            self.stats.total_bytes_sent().file_size(fsopts::BINARY).unwrap(),
+            self.stats.total_failed_send_attempts()
         );
 
         self.timer.set_timeout(self.status_interval, ());

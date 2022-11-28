@@ -109,6 +109,16 @@ impl ServerStats for PerClientStats {
             .invalid_requests += 1;
     }
 
+    fn add_failed_send_attempt(&mut self, addr: &IpAddr) {
+        if self.too_many_entries() {
+            return;
+        }
+        self.clients
+            .entry(*addr)
+            .or_insert_with(ClientStatEntry::new)
+            .failed_send_attempts += 1;
+    }
+
     fn add_health_check(&mut self, addr: &IpAddr) {
         if self.too_many_entries() {
             return;
@@ -166,6 +176,10 @@ impl ServerStats for PerClientStats {
 
     fn total_health_checks(&self) -> u64 {
         self.clients.values().map(|&v| v.health_checks).sum()
+    }
+
+    fn total_failed_send_attempts(&self) -> u64 {
+        self.clients.values().map(|&v| v.failed_send_attempts).sum()
     }
 
     fn total_responses_sent(&self) -> u64 {
