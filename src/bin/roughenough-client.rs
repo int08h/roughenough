@@ -19,8 +19,10 @@ extern crate clap;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Cursor, Write};
+use std::io::ErrorKind::WouldBlock;
 use std::iter::Iterator;
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
+use std::time;
 
 use byteorder::{LittleEndian, ReadBytesExt};
 use chrono::{Local, TimeZone};
@@ -364,6 +366,13 @@ fn main() {
             .help("Roughtime protocol version to use (0 = classic, 1 = rfc)")
             .default_value("0")
         )
+        .arg(Arg::with_name("timeout")
+            .short("t")
+            .long("timeout")
+            .takes_value(true)
+            .help("Seconds to wait for server response")
+            .default_value("10")
+        )
         .arg(Arg::with_name("zulu")
             .short("z")
             .long("zulu")
@@ -377,6 +386,7 @@ fn main() {
     let text_dump = matches.is_present("dump");
     let json = matches.is_present("json");
     let num_requests = value_t_or_exit!(matches.value_of("num-requests"), u16) as usize;
+    let timeout_secs = value_t_or_exit!(matches.value_of("timeout"), u64);
     let time_format = matches.value_of("time-format").unwrap();
     let stress = matches.is_present("stress");
     let pub_key = matches.value_of("public-key").map(|pkey| {
@@ -428,8 +438,20 @@ fn main() {
     }
 
     for (nonce, _, socket) in requests {
+        let duration = time::Duration::from_secs(timeout_secs);
+        socket.set_read_timeout(Some(duration))
+            .expect("Failed setting send timeout");
+
         let mut buf = [0u8; 4096];
-        let resp_len = socket.recv_from(&mut buf).unwrap().0;
+
+        let resp_len = match socket.recv_from(&mut buf) {
+            Ok((resp_len, _)) => resp_len,
+            Err(e) if e.kind() == WouldBlock => {
+                eprintln!("Timeout waiting for response");
+                return;
+            }
+            Err(e) =>  panic!("{}", e),
+        };
 
         if let Some(f) = file_for_responses.as_mut() {
             f.write_all(&buf[0..resp_len])
