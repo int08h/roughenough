@@ -25,7 +25,6 @@ pub enum Tag {
     // 'NONC' is 0x434e4f4e.
     //
     // Tags are written here in ascending order
-    PAD_RFC,
     SIG,
     VER,
     DUT1,
@@ -43,7 +42,7 @@ pub enum Tag {
     CERT,
     MAXT,
     INDX,
-    PAD_CLASSIC,
+    ZZZZ,
 }
 
 impl Tag {
@@ -54,8 +53,6 @@ impl Tag {
     const BYTES_MIDP: &'static [u8] = b"MIDP";
     const BYTES_MINT: &'static [u8] = b"MINT";
     const BYTES_NONC: &'static [u8] = b"NONC";
-    const BYTES_PAD_CLASSIC: &'static [u8] = b"PAD\xff";
-    const BYTES_PAD_RFC: &'static [u8] = b"PAD\x00";
     const BYTES_PATH: &'static [u8] = b"PATH";
     const BYTES_PUBK: &'static [u8] = b"PUBK";
     const BYTES_RADI: &'static [u8] = b"RADI";
@@ -66,9 +63,10 @@ impl Tag {
     const BYTES_DUT1: &'static [u8] = b"DUT1";
     const BYTES_DTAI: &'static [u8] = b"DTAI";
     const BYTES_LEAP: &'static [u8] = b"LEAP";
+    const BYTES_ZZZZ: &'static [u8] = b"ZZZZ";
 
     /// Translates a tag into its on-the-wire representation
-    pub fn wire_value(self) -> &'static [u8] {
+    pub const fn wire_value(self) -> &'static [u8] {
         match self {
             Tag::CERT => Tag::BYTES_CERT,
             Tag::DELE => Tag::BYTES_DELE,
@@ -77,8 +75,6 @@ impl Tag {
             Tag::MIDP => Tag::BYTES_MIDP,
             Tag::MINT => Tag::BYTES_MINT,
             Tag::NONC => Tag::BYTES_NONC,
-            Tag::PAD_CLASSIC => Tag::BYTES_PAD_CLASSIC,
-            Tag::PAD_RFC => Tag::BYTES_PAD_RFC,
             Tag::PATH => Tag::BYTES_PATH,
             Tag::PUBK => Tag::BYTES_PUBK,
             Tag::RADI => Tag::BYTES_RADI,
@@ -89,6 +85,7 @@ impl Tag {
             Tag::DUT1 => Tag::BYTES_DUT1,
             Tag::DTAI => Tag::BYTES_DTAI,
             Tag::LEAP => Tag::BYTES_LEAP,
+            Tag::ZZZZ => Tag::BYTES_ZZZZ,
         }
     }
 
@@ -103,8 +100,6 @@ impl Tag {
             Tag::BYTES_MIDP => Ok(Tag::MIDP),
             Tag::BYTES_MINT => Ok(Tag::MINT),
             Tag::BYTES_NONC => Ok(Tag::NONC),
-            Tag::BYTES_PAD_CLASSIC => Ok(Tag::PAD_CLASSIC),
-            Tag::BYTES_PAD_RFC => Ok(Tag::PAD_RFC),
             Tag::BYTES_PATH => Ok(Tag::PATH),
             Tag::BYTES_PUBK => Ok(Tag::PUBK),
             Tag::BYTES_RADI => Ok(Tag::RADI),
@@ -115,6 +110,7 @@ impl Tag {
             Tag::BYTES_DUT1 => Ok(Tag::DUT1),
             Tag::BYTES_DTAI => Ok(Tag::DTAI),
             Tag::BYTES_LEAP => Ok(Tag::LEAP),
+            Tag::BYTES_ZZZZ => Ok(Tag::ZZZZ),
             _ => Err(Error::InvalidTag(Box::from(bytes))),
         }
     }
@@ -127,8 +123,6 @@ impl Tag {
     /// A short (non canonical) string representation of the tag
     fn to_string(&self) -> String {
         match self {
-            Tag::PAD_RFC => String::from("PAD00"),
-            Tag::PAD_CLASSIC => String::from("PADff"),
             Tag::SIG => String::from("SIG"),
             Tag::VER => String::from("VER"),
             _ => String::from_utf8(self.wire_value().to_vec()).unwrap(),

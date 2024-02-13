@@ -16,6 +16,7 @@ use std::collections::hash_map::Iter;
 use std::collections::HashMap;
 use std::net::IpAddr;
 
+use crate::Error;
 use crate::stats::ClientStatEntry;
 use crate::stats::ServerStats;
 
@@ -28,6 +29,7 @@ use crate::stats::ServerStats;
 ///
 pub struct PerClientStats {
     clients: HashMap<IpAddr, ClientStatEntry>,
+    errors: HashMap<Error, u64>,
     num_overflows: u64,
     max_clients: usize,
 }
@@ -38,14 +40,14 @@ impl Default for PerClientStats {
     }
 }
 
+/// Maximum number of entries to prevent DoS and unbounded memory growth.
 pub const MAX_CLIENTS: usize = 100_000;
 
 impl PerClientStats {
-    /// Maximum number of entries to prevent DoS and unbounded memory growth.
-
     pub fn new() -> Self {
         PerClientStats {
             clients: HashMap::with_capacity(MAX_CLIENTS),
+            errors: HashMap::new(),
             num_overflows: 0,
             max_clients: MAX_CLIENTS,
         }
@@ -56,6 +58,7 @@ impl PerClientStats {
     pub fn with_limit(limit: usize) -> Self {
         PerClientStats {
             clients: HashMap::with_capacity(64),
+            errors: HashMap::new(),
             num_overflows: 0,
             max_clients: limit,
         }
@@ -79,24 +82,14 @@ impl PerClientStats {
 }
 
 impl ServerStats for PerClientStats {
-    fn add_rfc_request(&mut self, addr: &IpAddr) {
+    fn add_request(&mut self, addr: &IpAddr) {
         if self.too_many_entries() {
             return;
         }
         self.clients
             .entry(*addr)
             .or_insert_with(ClientStatEntry::new)
-            .rfc_requests += 1;
-    }
-
-    fn add_classic_request(&mut self, addr: &IpAddr) {
-        if self.too_many_entries() {
-            return;
-        }
-        self.clients
-            .entry(*addr)
-            .or_insert_with(ClientStatEntry::new)
-            .classic_requests += 1;
+            .num_requests += 1;
     }
 
     fn add_invalid_request(&mut self, addr: &IpAddr) {
@@ -129,7 +122,7 @@ impl ServerStats for PerClientStats {
             .health_checks += 1;
     }
 
-    fn add_rfc_response(&mut self, addr: &IpAddr, bytes_sent: usize) {
+    fn add_response(&mut self, addr: &IpAddr, bytes_sent: usize) {
         if self.too_many_entries() {
             return;
         }
@@ -138,36 +131,26 @@ impl ServerStats for PerClientStats {
             .entry(*addr)
             .or_insert_with(ClientStatEntry::new);
 
-        entry.rfc_responses_sent += 1;
+        entry.responses_sent += 1;
         entry.bytes_sent += bytes_sent;
     }
 
-    fn add_classic_response(&mut self, addr: &IpAddr, bytes_sent: usize) {
-        if self.too_many_entries() {
-            return;
-        }
-        let entry = self
-            .clients
-            .entry(*addr)
-            .or_insert_with(ClientStatEntry::new);
-
-        entry.classic_responses_sent += 1;
-        entry.bytes_sent += bytes_sent;
+    fn add_error(&mut self, err: &Error) {
+        self.errors
+            .entry(err.clone())
+            .and_modify(|e| *e += 1)
+            .or_insert(1);
     }
 
     fn total_valid_requests(&self) -> u64 {
         self.clients
             .values()
-            .map(|&v| v.rfc_requests + v.classic_requests)
+            .map(|&v| v.num_requests)
             .sum()
     }
 
-    fn num_rfc_requests(&self) -> u64 {
-        self.clients.values().map(|&v| v.rfc_requests).sum()
-    }
-
-    fn num_classic_requests(&self) -> u64 {
-        self.clients.values().map(|&v| v.classic_requests).sum()
+    fn total_num_requests(&self) -> u64 {
+        self.clients.values().map(|&v| v.num_requests).sum()
     }
 
     fn total_invalid_requests(&self) -> u64 {
@@ -185,19 +168,12 @@ impl ServerStats for PerClientStats {
     fn total_responses_sent(&self) -> u64 {
         self.clients
             .values()
-            .map(|&v| v.rfc_responses_sent + v.classic_responses_sent)
+            .map(|&v| v.responses_sent)
             .sum()
     }
 
-    fn num_rfc_responses_sent(&self) -> u64 {
-        self.clients.values().map(|&v| v.rfc_responses_sent).sum()
-    }
-
-    fn num_classic_responses_sent(&self) -> u64 {
-        self.clients
-            .values()
-            .map(|&v| v.classic_responses_sent)
-            .sum()
+    fn num_responses_sent(&self) -> u64 {
+        self.clients.values().map(|&v| v.responses_sent).sum()
     }
 
     fn total_bytes_sent(&self) -> usize {

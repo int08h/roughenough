@@ -17,11 +17,10 @@
 //!
 
 use ring::digest;
-
 use super::{TREE_LEAF_TWEAK, TREE_NODE_TWEAK};
 
 type Data = Vec<u8>;
-type Hash = Data;
+type HashOutput = Vec<u8>;
 
 ///
 /// Merkle Tree implementation that uses the Roughtime leaf and node tweak values.
@@ -32,20 +31,10 @@ pub struct MerkleTree {
 }
 
 impl MerkleTree {
-    ///
-    /// Create a new empty Merkle Tree based on SHA-512/256
-    /// **TODO** lobby to have "SHA512[0:32] replaced with SHA-512/256"
-    ///
-    pub fn new_sha512_256() -> MerkleTree {
-        MerkleTree {
-            levels: vec![vec![]],
-            algorithm: &digest::SHA512_256,
-        }
-    }
+    /// Length in bytes of the Merkle tree output
+    pub const OUTPUT_LENGTH: usize = 32;
 
-    ///
     /// Create a new empty Merkle Tree based on SHA-512
-    ///
     pub fn new_sha512() -> MerkleTree {
         MerkleTree {
             levels: vec![vec![]],
@@ -72,7 +61,7 @@ impl MerkleTree {
         paths
     }
 
-    pub fn compute_root(&mut self) -> Hash {
+    pub fn compute_root(&mut self) -> HashOutput {
         assert!(
             !self.levels[0].is_empty(),
             "Must have at least one leaf to hash!"
@@ -105,7 +94,10 @@ impl MerkleTree {
         }
 
         assert_eq!(self.levels[level].len(), 1);
-        self.levels[level].pop().unwrap()
+
+        let mut root = self.levels[level].pop().unwrap();
+        root.truncate(Self::OUTPUT_LENGTH);
+        root
     }
 
     pub fn reset(&mut self) {
@@ -114,28 +106,31 @@ impl MerkleTree {
         }
     }
 
-    fn hash_leaf(&self, leaf: &[u8]) -> Data {
+    fn hash_leaf(&self, leaf: &[u8]) -> Vec<u8> {
         self.hash(&[TREE_LEAF_TWEAK, leaf])
     }
 
-    fn hash_nodes(&self, first: &[u8], second: &[u8]) -> Data {
+    fn hash_nodes(&self, first: &[u8], second: &[u8]) -> Vec<u8> {
         self.hash(&[TREE_NODE_TWEAK, first, second])
     }
 
-    fn hash(&self, to_hash: &[&[u8]]) -> Data {
+    fn hash(&self, to_hash: &[&[u8]]) -> Vec<u8> {
         let mut ctx = digest::Context::new(self.algorithm);
+
         for data in to_hash {
             ctx.update(data);
         }
-        Data::from(ctx.finish().as_ref())
+
+        ctx.finish().as_ref().to_vec()
     }
 
-    pub fn root_from_paths(&self, mut index: usize, data: &[u8], paths: &[u8]) -> Hash {
+    pub fn root_from_paths(&self, mut index: usize, data: &[u8], paths: &[u8]) -> HashOutput {
         let mut hash = {
             let mut ctx = digest::Context::new(self.algorithm);
             ctx.update(TREE_LEAF_TWEAK);
             ctx.update(data);
-            Hash::from(ctx.finish().as_ref())
+
+            ctx.finish().as_ref().to_vec()
         };
 
         assert_eq!(paths.len() % self.algorithm.output_len, 0);
@@ -154,10 +149,11 @@ impl MerkleTree {
                 ctx.update(&hash);
             }
 
-            hash = Hash::from(ctx.finish().as_ref());
+            hash = HashOutput::from(ctx.finish().as_ref());
             index >>= 1;
         }
 
+        hash.truncate(Self::OUTPUT_LENGTH);
         hash
     }
 }
@@ -167,20 +163,20 @@ mod test {
     use crate::merkle::*;
 
     fn test_paths_with_num(num: usize) {
-        for mut merkle_impl in [MerkleTree::new_sha512_256(), MerkleTree::new_sha512()] {
-            for i in 0..num {
-                merkle_impl.push_leaf(&[i as u8]);
-            }
+        let mut tree = MerkleTree::new_sha512();
 
-            let root = merkle_impl.compute_root();
+        for i in 0..num {
+            tree.push_leaf(&[i as u8]);
+        }
 
-            for i in 0..num {
-                println!("Testing {:?} {:?} {:?}", merkle_impl.algorithm, num, i);
-                let paths: Vec<u8> = merkle_impl.get_paths(i);
-                let computed_root = merkle_impl.root_from_paths(i, &[i as u8], &paths);
+        let root = tree.compute_root();
 
-                assert_eq!(root, computed_root);
-            }
+        for i in 0..num {
+            println!("Testing {:?} {:?} {:?}", tree.algorithm, num, i);
+            let paths: Vec<u8> = tree.get_paths(i);
+            let computed_root = tree.root_from_paths(i, &[i as u8], &paths);
+
+            assert_eq!(root, computed_root);
         }
     }
 
@@ -195,6 +191,7 @@ mod test {
     #[test]
     fn not_power_of_two() {
         test_paths_with_num(1);
+        test_paths_with_num(3);
         test_paths_with_num(20);
     }
 }

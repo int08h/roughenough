@@ -17,31 +17,22 @@ use std::fmt::{Display, Formatter};
 /// Version of the Roughtime protocol
 #[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Clone, Copy)]
 pub enum Version {
-    /// Original Google version from https://roughtime.googlesource.com/roughtime/+/HEAD/PROTOCOL.md
-    Classic,
-
     /// IETF standardized version
-    Rfc,
+    RfcDraft8
 }
 
 // RFC version 1
-const VERSION_1: &'static [u8] = &[0x01, 0x00, 0x00, 0x00];
+const RFC_DRAFT8: &'static [u8] = &[0x01, 0x00, 0x00, 0x00];
 
 impl Version {
     /// On-the-wire representation of the version value
-    pub fn wire_bytes(self) -> &'static [u8] {
-        match self {
-            Version::Classic => unreachable!("invalid, no version bytes for Classic"),
-            Version::Rfc => VERSION_1,
-        }
+    pub const fn wire_bytes(self) -> &'static [u8] {
+        RFC_DRAFT8
     }
 
     /// A short (non-canonical) string representation of the `Version`
     pub fn to_string(&self) -> String {
-        match self {
-            Version::Classic => String::from("Classic"),
-            Version::Rfc => String::from("Rfc"),
-        }
+        String::from("RfcDraft8")
     }
 }
 

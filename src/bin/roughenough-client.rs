@@ -31,90 +31,52 @@ use ring::rand;
 use ring::rand::SecureRandom;
 
 use roughenough::{
-    CERTIFICATE_CONTEXT, Error, RFC_REQUEST_FRAME_BYTES, roughenough_version, RtMessage, SIGNED_RESPONSE_CONTEXT,
-    Tag,
+    CERTIFICATE_CONTEXT, Error, REQUEST_FRAME_BYTES, roughenough_version, RtMessage,
+    SIGNED_RESPONSE_CONTEXT, Tag,
 };
 use roughenough::merkle::MerkleTree;
 use roughenough::sign::Verifier;
-use roughenough::version::Version;
+use roughenough::version::Version::RfcDraft8;
 
 const HEX: Encoding = HEXLOWER_PERMISSIVE;
 
 type Nonce = Vec<u8>;
 
-fn create_nonce(ver: Version) -> Nonce {
+fn create_nonce() -> Nonce {
     let rng = rand::SystemRandom::new();
-    match ver {
-        Version::Classic => {
-            let mut nonce = [0u8; 64];
-            rng.fill(&mut nonce).unwrap();
-            nonce.to_vec()
-        }
-        Version::Rfc => {
-            let mut nonce = [0u8; 32];
-            rng.fill(&mut nonce).unwrap();
-            nonce.to_vec()
-        }
-    }
+    let mut nonce = [0u8; 32];
+    rng.fill(&mut nonce).unwrap();
+    nonce.to_vec()
 }
 
-fn make_request(ver: Version, nonce: &Nonce, text_dump: bool) -> Vec<u8> {
+fn make_request(nonce: &Nonce, text_dump: bool) -> Vec<u8> {
     let mut msg = RtMessage::with_capacity(3);
 
-    match ver {
-        Version::Classic => {
-            msg.add_field(Tag::NONC, nonce).unwrap();
-            msg.add_field(Tag::PAD_CLASSIC, &[]).unwrap();
+    msg.add_field(Tag::VER, RfcDraft8.wire_bytes()).unwrap();
+    msg.add_field(Tag::NONC, nonce).unwrap();
 
-            let padding_needed = msg.calculate_padding_length();
-            let padding: Vec<u8> = (0..padding_needed).map(|_| 0).collect();
+    let padding_needed = msg.calculate_padding_length();
+    let padding: Vec<u8> = (0..padding_needed).map(|_| 0).collect();
 
-            msg.clear();
-            msg.add_field(Tag::NONC, nonce).unwrap();
-            msg.add_field(Tag::PAD_CLASSIC, &padding).unwrap();
+    msg.add_field(Tag::ZZZZ, &padding).unwrap();
 
-            if text_dump {
-                eprintln!("Request = {}", msg);
-            }
-
-            msg.encode().unwrap()
-        }
-        Version::Rfc => {
-            msg.add_field(Tag::PAD_RFC, &[]).unwrap();
-            msg.add_field(Tag::VER, ver.wire_bytes()).unwrap();
-            msg.add_field(Tag::NONC, nonce).unwrap();
-
-            let padding_needed = msg.calculate_padding_length();
-            let padding: Vec<u8> = (0..padding_needed).map(|_| 0).collect();
-
-            msg.clear();
-            msg.add_field(Tag::PAD_RFC, &padding).unwrap();
-            msg.add_field(Tag::VER, ver.wire_bytes()).unwrap();
-            msg.add_field(Tag::NONC, nonce).unwrap();
-
-            if text_dump {
-                eprintln!("Request = {}", msg);
-            }
-
-            msg.encode_framed().unwrap()
-        }
+    if text_dump {
+        eprintln!("Request = {}", msg);
     }
+
+    msg.encode_framed().unwrap()
 }
 
-fn receive_response(ver: Version, buf: &[u8], buf_len: usize) -> RtMessage {
-    match ver {
-        Version::Classic => RtMessage::from_bytes(&buf[0..buf_len]).unwrap(),
-        Version::Rfc => {
-            verify_framing(&buf).unwrap();
-            RtMessage::from_bytes(&buf[12..buf_len]).unwrap()
-        }
+fn receive_response(buf: &[u8], buf_len: usize) -> RtMessage {
+    match verify_framing(&buf) {
+        Ok(_) => RtMessage::from_bytes(&buf[12..buf_len]).unwrap(),
+        Err(err) => panic!("Invalid response: {:?}", err)
     }
 }
 
 fn verify_framing(buf: &[u8]) -> Result<(), Error> {
-    if &buf[0..8] != RFC_REQUEST_FRAME_BYTES {
-        eprintln!("RFC response is missing framing header bytes");
-        return Err(Error::InvalidResponse);
+    if &buf[0..8] != REQUEST_FRAME_BYTES {
+        return Err(Error::InvalidMessageFraming);
     }
 
     let mut cur = Cursor::new(&buf[8..12]);
@@ -128,7 +90,7 @@ fn verify_framing(buf: &[u8]) -> Result<(), Error> {
     Ok(())
 }
 
-fn stress_test_forever(ver: Version, addr: &SocketAddr) -> ! {
+fn stress_test_forever(addr: &SocketAddr) -> ! {
     if !addr.ip().is_loopback() {
         panic!(
             "Cannot use non-loopback address {} for stress testing",
@@ -138,9 +100,9 @@ fn stress_test_forever(ver: Version, addr: &SocketAddr) -> ! {
 
     println!("Stress testing!");
 
-    let nonce = create_nonce(ver);
+    let nonce = create_nonce();
     let socket = UdpSocket::bind(if addr.is_ipv6() { "[::]:0" } else { "0.0.0.0:0" }).expect("Couldn't open UDP socket");
-    let request = make_request(ver, &nonce, false);
+    let request = make_request(&nonce, false);
     loop {
         socket.send_to(&request, addr).unwrap();
     }
@@ -153,7 +115,6 @@ struct ResponseHandler {
     cert: HashMap<Tag, Vec<u8>>,
     dele: HashMap<Tag, Vec<u8>>,
     nonce: Nonce,
-    version: Version,
 }
 
 struct ParsedResponse {
@@ -164,7 +125,6 @@ struct ParsedResponse {
 
 impl ResponseHandler {
     pub fn new(
-        version: Version,
         pub_key: Option<Vec<u8>>,
         response: RtMessage,
         nonce: Nonce,
@@ -187,7 +147,6 @@ impl ResponseHandler {
             cert,
             dele,
             nonce,
-            version,
         }
     }
 
@@ -252,11 +211,8 @@ impl ResponseHandler {
             .unwrap();
         let paths = &self.msg[&Tag::PATH];
 
-        let hash = match self.version {
-            Version::Classic => MerkleTree::new_sha512(),
-            Version::Rfc => MerkleTree::new_sha512_256(),
-        }
-        .root_from_paths(index as usize, &self.nonce, paths);
+        let hash = MerkleTree::new_sha512()
+            .root_from_paths(index as usize, &self.nonce, paths);
 
         assert_eq!(
             hash,
@@ -357,13 +313,6 @@ fn main() {
             .takes_value(true)
             .help("Writes all server responses to the specified file, in addition to processing them. Useful for generating fuzzer inputs.")
         )
-        .arg(Arg::with_name("protocol")
-            .short("p")
-            .long("protocol")
-            .takes_value(true)
-            .help("Roughtime protocol version to use (0 = classic, 1 = rfc)")
-            .default_value("0")
-        )
         .arg(Arg::with_name("zulu")
             .short("z")
             .long("zulu")
@@ -386,23 +335,16 @@ fn main() {
     });
     let output_requests = matches.value_of("output-requests");
     let output_responses = matches.value_of("output-responses");
-    let protocol = value_t_or_exit!(matches.value_of("protocol"), u8);
     let use_utc = matches.is_present("zulu");
 
     if verbose {
         eprintln!("Requesting time from: {:?}:{:?}", host, port);
     }
 
-    let version = match protocol {
-        0 => Version::Classic,
-        1 => Version::Rfc,
-        _ => panic!("Invalid protocol '{}'; valid values are 0 or 1", protocol),
-    };
-
     let addr = (host, port).to_socket_addrs().unwrap().next().unwrap();
 
     if stress {
-        stress_test_forever(version, &addr)
+        stress_test_forever(&addr)
     }
 
     let mut requests = Vec::with_capacity(num_requests);
@@ -412,9 +354,9 @@ fn main() {
         output_responses.map(|o| File::create(o).expect("Failed to create file!"));
 
     for _ in 0..num_requests {
-        let nonce = create_nonce(version);
+        let nonce = create_nonce();
         let socket = UdpSocket::bind(if addr.is_ipv6() { "[::]:0" } else { "0.0.0.0:0" }).expect("Couldn't open UDP socket");
-        let request = make_request(version, &nonce, text_dump);
+        let request = make_request(&nonce, text_dump);
 
         if let Some(f) = file_for_requests.as_mut() {
             f.write_all(&request).expect("Failed to write to file!")
@@ -436,7 +378,7 @@ fn main() {
                 .expect("Failed to write to file!")
         }
 
-        let resp = receive_response(version, &buf, resp_len);
+        let resp = receive_response(&buf, resp_len);
 
         if text_dump {
             eprintln!("Response = {}", resp);
@@ -446,7 +388,7 @@ fn main() {
             verified,
             midpoint,
             radius,
-        } = ResponseHandler::new(version, pub_key.clone(), resp.clone(), nonce.clone())
+        } = ResponseHandler::new(pub_key.clone(), resp.clone(), nonce.clone())
             .extract_time();
 
         let map = resp.into_hash_map();

@@ -73,10 +73,9 @@ impl Grease {
     ///
     #[inline]
     pub fn should_add_error(&mut self) -> bool {
-        if self.enabled {
-            self.prng.sample(self.dist)
-        } else {
-            false
+        match self.enabled {
+            true => self.prng.sample(self.dist),
+            false => false
         }
     }
 
@@ -195,7 +194,7 @@ mod test {
             (Tag::CERT, [b'a']),
             (Tag::MAXT, [b'b']),
             (Tag::INDX, [b'c']),
-            (Tag::PAD_CLASSIC, [b'd']),
+            (Tag::ZZZZ, [b'd']),
         ];
 
         let mut msg = RtMessage::with_capacity(14);

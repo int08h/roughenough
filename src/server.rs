@@ -60,8 +60,7 @@ pub struct Server {
     status_interval: Duration,
     timer: Timer<()>,
     poll: Poll,
-    responder_rfc: Responder,
-    responder_classic: Responder,
+    responder: Responder,
     buf: [u8; 65_536],
 
     stats: Box<dyn ServerStats>,
@@ -128,9 +127,7 @@ impl Server {
             LongTermKey::new(&seed)
         };
 
-        let responder_rfc = Responder::new(Version::Rfc, config, &mut long_term_key);
-        let responder_classic = Responder::new(Version::Classic, config, &mut long_term_key);
-
+        let responder = Responder::new(Version::RfcDraft8, config, &mut long_term_key);
         let batch_size = config.batch_size();
         let status_interval = config.status_interval();
 
@@ -142,8 +139,7 @@ impl Server {
             status_interval,
             timer,
             poll,
-            responder_rfc,
-            responder_classic,
+            responder,
             buf: [0u8; 65_536],
 
             stats,
@@ -155,7 +151,7 @@ impl Server {
 
     /// Returns a reference to the server's long-term public key
     pub fn get_public_key(&self) -> &str {
-        &self.responder_rfc.get_public_key()
+        &self.responder.get_public_key()
     }
 
     #[cfg(fuzzing)]
@@ -177,14 +173,11 @@ impl Server {
         for msg in events.iter() {
             match msg.token() {
                 EVT_MESSAGE => loop {
-                    self.responder_rfc.reset();
-                    self.responder_classic.reset();
+                    self.responder.reset();
 
                     let socket_now_empty = self.collect_requests();
 
-                    self.responder_rfc
-                        .send_responses(&mut self.socket, &mut self.stats);
-                    self.responder_classic
+                    self.responder
                         .send_responses(&mut self.socket, &mut self.stats);
 
                     if socket_now_empty {
@@ -205,17 +198,13 @@ impl Server {
             match self.socket.recv_from(&mut self.buf) {
                 Ok((num_bytes, src_addr)) => {
                     match request::nonce_from_request(&self.buf, num_bytes) {
-                        Ok((nonce, Version::Rfc)) => {
-                            self.responder_rfc.add_request(nonce, src_addr);
-                            self.stats.add_rfc_request(&src_addr.ip());
-                        }
-                        Ok((nonce, Version::Classic)) => {
-                            self.responder_classic.add_request(nonce, src_addr);
-                            self.stats.add_classic_request(&src_addr.ip());
+                        Ok(nonce) => {
+                            self.responder.add_request(nonce, src_addr);
+                            self.stats.add_request(&src_addr.ip());
                         }
                         Err(e) => {
+                            self.stats.add_error(&e);
                             self.stats.add_invalid_request(&src_addr.ip());
-
                             info!(
                                 "Invalid request: '{:?}' ({} bytes) from {} (#{} in batch)",
                                 e, num_bytes, src_addr, i
@@ -268,35 +257,27 @@ impl Server {
         let mut vec: Vec<(&IpAddr, &ClientStatEntry)> = self.stats.iter().collect();
         // sort in descending order
         vec.sort_by(|lhs, rhs| {
-            let lhs_total = lhs.1.classic_requests + lhs.1.rfc_requests;
-            let rhs_total = rhs.1.classic_requests + rhs.1.rfc_requests;
-            rhs_total.cmp(&lhs_total)
+            rhs.1.num_requests.cmp(&lhs.1.num_requests)
         });
 
         for (addr, counts) in vec {
             info!(
-                "{:16}: {} classic req, {} rfc req; {} invalid requests; {} classic resp, {} rfc resp ({} sent); {} failed sends",
+                "{:16}: {} req; {} invalid requests; {} resp ({} sent); {} failed sends",
                 format!("{}", addr),
-                counts.classic_requests,
-                counts.rfc_requests,
+                counts.num_requests,
                 counts.invalid_requests,
-                counts.classic_responses_sent,
-                counts.rfc_responses_sent,
+                counts.responses_sent,
                 counts.bytes_sent.file_size(fsopts::BINARY).unwrap(),
                 counts.failed_send_attempts
             );
         }
 
         info!(
-            "Totals: {} unique clients; {} total req ({} classic req, {} rfc req); {} invalid requests; {} total resp ({} classic resp, {} rfc resp); {} sent; {} failed sends",
+            "Totals: {} unique clients; {} total req; {} invalid requests; {} total resp ({} sent); {} failed sends",
             self.stats.total_unique_clients(),
             self.stats.total_valid_requests(),
-            self.stats.num_classic_requests(),
-            self.stats.num_rfc_requests(),
             self.stats.total_invalid_requests(),
             self.stats.total_responses_sent(),
-            self.stats.num_classic_responses_sent(),
-            self.stats.num_rfc_responses_sent(),
             self.stats.total_bytes_sent().file_size(fsopts::BINARY).unwrap(),
             self.stats.total_failed_send_attempts()
         );

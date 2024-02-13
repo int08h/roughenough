@@ -50,12 +50,7 @@ impl Responder {
         let long_term_public_key = HEX.encode(ltk.public_key());
         let requests = Vec::with_capacity(config.batch_size() as usize);
         let grease = Grease::new(config.fault_percentage());
-
-        let merkle = if version == Version::Classic {
-            MerkleTree::new_sha512()
-        } else {
-            MerkleTree::new_sha512_256()
-        };
+        let merkle = MerkleTree::new_sha512();
 
         Responder {
             version,
@@ -107,11 +102,7 @@ impl Responder {
                 }
             };
 
-            let resp_bytes = match self.version {
-                Version::Classic => resp_msg.encode().unwrap(),
-                Version::Rfc => resp_msg.encode_framed().unwrap(),
-            };
-
+            let resp_bytes = resp_msg.encode_framed().unwrap();
             let mut bytes_sent: usize = 0;
             let mut successful_send: bool = true;
             match socket.send_to(&resp_bytes, &src_addr) {
@@ -129,10 +120,7 @@ impl Responder {
             );
 
             if successful_send {
-                match self.version {
-                    Version::Classic => stats.add_classic_response(&src_addr.ip(), bytes_sent),
-                    Version::Rfc => stats.add_rfc_response(&src_addr.ip(), bytes_sent),
-                }
+                stats.add_response(&src_addr.ip(), bytes_sent);
             } else {
                 stats.add_failed_send_attempt(&src_addr.ip());
             }
@@ -156,13 +144,7 @@ impl Responder {
 
         let mut response = RtMessage::with_capacity(6);
         response.add_field(Tag::SIG, sig_bytes).unwrap();
-
-        if self.version == Version::Rfc {
-            response
-                .add_field(Tag::VER, self.version.wire_bytes())
-                .unwrap();
-        }
-
+        response.add_field(Tag::VER, self.version.wire_bytes()).unwrap();
         response.add_field(Tag::PATH, path).unwrap();
         response.add_field(Tag::SREP, srep_bytes).unwrap();
         response.add_field(Tag::CERT, cert_bytes).unwrap();

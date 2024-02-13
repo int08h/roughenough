@@ -23,7 +23,7 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
 
 use crate::error::Error;
-use crate::RFC_REQUEST_FRAME_BYTES;
+use crate::REQUEST_FRAME_BYTES;
 use crate::tag::Tag;
 
 const HEX: Encoding = HEXLOWER_PERMISSIVE;
@@ -237,8 +237,8 @@ impl RtMessage {
     /// Encode this message into an on-the-wire representation prefixed with RFC framing.
     pub fn encode_framed(&self) -> Result<Vec<u8>, Error> {
         let encoded = self.encode()?;
-        let mut frame = Vec::with_capacity(RFC_REQUEST_FRAME_BYTES.len() + 4 + encoded.len());
-        frame.write_all(RFC_REQUEST_FRAME_BYTES)?;
+        let mut frame = Vec::with_capacity(REQUEST_FRAME_BYTES.len() + 4 + encoded.len());
+        frame.write_all(REQUEST_FRAME_BYTES)?;
         frame.write_u32::<LittleEndian>(encoded.len() as u32)?;
         frame.write_all(&encoded)?;
 
@@ -279,17 +279,20 @@ impl RtMessage {
         Ok(out)
     }
 
-    /// Returns the length in bytes of this message's on-the-wire representation.
+    /// Returns the length in bytes of this message's on-the-wire representation without
+    /// framing overhead.
     pub fn encoded_size(&self) -> usize {
+        const NUM_TAGS_BYTES: usize = 4;
+
         let num_tags = self.tags.len();
         let tags_size = 4 * num_tags;
         let offsets_size = if num_tags < 2 { 0 } else { 4 * (num_tags - 1) };
         let values_size: usize = self.values.iter().map(|v| v.len()).sum();
 
-        4 + tags_size + offsets_size + values_size
+        NUM_TAGS_BYTES + tags_size + offsets_size + values_size
     }
 
-    /// Calculate the length of PAD value such that the final encoded size of this message
+    /// Calculate the length of ZZZZ value such that the final encoded size of this message
     /// will be at least 1KB.
     pub fn calculate_padding_length(&mut self) -> usize {
         let size = self.encoded_size();
@@ -316,7 +319,7 @@ impl RtMessage {
     pub fn to_string(&self, indent_level: usize) -> String {
         assert!(
             indent_level > 0,
-            "indent level must be >= 1 (indent_level={})",
+            "indent level must be > 0 (indent_level={})",
             indent_level
         );
 
@@ -404,7 +407,7 @@ mod test {
     fn two_field_message_size() {
         let mut msg = RtMessage::with_capacity(2);
         msg.add_field(Tag::NONC, "1234".as_bytes()).unwrap();
-        msg.add_field(Tag::PAD_CLASSIC, "abcd".as_bytes()).unwrap();
+        msg.add_field(Tag::ZZZZ, "abcd".as_bytes()).unwrap();
 
         assert_eq!(msg.num_fields(), 2);
         // Two tag message
@@ -532,7 +535,7 @@ mod test {
     fn from_bytes_offset_past_end_of_message() {
         let mut msg = RtMessage::with_capacity(2);
         msg.add_field(Tag::NONC, "1111".as_bytes()).unwrap();
-        msg.add_field(Tag::PAD_CLASSIC, "aaaaaaaaa".as_bytes())
+        msg.add_field(Tag::ZZZZ, "aaaaaaaaa".as_bytes())
             .unwrap();
 
         let mut bytes = msg.encode().unwrap();

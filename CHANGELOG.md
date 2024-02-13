@@ -1,3 +1,13 @@
+## Version 2.0.0-draft8
+Updates to conform to Roughtime [RFC draft 8](https://www.ietf.org/archive/id/draft-ietf-ntp-roughtime-08.html).
+
+* Remove all code for "classic" version of Roughtime messages. The RFC process is proceeding
+  and the vast majority of requests coming to roughtime.int08h.com are RFC format.
+* The server and client are no longer dual-protocol: they only speak the RFC protocol now
+  (i.e. `VER` tag is `1`).
+* The `-p/--protocol` flag has been removed from `roughtime-client`.
+* Merkle tree hash function is now the first 32 bytes SHA-512 (as per latest RFC draft).
+
 ## Version 1.2.0-draft-5
 * Roughenough (mostly) implements the Roughtime protocol as specified in [the draft-5 RFC](https://www.ietf.org/archive/id/draft-ietf-ntp-roughtime-05.html).
   
