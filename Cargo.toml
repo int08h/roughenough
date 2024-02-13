@@ -7,7 +7,7 @@ license = "Apache-2.0"
 description = "A Roughtime secure time sync server and client written in Rust"
 readme = "README.md"
 keywords = ["roughtime", "cryptography", "crypto"]
-edition = "2018"
+edition = "2021"
 
 [badges]
 travis-ci = { repository = "int08h/roughenough", branch = "master" }
