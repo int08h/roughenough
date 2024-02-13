@@ -4,7 +4,7 @@ extern crate roughenough;
 
 use criterion::{black_box, Criterion};
 
-use roughenough::merkle::{MerkleTree, root_from_paths};
+use roughenough::merkle::{MerkleTree};
 use roughenough::RtMessage;
 use roughenough::Tag;
 
@@ -71,7 +71,7 @@ fn create_new_merkle_tree(c: &mut Criterion) {
         "create new merkle trees",
         move |b, &size| {
             b.iter(|| {
-                let mut tree = MerkleTree::new();
+                let mut tree = MerkleTree::new_sha512();
                 for _ in 0..*size {
                     tree.push_leaf(DATA);
                 }
@@ -83,7 +83,7 @@ fn create_new_merkle_tree(c: &mut Criterion) {
 }
 
 fn reuse_merkle_trees(c: &mut Criterion) {
-    let mut tree = MerkleTree::new();
+    let mut tree = MerkleTree::new_sha512();
 
     c.bench_function_over_inputs(
         "reuse existing merkle tree",
