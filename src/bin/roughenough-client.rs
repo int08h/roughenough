@@ -482,10 +482,10 @@ fn main() {
         let verify_str = if verified { "Yes" } else { "No" };
 
         let out = if use_utc {
-            let ts = Utc.timestamp(seconds as i64, nsecs as u32);
+            let ts = Utc.timestamp_opt(seconds as i64, nsecs as u32).unwrap();
             ts.format(time_format).to_string()
         } else {
-            let ts = Local.timestamp(seconds as i64, nsecs as u32);
+            let ts = Local.timestamp_opt(seconds as i64, nsecs as u32).unwrap();
             ts.format(time_format).to_string()
         };
 
