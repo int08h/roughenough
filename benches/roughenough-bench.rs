@@ -2,7 +2,7 @@
 extern crate criterion;
 extern crate roughenough;
 
-use criterion::{BenchmarkId, black_box, Criterion};
+use criterion::{black_box, Criterion};
 
 use roughenough::merkle::MerkleTree;
 use roughenough::RtMessage;
