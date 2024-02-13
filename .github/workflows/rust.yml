@@ -2,9 +2,9 @@ name: Build
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, rfc ]
   pull_request:
-    branches: [ master ]
+    branches: [ master, rfc ]
 
 env:
   CARGO_TERM_COLOR: always
