@@ -142,5 +142,14 @@ impl ServerStats for AggregatedStats {
         self.empty_map.iter()
     }
 
-    fn clear(&mut self) {}
+    fn clear(&mut self) {
+        self.rfc_requests = 0;
+        self.classic_requests = 0;
+        self.invalid_requests = 0;
+        self.health_checks = 0;
+        self.rfc_responses_sent = 0;
+        self.classic_responses_sent = 0;
+        self.bytes_sent = 0;
+        self.failed_send_attempts = 0;
+    }
 }

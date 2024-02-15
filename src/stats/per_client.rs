@@ -38,11 +38,10 @@ impl Default for PerClientStats {
     }
 }
 
+/// Maximum number of entries to prevent DoS and unbounded memory growth.
 pub const MAX_CLIENTS: usize = 100_000;
 
 impl PerClientStats {
-    /// Maximum number of entries to prevent DoS and unbounded memory growth.
-
     pub fn new() -> Self {
         PerClientStats {
             clients: HashMap::with_capacity(MAX_CLIENTS),

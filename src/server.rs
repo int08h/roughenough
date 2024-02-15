@@ -27,6 +27,7 @@ use mio::net::{TcpListener, UdpSocket};
 use mio_extras::timer::Timer;
 
 use crate::config::ServerConfig;
+use crate::Error::RequestTooShort;
 use crate::key::LongTermKey;
 use crate::kms;
 use crate::request;
@@ -216,8 +217,12 @@ impl Server {
                         Err(e) => {
                             self.stats.add_invalid_request(&src_addr.ip());
 
-                            info!(
-                                "Invalid request: '{:?}' ({} bytes) from {} (#{} in batch)",
+                            // No need to log spammy short packets
+                            if e == RequestTooShort {
+                                continue
+                            }
+
+                            info!("Invalid request: '{:?}' ({} bytes) from {} (#{} in batch)",
                                 e, num_bytes, src_addr, i
                             );
                         }
@@ -301,6 +306,7 @@ impl Server {
             self.stats.total_failed_send_attempts()
         );
 
+        self.stats.clear();
         self.timer.set_timeout(self.status_interval, ());
     }
 }
