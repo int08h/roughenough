@@ -53,6 +53,9 @@ tokio = { version = "1", features = ["full"], optional = true }
 [dev-dependencies]
 criterion = "0.3"
 
+[profile.release]
+lto = "fat"
+
 [[bench]]
 name = "roughenough-bench"
 harness = false
