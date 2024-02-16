@@ -73,12 +73,12 @@ fn nonce_from_rfc_request(buf: &[u8]) -> Result<(Vec<u8>, Version), Error> {
 }
 
 fn has_supported_version(msg: &RtMessage) -> bool {
-    let expected_ver_bytes = Version::Rfc.wire_bytes();
+    const EXPECTED_VER_BYTES: &[u8] = Version::Rfc.wire_bytes();
 
     if let Some(tag_bytes) = msg.get_field(Tag::VER) {
         // Iterate the list of supplied versions, looking for a match
         for found_ver_bytes in tag_bytes.chunks(4) {
-            if found_ver_bytes == expected_ver_bytes {
+            if found_ver_bytes == EXPECTED_VER_BYTES {
                 return true;
             }
         }

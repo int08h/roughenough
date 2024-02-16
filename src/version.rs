@@ -24,23 +24,28 @@ pub enum Version {
     Rfc,
 }
 
+// Google classic (unused)
+const BYTES_VER_CLASSIC: &'static [u8] = &[0x00, 0x00, 0x00, 0x00];
+const STR_VER_CLASSIC: &'static str = "Classic";
+
 // RFC version 1
-const VERSION_1: &'static [u8] = &[0x01, 0x00, 0x00, 0x00];
+const BYTES_VER_RFC: &'static [u8] = &[0x01, 0x00, 0x00, 0x00];
+const STR_VER_RFC: &'static str = "Rfc";
 
 impl Version {
     /// On-the-wire representation of the version value
-    pub fn wire_bytes(self) -> &'static [u8] {
+    pub const fn wire_bytes(self) -> &'static [u8] {
         match self {
-            Version::Classic => unreachable!("invalid, no version bytes for Classic"),
-            Version::Rfc => VERSION_1,
+            Version::Classic => BYTES_VER_CLASSIC,
+            Version::Rfc => BYTES_VER_RFC,
         }
     }
 
     /// A short (non-canonical) string representation of the `Version`
-    pub fn to_string(&self) -> String {
+    pub const fn to_string(&self) -> &'static str {
         match self {
-            Version::Classic => String::from("Classic"),
-            Version::Rfc => String::from("Rfc"),
+            Version::Classic => STR_VER_CLASSIC,
+            Version::Rfc => STR_VER_RFC,
         }
     }
 }
