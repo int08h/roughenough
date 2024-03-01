@@ -2,24 +2,30 @@
 extern crate criterion;
 extern crate roughenough;
 
-use criterion::{black_box, Criterion};
+use std::time::SystemTime;
+use criterion::{BenchmarkId, black_box, Criterion, SamplingMode};
+use criterion::Throughput::Elements;
 
-use roughenough::merkle::{MerkleTree};
-use roughenough::RtMessage;
-use roughenough::Tag;
+use roughenough::merkle::MerkleTree;
+use roughenough::{RtMessage, Tag};
+use roughenough::key::OnlineKey;
+
+fn create_signed_srep_tags(c: &mut Criterion) {
+    let mut group = c.benchmark_group("signing");
+    let mut key = OnlineKey::new();
+    let data = [8u8; 32];
+
+    group.throughput(Elements(1));
+    group.bench_function("create signed SREP tag", |b| {
+        let now = SystemTime::now();
+        b.iter(|| black_box(key.make_srep(now, data.as_ref())))
+    });
+    group.finish();
+}
 
 fn create_empty_message(c: &mut Criterion) {
     c.bench_function("create empty message", |b| {
         b.iter(|| RtMessage::with_capacity(0))
-    });
-}
-
-fn create_single_field_message(c: &mut Criterion) {
-    c.bench_function("create single field message", |b| {
-        b.iter(|| {
-            let mut msg = RtMessage::with_capacity(1);
-            msg.add_field(Tag::NONC, "1234".as_bytes()).unwrap();
-        })
     });
 }
 
@@ -44,71 +50,69 @@ fn create_four_field_message(c: &mut Criterion) {
         })
     });
 }
-
-fn create_nested_message(c: &mut Criterion) {
-    let pad = [0u8; 400];
-
-    c.bench_function("create nested message", move |b| {
-        b.iter(|| {
-            let mut msg1 = RtMessage::with_capacity(4);
-            msg1.add_field(Tag::SIG, "0987".as_bytes()).unwrap();
-            msg1.add_field(Tag::NONC, "wxyz".as_bytes()).unwrap();
-            msg1.add_field(Tag::DELE, "1234".as_bytes()).unwrap();
-            msg1.add_field(Tag::PATH, "abcd".as_bytes()).unwrap();
-
-            let mut msg2 = RtMessage::with_capacity(2);
-            msg2.add_field(Tag::PUBK, "1234567890".as_bytes()).unwrap();
-            msg2.add_field(Tag::PAD_CLASSIC, pad.as_ref()).unwrap();
-        })
-    });
-}
-
-static SIZES: &[u8] = &[1, 3, 9, 17, 200];
+static SIZES: &[u32] = &[1, 3, 20, 200, 2000];
 static DATA: &[u8] = &[1u8; 64];
 
 fn create_new_merkle_tree(c: &mut Criterion) {
-    c.bench_function_over_inputs(
-        "create new merkle trees",
-        move |b, &size| {
-            b.iter(|| {
-                let mut tree = MerkleTree::new_sha512();
-                for _ in 0..*size {
-                    tree.push_leaf(DATA);
-                }
-                black_box(tree.compute_root())
-            })
-        },
-        SIZES,
-    );
+    let mut group = c.benchmark_group("create new Merkle tree");
+    group.sampling_mode(SamplingMode::Flat);
+
+    for size in SIZES.iter() {
+        group.throughput(Elements(*size as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(size), size,
+            |b, &size| {
+                b.iter(|| {
+                    let mut tree = MerkleTree::new_sha512();
+                    for _ in 0..size {
+                        tree.push_leaf(DATA);
+                    }
+                    black_box(tree.compute_root())
+                })
+            }
+        );
+    }
+    group.finish();
 }
 
-fn reuse_merkle_trees(c: &mut Criterion) {
+fn reuse_merkle_tree(c: &mut Criterion) {
+    let mut group = c.benchmark_group("reuse Merkle tree");
+    group.sampling_mode(SamplingMode::Flat);
+
     let mut tree = MerkleTree::new_sha512();
 
-    c.bench_function_over_inputs(
-        "reuse existing merkle tree",
-        move |b, &size| {
-            b.iter(|| {
-                tree.reset();
-                for _ in 0..*size {
-                    tree.push_leaf(DATA);
-                }
-                black_box(tree.compute_root());
-            })
-        },
-        SIZES,
-    );
+    for size in SIZES.iter() {
+        group.throughput(Elements(*size as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(size), size,
+           |b, &size| {
+               b.iter(|| {
+                   tree.reset();
+                   for _ in 0..size {
+                       tree.push_leaf(DATA);
+                   }
+                   black_box(tree.compute_root())
+               })
+           }
+        );
+    }
+    group.finish();
 }
+
+criterion_group!(
+    message_singing,
+    create_signed_srep_tags,
+);
 
 criterion_group!(
     message_creation,
     create_empty_message,
-    create_single_field_message,
     create_two_field_message,
     create_four_field_message,
-    create_nested_message
 );
 
-criterion_group!(merkle_tree, create_new_merkle_tree, reuse_merkle_trees);
+criterion_group!(
+    merkle_tree,
+    create_new_merkle_tree,
+    reuse_merkle_tree
+);
 
-criterion_main!(message_creation, merkle_tree);
+criterion_main!(message_singing, message_creation, merkle_tree);
