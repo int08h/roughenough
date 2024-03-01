@@ -17,6 +17,7 @@
 //!
 
 use std::net::SocketAddr;
+use std::thread;
 use std::time::SystemTime;
 
 use byteorder::{LittleEndian, WriteBytesExt};
@@ -41,6 +42,7 @@ pub struct Responder {
     requests: Vec<(Vec<u8>, SocketAddr)>,
     merkle: MerkleTree,
     grease: Grease,
+    thread_id: String,
 }
 
 impl Responder {
@@ -50,6 +52,7 @@ impl Responder {
         let long_term_public_key = HEX.encode(ltk.public_key());
         let requests = Vec::with_capacity(config.batch_size() as usize);
         let grease = Grease::new(config.fault_percentage());
+        let thread_id = thread::current().name().unwrap().to_string();
 
         let merkle = if version == Version::Classic {
             MerkleTree::new_sha512()
@@ -65,6 +68,7 @@ impl Responder {
             merkle,
             requests,
             grease,
+            thread_id,
         }
     }
 
@@ -120,7 +124,8 @@ impl Responder {
             }
 
             debug!(
-                "Responded {} {} bytes to {} for '{}..' (#{} in batch)",
+                "Thread {} responded {} {} bytes to {} for '{}..' (#{} in batch)",
+                thread::current().name().unwrap(),
                 self.version,
                 bytes_sent,
                 src_addr,
@@ -179,5 +184,9 @@ impl Responder {
     /// Returns a reference to the on-line (delegated) key
     pub fn get_online_key(&self) -> &OnlineKey {
         &self.online_key
+    }
+
+    pub fn get_thread_id(&self) -> &String {
+        &self.thread_id
     }
 }

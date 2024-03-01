@@ -19,6 +19,8 @@
 use std::io::ErrorKind;
 use std::io::Write;
 use std::net::{IpAddr, Shutdown, SocketAddr};
+use std::sync::Arc;
+use std::thread;
 use std::time::Duration;
 
 use humansize::{file_size_opts as fsopts, FileSize};
@@ -55,7 +57,7 @@ const HTTP_RESPONSE: &str = "HTTP/1.1 200 OK\nContent-Length: 0\nConnection: clo
 ///
 pub struct Server {
     batch_size: u8,
-    socket: UdpSocket,
+    socket: Arc<UdpSocket>,
     health_listener: Option<TcpListener>,
     poll_duration: Option<Duration>,
     status_interval: Duration,
@@ -64,6 +66,7 @@ pub struct Server {
     responder_rfc: Responder,
     responder_classic: Responder,
     buf: [u8; 65_536],
+    thread_name: String,
 
     stats: Box<dyn ServerStats>,
 
@@ -77,9 +80,9 @@ impl Server {
     /// Create a new server instance from the provided
     /// [`ServerConfig`](../config/trait.ServerConfig.html) trait object instance.
     ///
-    pub fn new(config: &dyn ServerConfig) -> Server {
-        let sock_addr = config.udp_socket_addr().expect("udp sock addr");
-        let socket = UdpSocket::bind(&sock_addr).expect("failed to bind to socket");
+    pub fn new(config: &dyn ServerConfig, socket: Arc<UdpSocket>) -> Server {
+        // let sock_addr = config.udp_socket_addr().expect("udp sock addr");
+        // let socket = UdpSocket::bind(&sock_addr).expect("failed to bind to socket");
 
         let poll_duration = Some(Duration::from_millis(100));
 
@@ -134,6 +137,7 @@ impl Server {
 
         let batch_size = config.batch_size();
         let status_interval = config.status_interval();
+        let thread_name = thread::current().name().unwrap().to_string();
 
         Server {
             batch_size,
@@ -146,6 +150,7 @@ impl Server {
             responder_rfc,
             responder_classic,
             buf: [0u8; 65_536],
+            thread_name,
 
             stats,
 
@@ -183,10 +188,9 @@ impl Server {
 
                     let socket_now_empty = self.collect_requests();
 
-                    self.responder_rfc
-                        .send_responses(&mut self.socket, &mut self.stats);
-                    self.responder_classic
-                        .send_responses(&mut self.socket, &mut self.stats);
+                    let sock_copy = Arc::get_mut(&mut self.socket).unwrap();
+                    self.responder_rfc.send_responses(sock_copy, &mut self.stats);
+                    self.responder_classic.send_responses(sock_copy, &mut self.stats);
 
                     if socket_now_empty {
                         break;
@@ -308,5 +312,9 @@ impl Server {
 
         self.stats.clear();
         self.timer.set_timeout(self.status_interval, ());
+    }
+
+    pub fn thread_name(&self) -> &str {
+        &self.thread_name
     }
 }

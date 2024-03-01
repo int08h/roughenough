@@ -67,7 +67,7 @@ pub const DEFAULT_STATUS_INTERVAL: Duration = Duration::from_secs(600);
 ///   * [EnvironmentConfig](struct.EnvironmentConfig.html) - configure via environment variables
 ///   * [MemoryConfig](struct.MemoryConfig.html) - in-memory configuration for testing
 ///
-pub trait ServerConfig {
+pub trait ServerConfig : Send {
     /// [Required] IP address or interface name to listen for client requests
     fn interface(&self) -> &str;
 

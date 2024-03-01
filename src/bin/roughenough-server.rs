@@ -23,13 +23,15 @@
 #[macro_use]
 extern crate log;
 
-use std::env;
+use std::{env, thread};
 use std::process;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use log::LevelFilter;
 use mio::Events;
+use mio::net::UdpSocket;
+use once_cell::sync::Lazy;
 use simple_logger::SimpleLogger;
 
 use roughenough::config;
@@ -37,29 +39,38 @@ use roughenough::config::ServerConfig;
 use roughenough::roughenough_version;
 use roughenough::server::Server;
 
-fn polling_loop(config: Box<dyn ServerConfig>) {
-    let mut server = Server::new(config.as_ref());
-    let keep_running = Arc::new(AtomicBool::new(true));
+// All processing threads poll this. Starts TRUE and will be set to FASLE by
+// the Ctrl-C (SIGINT) handler created in `set_ctrlc_handler()`
+static KEEP_RUNNING: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(true));
 
-    display_config(&server, config.as_ref());
+fn polling_loop(cfg: Arc<Mutex<Box<dyn ServerConfig>>>, socket: Arc<UdpSocket>) {
+    let mut server = {
+        let config = cfg.lock().unwrap();
+        let server = Server::new(config.as_ref(), socket);
 
-    let kr_clone = keep_running.clone();
-    ctrlc::set_handler(move || kr_clone.store(false, Ordering::Release))
-        .expect("failed setting Ctrl-C handler");
+        display_config(&server, config.as_ref());
+        server
+    };
 
-    let mut events = Events::with_capacity(1024);
+    let mut events = Events::with_capacity(2048);
 
     loop {
         server.process_events(&mut events);
 
-        if !keep_running.load(Ordering::Acquire) {
+        if !KEEP_RUNNING.load(Ordering::Acquire) {
             warn!("Ctrl-C caught, exiting...");
             return;
         }
     }
 }
 
+fn set_ctrlc_handler() {
+    ctrlc::set_handler(move || KEEP_RUNNING.store(false, Ordering::Release))
+        .expect("failed setting Ctrl-C handler");
+}
+
 fn display_config(server: &Server, cfg: &dyn ServerConfig) {
+    info!("Processing thread          : {}", server.thread_name());
     info!("Long-term public key       : {}", server.get_public_key());
     info!("Max response batch size    : {}", cfg.batch_size());
     info!(
@@ -117,10 +128,34 @@ pub fn main() {
             process::exit(1)
         }
         Ok(ref cfg) if !config::is_valid_config(cfg.as_ref()) => process::exit(1),
-        Ok(cfg) => cfg,
+        Ok(cfg) => Arc::new(Mutex::new(cfg)),
     };
 
-    polling_loop(config);
+    let sock_addr = config.lock().unwrap().udp_socket_addr().expect("udp sock addr");
+    let socket = {
+        let sock = UdpSocket::bind(&sock_addr).expect("failed to bind to socket");
+        Arc::new(sock)
+    };
+
+    set_ctrlc_handler();
+
+    // TODO(stuart) pull TCP healthcheck out of worker threads
+    let mut thread_handles = Vec::new();
+
+    for i in 0 .. 4 {
+        let cfg = config.clone();
+        let sock = socket.try_clone().unwrap();
+        let thrd = thread::Builder::new()
+            .name(format!("worker-{}", i))
+            .spawn(move || polling_loop(cfg, sock.into()))
+            .unwrap();
+
+        thread_handles.push(thrd);
+    }
+
+    for handle in thread_handles {
+        handle.join().unwrap();
+    }
 
     info!("Done.");
     process::exit(0);
