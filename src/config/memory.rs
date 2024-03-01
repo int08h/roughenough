@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::thread;
 use std::time::Duration;
 
 use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
@@ -35,6 +36,7 @@ pub struct MemoryConfig {
     pub health_check_port: Option<u16>,
     pub client_stats: bool,
     pub fault_percentage: u8,
+    pub num_workers: usize,
 }
 
 impl MemoryConfig {
@@ -50,6 +52,7 @@ impl MemoryConfig {
             health_check_port: None,
             client_stats: false,
             fault_percentage: 0,
+            num_workers: thread::available_parallelism().unwrap().get(),
         }
     }
 }
@@ -89,5 +92,9 @@ impl ServerConfig for MemoryConfig {
 
     fn fault_percentage(&self) -> u8 {
         self.fault_percentage
+    }
+
+    fn num_workers(&self) -> usize {
+        self.num_workers
     }
 }

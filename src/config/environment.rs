@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::env;
+use std::{env, thread};
 use std::time::Duration;
 
 use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
@@ -39,6 +39,7 @@ const HEX: Encoding = HEXLOWER_PERMISSIVE;
 ///   health_check_port | `ROUGHENOUGH_HEALTH_CHECK_PORT`
 ///   client_stats      | `ROUGHENOUGH_CLIENT_STATS`
 ///   fault_percentage  | `ROUGHENOUGH_FAULT_PERCENTAGE`
+///   num_workers       | `ROUGHENOUGH_NUM_WORKERS`
 ///
 pub struct EnvironmentConfig {
     port: u16,
@@ -50,6 +51,7 @@ pub struct EnvironmentConfig {
     health_check_port: Option<u16>,
     client_stats: bool,
     fault_percentage: u8,
+    num_workers: usize,
 }
 
 const ROUGHENOUGH_PORT: &str = "ROUGHENOUGH_PORT";
@@ -61,6 +63,7 @@ const ROUGHENOUGH_KMS_PROTECTION: &str = "ROUGHENOUGH_KMS_PROTECTION";
 const ROUGHENOUGH_HEALTH_CHECK_PORT: &str = "ROUGHENOUGH_HEALTH_CHECK_PORT";
 const ROUGHENOUGH_CLIENT_STATS: &str = "ROUGHENOUGH_CLIENT_STATS";
 const ROUGHENOUGH_FAULT_PERCENTAGE: &str = "ROUGHENOUGH_FAULT_PERCENTAGE";
+const ROUGHENOUGH_NUM_WORKERS: &str = "ROUGHENOUGH_NUM_WORKERS:";
 
 impl EnvironmentConfig {
     pub fn new() -> Result<Self, Error> {
@@ -74,6 +77,7 @@ impl EnvironmentConfig {
             health_check_port: None,
             client_stats: false,
             fault_percentage: 0,
+            num_workers: thread::available_parallelism().unwrap().get(),
         };
 
         if let Ok(port) = env::var(ROUGHENOUGH_PORT) {
@@ -132,6 +136,12 @@ impl EnvironmentConfig {
                 .unwrap_or_else(|_| panic!("invalid fault_percentage: {}", fault_percentage));
         };
 
+        if let Ok(num_workers) = env::var(ROUGHENOUGH_NUM_WORKERS) {
+            cfg.num_workers = num_workers
+                .parse()
+                .unwrap_or_else(|_| panic!("invalid num_workers: {}", num_workers));
+        };
+
         Ok(cfg)
     }
 }
@@ -171,5 +181,9 @@ impl ServerConfig for EnvironmentConfig {
 
     fn fault_percentage(&self) -> u8 {
         self.fault_percentage
+    }
+
+    fn num_workers(&self) -> usize {
+        self.num_workers
     }
 }

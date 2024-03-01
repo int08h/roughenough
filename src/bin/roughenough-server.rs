@@ -71,12 +71,11 @@ fn set_ctrlc_handler() {
 
 fn display_config(server: &Server, cfg: &dyn ServerConfig) {
     info!("Processing thread          : {}", server.thread_name());
+    info!("Number of workers          : {}", cfg.num_workers());
     info!("Long-term public key       : {}", server.get_public_key());
     info!("Max response batch size    : {}", cfg.batch_size());
-    info!(
-        "Status updates every       : {} seconds",
-        cfg.status_interval().as_secs()
-    );
+    info!("Status updates every       : {} seconds", cfg.status_interval().as_secs());
+
     info!(
         "Server listening on        : {}:{}",
         cfg.interface(),
@@ -104,6 +103,7 @@ fn display_config(server: &Server, cfg: &dyn ServerConfig) {
     } else {
         info!("Deliberate response errors : disabled");
     }
+
 }
 
 pub fn main() {
@@ -131,18 +131,18 @@ pub fn main() {
         Ok(cfg) => Arc::new(Mutex::new(cfg)),
     };
 
-    let sock_addr = config.lock().unwrap().udp_socket_addr().expect("udp sock addr");
     let socket = {
+        let sock_addr = config.lock().unwrap().udp_socket_addr().expect("udp sock addr");
         let sock = UdpSocket::bind(&sock_addr).expect("failed to bind to socket");
         Arc::new(sock)
     };
 
     set_ctrlc_handler();
 
-    // TODO(stuart) pull TCP healthcheck out of worker threads
+    // TODO(stuart) move TCP healthcheck out of worker threads as it currently conflicts
     let mut thread_handles = Vec::new();
 
-    for i in 0 .. 4 {
+    for i in 0 .. config.lock().unwrap().num_workers() {
         let cfg = config.clone();
         let sock = socket.try_clone().unwrap();
         let thrd = thread::Builder::new()

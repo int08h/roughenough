@@ -14,6 +14,7 @@
 
 use std::fs::File;
 use std::io::Read;
+use std::thread;
 use std::time::Duration;
 
 use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
@@ -48,6 +49,7 @@ pub struct FileConfig {
     health_check_port: Option<u16>,
     client_stats: bool,
     fault_percentage: u8,
+    num_workers: usize,
 }
 
 impl FileConfig {
@@ -80,6 +82,7 @@ impl FileConfig {
             health_check_port: None,
             client_stats: false,
             fault_percentage: 0,
+            num_workers: thread::available_parallelism().unwrap().get(),
         };
 
         for (key, value) in cfg[0].as_hash().unwrap() {
@@ -115,6 +118,10 @@ impl FileConfig {
                 "fault_percentage" => {
                     let val = value.as_i64().unwrap() as u8;
                     config.fault_percentage = val;
+                }
+                "num_workers" => {
+                    let val = value.as_i64().unwrap() as usize;
+                    config.num_workers = val;
                 }
                 unknown => {
                     return Err(Error::InvalidConfiguration(format!(
@@ -164,5 +171,9 @@ impl ServerConfig for FileConfig {
 
     fn fault_percentage(&self) -> u8 {
         self.fault_percentage
+    }
+
+    fn num_workers(&self) -> usize {
+        self.num_workers
     }
 }

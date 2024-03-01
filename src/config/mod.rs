@@ -60,6 +60,7 @@ pub const DEFAULT_STATUS_INTERVAL: Duration = Duration::from_secs(600);
 /// `kms_protection` | `ROUGHENOUGH_KMS_PROTECTION` | Optional | If compiled with KMS support, the ID of the KMS key used to protect the long-term identity.
 /// `client_stats` | `ROUGHENOUGH_CLIENT_STATS` | Optional | A value of `on` or `yes` will enable tracking of per-client request statistics that will be output each time server status is logged. Default is `off` (disabled).
 /// `fault_percentage` | `ROUGHENOUGH_FAULT_PERCENTAGE` | Optional | Likelihood (as a percentage) that the server will intentionally return an invalid client response. An integer range from `0` (disabled, all responses valid) to `50` (50% of responses will be invalid). Default is `0` (disabled).
+/// `num_workers` | `ROUGHENOUGH_NUM_WORKERS` | Optional | Number of worker threads created to process requests. Defaults to `thread::available_parallelism()`
 ///
 /// Implementations of this trait obtain a valid configuration from different back-end
 /// sources. See:
@@ -108,6 +109,10 @@ pub trait ServerConfig : Send {
     /// See the [Roughtime spec](https://roughtime.googlesource.com/roughtime/+/HEAD/ECOSYSTEM.md#maintaining-a-healthy-software-ecosystem)
     /// for background and rationale.
     fn fault_percentage(&self) -> u8;
+
+    /// [Optional] The number of worker threads to start. Defaults to the value returned by
+    /// Rust's `thread::available_parallelism()`.
+    fn num_workers(&self) -> usize;
 
     /// Convenience function to create a `SocketAddr` from the provided `interface` and `port`
     fn udp_socket_addr(&self) -> Result<SocketAddr, Error> {
@@ -187,6 +192,11 @@ pub fn is_valid_config(cfg: &dyn ServerConfig) -> bool {
             "fault_percentage {} is invalid; valid range 0-50",
             cfg.fault_percentage()
         );
+        is_valid = false;
+    }
+
+    if cfg.num_workers() == 0 {
+        error!("num_workers must be > 0");
         is_valid = false;
     }
 
