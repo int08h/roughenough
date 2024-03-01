@@ -140,22 +140,19 @@ pub fn main() {
     set_ctrlc_handler();
 
     // TODO(stuart) move TCP healthcheck out of worker threads as it currently conflicts
-    let mut thread_handles = Vec::new();
+    let mut threads = Vec::new();
 
     for i in 0 .. config.lock().unwrap().num_workers() {
         let cfg = config.clone();
         let sock = socket.try_clone().unwrap();
-        let thrd = thread::Builder::new()
+        let thread = thread::Builder::new()
             .name(format!("worker-{}", i))
-            .spawn(move || polling_loop(cfg, sock.into()))
-            .unwrap();
+            .spawn(move || polling_loop(cfg, sock.into()))?;
 
-        thread_handles.push(thrd);
+        threads.push(thread);
     }
 
-    for handle in thread_handles {
-        handle.join().unwrap();
-    }
+    let _ = threads.iter().map(|&h| h.join());
 
     info!("Done.");
     process::exit(0);
