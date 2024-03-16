@@ -255,8 +255,8 @@ impl ResponseHandler {
         let paths = &self.msg[&Tag::PATH];
 
         let hash = match self.version {
-            Version::Classic => MerkleTree::new_sha512(),
-            Version::Rfc => MerkleTree::new_sha512_256(),
+            Version::Classic => MerkleTree::new_sha512_classic(),
+            Version::Rfc => MerkleTree::new_sha512_ietf(),
         }
         .root_from_paths(index as usize, &self.nonce, paths);
 

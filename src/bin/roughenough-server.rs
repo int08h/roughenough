@@ -147,12 +147,15 @@ pub fn main() {
         let sock = socket.try_clone().unwrap();
         let thread = thread::Builder::new()
             .name(format!("worker-{}", i))
-            .spawn(move || polling_loop(cfg, sock.into()))?;
+            .spawn(move || polling_loop(cfg, sock.into()))
+            .expect("failure spawning thread");
 
         threads.push(thread);
     }
 
-    let _ = threads.iter().map(|&h| h.join());
+    for t in threads {
+        t.join().expect("join failed")
+    }
 
     info!("Done.");
     process::exit(0);

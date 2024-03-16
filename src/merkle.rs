@@ -17,6 +17,8 @@
 //!
 
 use ring::digest;
+use crate::version::Version;
+use crate::version::Version::{Classic, Rfc};
 
 use super::{TREE_LEAF_TWEAK, TREE_NODE_TWEAK};
 
@@ -29,27 +31,31 @@ type Hash = Data;
 pub struct MerkleTree {
     levels: Vec<Vec<Data>>,
     algorithm: &'static digest::Algorithm,
+    version: Version,
 }
 
 impl MerkleTree {
     ///
-    /// Create a new empty Merkle Tree based on SHA-512/256
-    /// **TODO** lobby to have "SHA512[0:32] replaced with SHA-512/256"
+    /// Create a new empty Merkle Tree based on SHA-512.
+    /// Output is the 32-bytes (256-bits), SHA-512[0:32]
     ///
-    pub fn new_sha512_256() -> MerkleTree {
+    pub fn new_sha512_ietf() -> MerkleTree {
         MerkleTree {
             levels: vec![vec![]],
-            algorithm: &digest::SHA512_256,
+            algorithm: &digest::SHA512,
+            version: Version::Rfc,
         }
     }
 
     ///
     /// Create a new empty Merkle Tree based on SHA-512
+    /// Output is 64-bytes (512 bits)
     ///
-    pub fn new_sha512() -> MerkleTree {
+    pub fn new_sha512_classic() -> MerkleTree {
         MerkleTree {
             levels: vec![vec![]],
             algorithm: &digest::SHA512,
+            version: Version::Classic,
         }
     }
 
@@ -73,10 +79,7 @@ impl MerkleTree {
     }
 
     pub fn compute_root(&mut self) -> Hash {
-        assert!(
-            !self.levels[0].is_empty(),
-            "Must have at least one leaf to hash!"
-        );
+        assert!(!self.levels[0].is_empty(), "Must have at least one leaf to hash!");
 
         let mut level = 0;
         let mut node_count = self.levels[0].len();
@@ -105,7 +108,9 @@ impl MerkleTree {
         }
 
         assert_eq!(self.levels[level].len(), 1);
-        self.levels[level].pop().unwrap()
+        let result = self.levels[level].pop().unwrap();
+
+        self.finalize_output(result)
     }
 
     pub fn reset(&mut self) {
@@ -158,7 +163,14 @@ impl MerkleTree {
             index >>= 1;
         }
 
-        hash
+        self.finalize_output(hash)
+    }
+
+    fn finalize_output(&self, data: Hash) -> Hash {
+        match self.version {
+            Rfc => data[0..32].into(),
+            Classic => data,
+        }
     }
 }
 
@@ -167,7 +179,7 @@ mod test {
     use crate::merkle::*;
 
     fn test_paths_with_num(num: usize) {
-        for mut merkle_impl in [MerkleTree::new_sha512_256(), MerkleTree::new_sha512()] {
+        for mut merkle_impl in [MerkleTree::new_sha512_ietf(), MerkleTree::new_sha512_classic()] {
             for i in 0..num {
                 merkle_impl.push_leaf(&[i as u8]);
             }

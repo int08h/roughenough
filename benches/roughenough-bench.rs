@@ -62,7 +62,7 @@ fn create_new_merkle_tree(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::from_parameter(size), size,
             |b, &size| {
                 b.iter(|| {
-                    let mut tree = MerkleTree::new_sha512();
+                    let mut tree = MerkleTree::new_sha512_classic();
                     for _ in 0..size {
                         tree.push_leaf(DATA);
                     }
@@ -78,7 +78,7 @@ fn reuse_merkle_tree(c: &mut Criterion) {
     let mut group = c.benchmark_group("reuse Merkle tree");
     group.sampling_mode(SamplingMode::Flat);
 
-    let mut tree = MerkleTree::new_sha512();
+    let mut tree = MerkleTree::new_sha512_classic();
 
     for size in SIZES.iter() {
         group.throughput(Elements(*size as u64));

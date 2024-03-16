@@ -55,9 +55,9 @@ impl Responder {
         let thread_id = thread::current().name().unwrap().to_string();
 
         let merkle = if version == Version::Classic {
-            MerkleTree::new_sha512()
+            MerkleTree::new_sha512_classic()
         } else {
-            MerkleTree::new_sha512_256()
+            MerkleTree::new_sha512_ietf()
         };
 
         Responder {
