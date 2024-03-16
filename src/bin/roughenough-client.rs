@@ -203,11 +203,12 @@ impl ResponseHandler {
             .read_u32::<LittleEndian>()
             .unwrap();
 
+        self.validate_merkle();
+        self.validate_midpoint(midpoint);
+
         let verified = if self.pub_key.is_some() {
             self.validate_dele();
             self.validate_srep();
-            self.validate_merkle();
-            self.validate_midpoint(midpoint);
             true
         } else {
             false
@@ -477,15 +478,22 @@ fn main() {
             .read_u32::<LittleEndian>()
             .unwrap();
 
-        let seconds = midpoint / 10_u64.pow(6);
-        let nsecs = (midpoint - (seconds * 10_u64.pow(6))) * 10_u64.pow(3);
+        let (seconds, nsecs) = match version {
+            Version::Classic => {
+                let seconds = midpoint / 10_u64.pow(6);
+                let nsecs = (midpoint - (seconds * 10_u64.pow(6))) * 10_u64.pow(3);
+                (seconds, nsecs as u32)
+            },
+            Version::Rfc => (midpoint, 0),
+        };
+
         let verify_str = if verified { "Yes" } else { "No" };
 
         let out = if use_utc {
-            let ts = Utc.timestamp_opt(seconds as i64, nsecs as u32).unwrap();
+            let ts = Utc.timestamp_opt(seconds as i64, nsecs).unwrap();
             ts.format(time_format).to_string()
         } else {
-            let ts = Local.timestamp_opt(seconds as i64, nsecs as u32).unwrap();
+            let ts = Local.timestamp_opt(seconds as i64, nsecs).unwrap();
             ts.format(time_format).to_string()
         };
 
