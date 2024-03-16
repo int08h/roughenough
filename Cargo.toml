@@ -33,6 +33,7 @@ simple_logger = "1"
 yaml-rust = "0.4"
 zeroize = "1.4"
 data-encoding = "2.3"
+enum-iterator = "2.0"
 
 # Used by 'awskms' and 'gcpkms'
 futures = { version = "^0.3", optional = true }

@@ -22,6 +22,7 @@ use crate::message::RtMessage;
 use crate::sign::Signer;
 use crate::SIGNED_RESPONSE_CONTEXT;
 use crate::tag::Tag;
+use crate::version::Version;
 
 ///
 /// Represents the delegated Roughtime ephemeral online key.
@@ -57,26 +58,42 @@ impl OnlineKey {
         dele_msg
     }
 
+    /// Classic protocol, epoch time in microseconds
+    fn classic_midp(&self, now: SystemTime) -> u64 {
+        let d = now
+            .duration_since(UNIX_EPOCH)
+            .expect("duration since epoch");
+        let secs = d.as_secs() * 1_000_000;
+        let nsecs = (d.subsec_nanos() as u64) / 1_000;
+
+        secs + nsecs
+    }
+
+    /// RFC protocol, a uint64 count of seconds since the Unix epoch in UTC.
+    fn rfc_midp(&self, now: SystemTime) -> u64 {
+        now.duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    }
+
     /// Create an SREP response containing the provided time and Merkle root,
     /// signed by this online key.
-    pub fn make_srep(&mut self, now: SystemTime, merkle_root: &[u8]) -> RtMessage {
+    pub fn make_srep(&mut self, ver: Version, now: SystemTime, merkle_root: &[u8]) -> RtMessage {
         let mut radi = [0; 4];
         let mut midp = [0; 8];
 
-        // one second (in microseconds)
+        let radi_time = match ver {
+            Version::Classic => 1_000_000, // one second in microseconds
+            Version::Rfc => 1, // one second
+        };
+
         (&mut radi as &mut [u8])
-            .write_u32::<LittleEndian>(1_000_000)
+            .write_u32::<LittleEndian>(radi_time)
             .unwrap();
 
-        // current epoch time in microseconds
-        let midp_time = {
-            let d = now
-                .duration_since(UNIX_EPOCH)
-                .expect("duration since epoch");
-            let secs = d.as_secs() * 1_000_000;
-            let nsecs = (d.subsec_nanos() as u64) / 1_000;
-
-            secs + nsecs
+        let midp_time = match ver {
+            Version::Classic => self.classic_midp(now),
+            Version::Rfc => self.rfc_midp(now),
         };
 
         (&mut midp as &mut [u8])

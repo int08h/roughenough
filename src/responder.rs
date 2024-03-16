@@ -98,7 +98,7 @@ impl Responder {
         let merkle_root = self.merkle.compute_root();
 
         // The SREP tag is identical for each response
-        let srep = self.online_key.make_srep(SystemTime::now(), &merkle_root);
+        let srep = self.online_key.make_srep(self.version, SystemTime::now(), &merkle_root);
 
         for (idx, &(ref nonce, ref src_addr)) in self.requests.iter().enumerate() {
             let paths = self.merkle.get_paths(idx);

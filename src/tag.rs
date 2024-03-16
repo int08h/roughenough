@@ -13,19 +13,19 @@
 // limitations under the License.
 
 use std::fmt::{Display, Formatter};
+use enum_iterator::Sequence;
 
 use crate::error::Error;
 
 /// An unsigned 32-bit value (key) that maps to a byte-string (value).
 #[allow(non_camel_case_types)]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Clone, Copy, Sequence)]
 pub enum Tag {
     // Enforcement of the "tags in strictly increasing order" rule is done using the
     // little-endian encoding of the ASCII tag value; e.g. 'SIG\x00' is 0x00474953 and
     // 'NONC' is 0x434e4f4e.
     //
     // Tags are written here in ascending order
-    PAD_RFC,
     SIG,
     VER,
     DUT1,
@@ -43,6 +43,7 @@ pub enum Tag {
     CERT,
     MAXT,
     INDX,
+    ZZZZ,
     PAD_CLASSIC,
 }
 
@@ -55,7 +56,6 @@ impl Tag {
     const BYTES_MINT: &'static [u8] = b"MINT";
     const BYTES_NONC: &'static [u8] = b"NONC";
     const BYTES_PAD_CLASSIC: &'static [u8] = b"PAD\xff";
-    const BYTES_PAD_RFC: &'static [u8] = b"PAD\x00";
     const BYTES_PATH: &'static [u8] = b"PATH";
     const BYTES_PUBK: &'static [u8] = b"PUBK";
     const BYTES_RADI: &'static [u8] = b"RADI";
@@ -66,6 +66,7 @@ impl Tag {
     const BYTES_DUT1: &'static [u8] = b"DUT1";
     const BYTES_DTAI: &'static [u8] = b"DTAI";
     const BYTES_LEAP: &'static [u8] = b"LEAP";
+    const BYTES_ZZZZ: &'static [u8] = b"ZZZZ";
 
     /// Translates a tag into its on-the-wire representation
     pub fn wire_value(self) -> &'static [u8] {
@@ -78,7 +79,6 @@ impl Tag {
             Tag::MINT => Tag::BYTES_MINT,
             Tag::NONC => Tag::BYTES_NONC,
             Tag::PAD_CLASSIC => Tag::BYTES_PAD_CLASSIC,
-            Tag::PAD_RFC => Tag::BYTES_PAD_RFC,
             Tag::PATH => Tag::BYTES_PATH,
             Tag::PUBK => Tag::BYTES_PUBK,
             Tag::RADI => Tag::BYTES_RADI,
@@ -89,6 +89,7 @@ impl Tag {
             Tag::DUT1 => Tag::BYTES_DUT1,
             Tag::DTAI => Tag::BYTES_DTAI,
             Tag::LEAP => Tag::BYTES_LEAP,
+            Tag::ZZZZ => Tag::BYTES_ZZZZ,
         }
     }
 
@@ -104,7 +105,6 @@ impl Tag {
             Tag::BYTES_MINT => Ok(Tag::MINT),
             Tag::BYTES_NONC => Ok(Tag::NONC),
             Tag::BYTES_PAD_CLASSIC => Ok(Tag::PAD_CLASSIC),
-            Tag::BYTES_PAD_RFC => Ok(Tag::PAD_RFC),
             Tag::BYTES_PATH => Ok(Tag::PATH),
             Tag::BYTES_PUBK => Ok(Tag::PUBK),
             Tag::BYTES_RADI => Ok(Tag::RADI),
@@ -115,6 +115,7 @@ impl Tag {
             Tag::BYTES_DUT1 => Ok(Tag::DUT1),
             Tag::BYTES_DTAI => Ok(Tag::DTAI),
             Tag::BYTES_LEAP => Ok(Tag::LEAP),
+            Tag::BYTES_ZZZZ => Ok(Tag::ZZZZ),
             _ => Err(Error::InvalidTag(Box::from(bytes))),
         }
     }
@@ -127,7 +128,6 @@ impl Tag {
     /// A short (non canonical) string representation of the tag
     fn to_string(&self) -> String {
         match self {
-            Tag::PAD_RFC => String::from("PAD00"),
             Tag::PAD_CLASSIC => String::from("PADff"),
             Tag::SIG => String::from("SIG"),
             Tag::VER => String::from("VER"),
@@ -139,5 +139,24 @@ impl Tag {
 impl Display for Tag {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_string())
+    }
+}
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use enum_iterator;
+
+    #[test]
+    fn tags_in_increasing_order() {
+        let values = enum_iterator::all::<Tag>().collect::<Vec<_>>();
+        for (idx, _) in values.iter().enumerate() {
+            if idx == 0 {
+                continue
+            }
+            assert!(values[idx - 1] < values[idx]);
+        }
+
     }
 }

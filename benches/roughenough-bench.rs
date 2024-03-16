@@ -9,6 +9,7 @@ use criterion::Throughput::Elements;
 use roughenough::merkle::MerkleTree;
 use roughenough::{RtMessage, Tag};
 use roughenough::key::OnlineKey;
+use roughenough::version::Version;
 
 fn create_signed_srep_tags(c: &mut Criterion) {
     let mut group = c.benchmark_group("signing");
@@ -18,7 +19,7 @@ fn create_signed_srep_tags(c: &mut Criterion) {
     group.throughput(Elements(1));
     group.bench_function("create signed SREP tag", |b| {
         let now = SystemTime::now();
-        b.iter(|| black_box(key.make_srep(now, data.as_ref())))
+        b.iter(|| black_box(key.make_srep(Version::Rfc, now, data.as_ref(), )))
     });
     group.finish();
 }

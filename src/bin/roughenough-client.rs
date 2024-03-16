@@ -82,17 +82,17 @@ fn make_request(ver: Version, nonce: &Nonce, text_dump: bool) -> Vec<u8> {
             msg.encode().unwrap()
         }
         Version::Rfc => {
-            msg.add_field(Tag::PAD_RFC, &[]).unwrap();
             msg.add_field(Tag::VER, ver.wire_bytes()).unwrap();
             msg.add_field(Tag::NONC, nonce).unwrap();
+            msg.add_field(Tag::ZZZZ, &[]).unwrap();
 
             let padding_needed = msg.calculate_padding_length();
             let padding: Vec<u8> = (0..padding_needed).map(|_| 0).collect();
 
             msg.clear();
-            msg.add_field(Tag::PAD_RFC, &padding).unwrap();
             msg.add_field(Tag::VER, ver.wire_bytes()).unwrap();
             msg.add_field(Tag::NONC, nonce).unwrap();
+            msg.add_field(Tag::ZZZZ, &padding).unwrap();
 
             if text_dump {
                 eprintln!("Request = {}", msg);
