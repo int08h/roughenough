@@ -15,15 +15,10 @@ Requires latest stable Rust to compile. Contributions welcome, see
 
 ## RFC Work-In-Progress
 
-Roughenough implements the Roughtime protocol as specified in [the draft-5 RFC](https://www.ietf.org/archive/id/draft-ietf-ntp-roughtime-05.html).
+Roughenough implements the Roughtime protocol as specified in [the draft-8 RFC](https://www.ietf.org/archive/id/draft-ietf-ntp-roughtime-08.html).
   
 **Important differences from the draft RFC**
-1. Roughenough uses SHA-512/256 to compute the Merkle tree. Draft-5 of the RFC uses a
-   bespoke 32-byte SHA-512 prefix without rationale or justification. Given that 
-   standardized 32-byte SHA-512/256 exists and is already implemented widely, I'm 
-   sticking with it while I advocate for the RFC to move away from the custom prefix
-   and adopt SHA-512/256.
-2. The server and client send/expect RFC protocol version `1` (VER tag is `0x00000001`) 
+1. The server and client send/expect RFC protocol version `1` (VER tag is `0x00000001`) 
    instead of the draft's suggested `0x80000000 + version`.
 
 The Roughenough server operates both the "classic" protocol **and** the RFC compliant 
@@ -51,8 +46,8 @@ $ roughenough-client -p 1 roughtime.int08h.com 2002
 
 ### Minimum Supported Rust Version (MSRV)
 
-Roughenough uses [2018 edition](https://rust-lang-nursery.github.io/edition-guide/rust-2018/index.html) 
-features and requires Rust 1.31 or newer to build.
+Roughenough uses [2021 edition](https://doc.rust-lang.org/edition-guide/rust-2021/index.html) 
+features and requires Rust 1.72 or newer to build.
 
 ### Building
 
@@ -237,7 +232,7 @@ created by Adam Langley and Robert Obryk.
 * Eric Swanson (github.com/lachesis)
 
 ## Copyright and License
-Roughenough is copyright (c) 2017-2021 int08h LLC. All rights reserved. 
+Roughenough is copyright (c) 2017-2024 int08h LLC. All rights reserved. 
 
 int08h LLC licenses Roughenough (the "Software") to you under the Apache License, version 2.0 
 (the "License"); you may not use this Software except in compliance with the License. You may obtain 
