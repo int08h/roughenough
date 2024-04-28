@@ -29,7 +29,6 @@ use mio::net::{TcpListener, UdpSocket};
 use mio_extras::timer::Timer;
 
 use crate::config::ServerConfig;
-use crate::Error::RequestTooShort;
 use crate::key::LongTermKey;
 use crate::kms;
 use crate::request;
