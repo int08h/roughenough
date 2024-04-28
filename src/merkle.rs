@@ -166,6 +166,7 @@ impl MerkleTree {
         self.finalize_output(hash)
     }
 
+    #[inline]
     fn finalize_output(&self, data: Hash) -> Hash {
         match self.version {
             Rfc => data[0..32].into(),

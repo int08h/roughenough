@@ -221,12 +221,7 @@ impl Server {
                         Err(e) => {
                             self.stats.add_invalid_request(&src_addr.ip());
 
-                            // No need to log spammy short packets
-                            if e == RequestTooShort {
-                                continue
-                            }
-
-                            info!("Invalid request: '{:?}' ({} bytes) from {} (#{} in batch)",
+                            debug!("Invalid request: '{:?}' ({} bytes) from {} (#{} in batch)",
                                 e, num_bytes, src_addr, i
                             );
                         }
