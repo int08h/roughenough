@@ -63,6 +63,7 @@ pub struct Server {
     timer: Timer<()>,
     poll: Poll,
     responder_rfc: Responder,
+    responder_draft: Responder,
     responder_classic: Responder,
     buf: [u8; 65_536],
     thread_name: String,
@@ -132,6 +133,7 @@ impl Server {
         };
 
         let responder_rfc = Responder::new(Version::Rfc, config, &mut long_term_key);
+        let responder_draft = Responder::new(Version::RfcDraft8, config, &mut long_term_key);
         let responder_classic = Responder::new(Version::Classic, config, &mut long_term_key);
 
         let batch_size = config.batch_size();
@@ -147,6 +149,7 @@ impl Server {
             timer,
             poll,
             responder_rfc,
+            responder_draft,
             responder_classic,
             buf: [0u8; 65_536],
             thread_name,
@@ -183,12 +186,14 @@ impl Server {
             match msg.token() {
                 EVT_MESSAGE => loop {
                     self.responder_rfc.reset();
+                    self.responder_draft.reset();
                     self.responder_classic.reset();
 
                     let socket_now_empty = self.collect_requests();
 
                     let sock_copy = Arc::get_mut(&mut self.socket).unwrap();
                     self.responder_rfc.send_responses(sock_copy, &mut self.stats);
+                    self.responder_draft.send_responses(sock_copy, &mut self.stats);
                     self.responder_classic.send_responses(sock_copy, &mut self.stats);
 
                     if socket_now_empty {
@@ -213,8 +218,10 @@ impl Server {
                             self.responder_rfc.add_request(nonce, src_addr);
                             self.stats.add_rfc_request(&src_addr.ip());
                         }
+                        // TODO(stuart) remove when RFC is ratified
                         Ok((nonce, Version::RfcDraft8)) => {
-                            self.responder_rfc.add_request(nonce, src_addr);
+                            self.responder_draft.add_request(nonce, src_addr);
+                            // Mismatch of draft responder vs rfc stats is intentional
                             self.stats.add_rfc_request(&src_addr.ip());
                         }
                         Ok((nonce, Version::Classic)) => {
