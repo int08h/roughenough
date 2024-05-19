@@ -18,7 +18,7 @@
 
 use ring::digest;
 use crate::version::Version;
-use crate::version::Version::{Classic, Rfc};
+use crate::version::Version::{Classic, Rfc, RfcDraft8};
 
 use super::{TREE_LEAF_TWEAK, TREE_NODE_TWEAK};
 
@@ -169,7 +169,7 @@ impl MerkleTree {
     #[inline]
     fn finalize_output(&self, data: Hash) -> Hash {
         match self.version {
-            Rfc => data[0..32].into(),
+            Rfc | RfcDraft8 => data[0..32].into(),
             Classic => data,
         }
     }

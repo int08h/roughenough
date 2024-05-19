@@ -84,7 +84,7 @@ impl OnlineKey {
 
         let radi_time = match ver {
             Version::Classic => 2_000_000, // two seconds in microseconds
-            Version::Rfc => 2, // two seconds
+            Version::Rfc | Version::RfcDraft8 => 2, // two seconds
         };
 
         (&mut radi as &mut [u8])
@@ -93,7 +93,7 @@ impl OnlineKey {
 
         let midp_time = match ver {
             Version::Classic => self.classic_midp(now),
-            Version::Rfc => self.rfc_midp(now),
+            Version::Rfc | Version::RfcDraft8 => self.rfc_midp(now),
         };
 
         (&mut midp as &mut [u8])

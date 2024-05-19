@@ -213,6 +213,10 @@ impl Server {
                             self.responder_rfc.add_request(nonce, src_addr);
                             self.stats.add_rfc_request(&src_addr.ip());
                         }
+                        Ok((nonce, Version::RfcDraft8)) => {
+                            self.responder_rfc.add_request(nonce, src_addr);
+                            self.stats.add_rfc_request(&src_addr.ip());
+                        }
                         Ok((nonce, Version::Classic)) => {
                             self.responder_classic.add_request(nonce, src_addr);
                             self.stats.add_classic_request(&src_addr.ip());

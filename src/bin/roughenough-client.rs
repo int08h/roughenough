@@ -52,7 +52,7 @@ fn create_nonce(ver: Version) -> Nonce {
             rng.fill(&mut nonce).unwrap();
             nonce.to_vec()
         }
-        Version::Rfc => {
+        Version::Rfc | Version::RfcDraft8 => {
             let mut nonce = [0u8; 32];
             rng.fill(&mut nonce).unwrap();
             nonce.to_vec()
@@ -81,7 +81,7 @@ fn make_request(ver: Version, nonce: &Nonce, text_dump: bool) -> Vec<u8> {
 
             msg.encode().unwrap()
         }
-        Version::Rfc => {
+        Version::Rfc | Version::RfcDraft8 => {
             msg.add_field(Tag::VER, ver.wire_bytes()).unwrap();
             msg.add_field(Tag::NONC, nonce).unwrap();
             msg.add_field(Tag::ZZZZ, &[]).unwrap();
@@ -106,7 +106,7 @@ fn make_request(ver: Version, nonce: &Nonce, text_dump: bool) -> Vec<u8> {
 fn receive_response(ver: Version, buf: &[u8], buf_len: usize) -> RtMessage {
     match ver {
         Version::Classic => RtMessage::from_bytes(&buf[0..buf_len]).unwrap(),
-        Version::Rfc => {
+        Version::Rfc | Version::RfcDraft8 => {
             verify_framing(&buf).unwrap();
             RtMessage::from_bytes(&buf[12..buf_len]).unwrap()
         }
@@ -257,7 +257,7 @@ impl ResponseHandler {
 
         let hash = match self.version {
             Version::Classic => MerkleTree::new_sha512_classic(),
-            Version::Rfc => MerkleTree::new_sha512_ietf(),
+            Version::Rfc | Version::RfcDraft8 => MerkleTree::new_sha512_ietf(),
         }
         .root_from_paths(index as usize, &self.nonce, paths);
 
@@ -364,7 +364,7 @@ fn main() {
             .short("p")
             .long("protocol")
             .takes_value(true)
-            .help("Roughtime protocol version to use (0 = classic, 1 = rfc)")
+            .help("Roughtime protocol version to use (0 = classic, 1 = rfc, 8 = draft8)")
             .default_value("0")
         )
         .arg(Arg::with_name("timeout")
@@ -407,7 +407,8 @@ fn main() {
     let version = match protocol {
         0 => Version::Classic,
         1 => Version::Rfc,
-        _ => panic!("Invalid protocol '{}'; valid values are 0 or 1", protocol),
+        8 => Version::RfcDraft8,
+        _ => panic!("Invalid protocol '{}'; valid values are 0, 1, or 8", protocol),
     };
 
     let addr = (host, port).to_socket_addrs().unwrap().next().unwrap();
@@ -484,7 +485,7 @@ fn main() {
                 let nsecs = (midpoint - (seconds * 10_u64.pow(6))) * 10_u64.pow(3);
                 (seconds, nsecs as u32)
             },
-            Version::Rfc => (midpoint, 0),
+            Version::Rfc | Version::RfcDraft8 => (midpoint, 0),
         };
 
         let verify_str = if verified { "Yes" } else { "No" };

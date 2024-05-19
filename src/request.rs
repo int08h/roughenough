@@ -27,19 +27,17 @@ pub fn nonce_from_request(buf: &[u8], num_bytes: usize) -> Result<(Vec<u8>, Vers
         return Err(Error::RequestTooShort);
     }
 
-    match guess_protocol_version(buf) {
-        Version::Classic => nonce_from_classic_request(&buf[..num_bytes]),
-        Version::Rfc => nonce_from_rfc_request(&buf[..num_bytes]),
+    if is_classic_request(buf) {
+        return nonce_from_classic_request(&buf[..num_bytes]);
+    } else {
+        return nonce_from_rfc_request(&buf[..num_bytes]);
     }
 }
 
-/// Inspect the message in `buf` and guess which Roughtime protocol it corresponds to.
-fn guess_protocol_version(buf: &[u8]) -> Version {
-    if &buf[0..8] == RFC_REQUEST_FRAME_BYTES {
-        Version::Rfc
-    } else {
-        Version::Classic
-    }
+/// Inspect the message in `buf`, if it doesn't start with RFC framing, we guess
+/// it is a classic request
+fn is_classic_request(buf: &[u8]) -> bool {
+    return &buf[0..8] != RFC_REQUEST_FRAME_BYTES;
 }
 
 fn nonce_from_classic_request(buf: &[u8]) -> Result<(Vec<u8>, Version), Error> {
@@ -50,6 +48,8 @@ fn nonce_from_classic_request(buf: &[u8]) -> Result<(Vec<u8>, Version), Error> {
     }
 }
 
+
+// This could be any VER that we support. Extract VER from request and return it.
 fn nonce_from_rfc_request(buf: &[u8]) -> Result<(Vec<u8>, Version), Error> {
     // first 8 bytes were RFC_REQUEST_FRAME_BYTES, [0..8]
     let mut cur = Cursor::new(&buf[8..12]);
@@ -62,27 +62,30 @@ fn nonce_from_rfc_request(buf: &[u8]) -> Result<(Vec<u8>, Version), Error> {
 
     let msg = RtMessage::from_bytes(&buf[12..])?;
 
-    if !has_supported_version(&msg) {
+    let version = get_supported_version(&msg);
+
+    if version.is_none() {
         return Err(Error::NoCompatibleVersion);
     }
 
     match msg.get_field(Tag::NONC) {
-        Some(nonce) => Ok((nonce.to_vec(), Version::Rfc)),
+        Some(nonce) => Ok((nonce.to_vec(), version.unwrap())),
         None => Err(Error::InvalidRequest),
     }
 }
 
-fn has_supported_version(msg: &RtMessage) -> bool {
-    const EXPECTED_VER_BYTES: &[u8] = Version::Rfc.wire_bytes();
+fn get_supported_version(msg: &RtMessage) -> Option<Version> {
+    const SUPPORTED_VERSIONS: &[Version] = &[Version::RfcDraft8, Version::Rfc];
 
     if let Some(tag_bytes) = msg.get_field(Tag::VER) {
-        // Iterate the list of supplied versions, looking for a match
+        // Iterate the list of supplied versions, looking for the first match
         for found_ver_bytes in tag_bytes.chunks(4) {
-            if found_ver_bytes == EXPECTED_VER_BYTES {
-                return true;
+            for ver in SUPPORTED_VERSIONS {
+                if ver.wire_bytes() == found_ver_bytes {
+                    return Some(*ver);
+                }
             }
         }
     }
-
-    false
+    None
 }

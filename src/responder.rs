@@ -113,7 +113,7 @@ impl Responder {
 
             let resp_bytes = match self.version {
                 Version::Classic => resp_msg.encode().unwrap(),
-                Version::Rfc => resp_msg.encode_framed().unwrap(),
+                Version::Rfc | Version::RfcDraft8 => resp_msg.encode_framed().unwrap(),
             };
 
             let mut bytes_sent: usize = 0;
@@ -136,7 +136,7 @@ impl Responder {
             if successful_send {
                 match self.version {
                     Version::Classic => stats.add_classic_response(&src_addr.ip(), bytes_sent),
-                    Version::Rfc => stats.add_rfc_response(&src_addr.ip(), bytes_sent),
+                    Version::Rfc | Version::RfcDraft8 => stats.add_rfc_response(&src_addr.ip(), bytes_sent),
                 }
             } else {
                 stats.add_failed_send_attempt(&src_addr.ip());
@@ -162,7 +162,7 @@ impl Responder {
         let mut response = RtMessage::with_capacity(6);
         response.add_field(Tag::SIG, sig_bytes).unwrap();
 
-        if self.version == Version::Rfc {
+        if self.version != Version::Classic {
             response
                 .add_field(Tag::VER, self.version.wire_bytes())
                 .unwrap();
