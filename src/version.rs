@@ -36,7 +36,7 @@ const BYTES_VER_RFC: &'static [u8] = &[0x01, 0x00, 0x00, 0x00];
 const STR_VER_RFC: &'static str = "Rfc";
 
 // RFC draft 8 (keep updated as draft evolves)
-const BYTES_VER_RFC_DRAFT8: &'static [u8] = &[0x80, 0x00, 0x00, 0x08];
+const BYTES_VER_RFC_DRAFT8: &'static [u8] = &[0x08, 0x00, 0x00, 0x80];
 const STR_VER_RFC_DRAFT8: &'static str = "RfcDraft8";
 
 impl Version {
