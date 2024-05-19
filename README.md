@@ -16,18 +16,15 @@ Requires latest stable Rust to compile. Contributions welcome, see
 ## RFC Work-In-Progress
 
 Roughenough implements the Roughtime protocol as specified in [the draft-8 RFC](https://www.ietf.org/archive/id/draft-ietf-ntp-roughtime-08.html).
-  
-**Important differences from the draft RFC**
-1. The server and client send/expect RFC protocol version `1` (VER tag is `0x00000001`) 
-   instead of the draft's suggested `0x80000000 + version`.
 
 The Roughenough server operates both the "classic" protocol **and** the RFC compliant 
 protocol at the same time on a single serving port (the 8-byte magic frame value added 
-by the RFC is used to distinguish classic vs. rfc requests).
+by the RFC is used to distinguish classic vs. RFC requests).
 
 The new `-p/--protocol` flag of `roughenough-client` controls the protocol version to
-use in requests (`0` = classic protocol, `1` = RFC protocol). The default is `0` the
-"classic" protocol, until the RFC is finalized:
+use in requests. `0` = classic protocol (no `VER` tag), `1` = anticipated RFC protocol 
+(`VER` tag with value `0x00000001`), and `8` is the RFC Draft8 protocol (`VER` tag with
+value `0x80000008`). The default is `0` the "classic" protocol, until the RFC is finalized.
 
 ```
 # send RFC protocol Roughtime requests
@@ -66,10 +63,10 @@ $ cp target/release/roughenough-client /usr/local/bin
 ### Using the Client to Query a Roughtime Server 
 
 ```bash
-$ target/release/roughenough-client -v roughtime.int08h.com 2002
-Requesting time from: "roughtime.int08h.com":2002
-Received time from server: midpoint="Oct 26 2018 23:20:44", radius=1000000, verified=No (merkle_index=0)
-Oct 26 2018 23:20:44
+$ target/debug/roughenough-client -v roughtime.cloudflare.com 2002
+Requesting time from: "roughtime.cloudflare.com":2002
+Received time from server: midpoint="May 19 2024 16:18:10 -05:00", radius=1000000, verified=No (merkle_index=0)
+May 19 2024 16:18:10 -05:00
 ```
 
 ### Setting The System Time on Linux
@@ -204,7 +201,6 @@ A) via a config setting, or B) at compile-time.
 
 See [OPTIONAL-FEATURES.md](doc/OPTIONAL-FEATURES.md) for details and instructions
 how to enable and use.
-
 
 ## Limitations
 
