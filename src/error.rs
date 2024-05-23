@@ -61,6 +61,9 @@ pub enum Error {
 
     /// Request did not provide versions compatible with this implementation
     NoCompatibleVersion,
+
+    /// Sending response to a client request has failed
+    SendingResponseFailed
 }
 
 impl From<std::io::Error> for Error {

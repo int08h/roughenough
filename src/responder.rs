@@ -24,8 +24,9 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
 use mio::net::UdpSocket;
 
-use crate::{RtMessage, Tag};
+use crate::{Error, RtMessage, Tag};
 use crate::config::ServerConfig;
+use crate::error::Error::SendingResponseFailed;
 use crate::grease::Grease;
 use crate::key::{LongTermKey, OnlineKey};
 use crate::merkle::MerkleTree;
@@ -118,8 +119,8 @@ impl Responder {
 
             let mut bytes_sent: usize = 0;
             let mut successful_send: bool = true;
-            match socket.send_to(&resp_bytes, &src_addr) {
-                Ok(n_bytes) => bytes_sent = n_bytes,
+            match self.send_with_retry(socket, &src_addr, &resp_bytes) {
+                Ok(num_bytes) => bytes_sent = num_bytes,
                 Err(_) => successful_send = false,
             }
 
@@ -142,6 +143,25 @@ impl Responder {
                 stats.add_failed_send_attempt(&src_addr.ip());
             }
         }
+    }
+
+    fn send_with_retry(
+        &self,
+        socket: &mut UdpSocket,
+        src_addr: &SocketAddr,
+        resp_bytes: &Vec<u8>
+    ) -> Result<usize, Error> {
+        let mut retries_remaining = 2;
+
+        while retries_remaining > 0 {
+            match socket.send_to(&resp_bytes, &src_addr) {
+                Ok(bytes_sent) => return Ok(bytes_sent),
+                Err(_) => {}, // no-op
+            }
+            retries_remaining -= 1;
+        }
+
+        Err(SendingResponseFailed)
     }
 
     fn make_response(
