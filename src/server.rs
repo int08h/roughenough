@@ -81,11 +81,6 @@ impl Server {
     /// [`ServerConfig`](../config/trait.ServerConfig.html) trait object instance.
     ///
     pub fn new(config: &dyn ServerConfig, socket: Arc<UdpSocket>) -> Server {
-        // let sock_addr = config.udp_socket_addr().expect("udp sock addr");
-        // let socket = UdpSocket::bind(&sock_addr).expect("failed to bind to socket");
-
-        let poll_duration = Some(Duration::from_millis(100));
-
         let mut timer: Timer<()> = Timer::default();
         timer.set_timeout(config.status_interval(), ());
 
@@ -139,6 +134,7 @@ impl Server {
         let batch_size = config.batch_size();
         let status_interval = config.status_interval();
         let thread_name = thread::current().name().unwrap().to_string();
+        let poll_duration = Some(Duration::from_millis(100));
 
         Server {
             batch_size,
@@ -153,7 +149,6 @@ impl Server {
             responder_classic,
             buf: [0u8; 65_536],
             thread_name,
-
             stats,
 
             #[cfg(fuzzing)]
