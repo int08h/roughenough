@@ -29,7 +29,7 @@ pub mod inner {
     use data_encoding::BASE64;
     use tokio::runtime::Runtime;
 
-    use crate::kms::{AD, EncryptedDEK, KmsError, KmsProvider, PlaintextDEK};
+    use crate::kms::{EncryptedDEK, KmsError, KmsProvider, PlaintextDEK, AD};
 
     use self::cloudkms1::api::{DecryptRequest, EncryptRequest};
     use self::cloudkms1::CloudKMS;

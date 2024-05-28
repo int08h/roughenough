@@ -17,8 +17,8 @@ use std::time::Duration;
 
 use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
 
-use crate::config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
 use crate::config::ServerConfig;
+use crate::config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
 use crate::key::KmsProtection;
 
 const HEX: Encoding = HEXLOWER_PERMISSIVE;

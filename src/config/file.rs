@@ -20,10 +20,10 @@ use std::time::Duration;
 use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
 use yaml_rust::YamlLoader;
 
-use crate::config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
 use crate::config::ServerConfig;
-use crate::Error;
+use crate::config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
 use crate::key::KmsProtection;
+use crate::Error;
 
 const HEX: Encoding = HEXLOWER_PERMISSIVE;
 

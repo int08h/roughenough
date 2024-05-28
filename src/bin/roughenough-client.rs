@@ -18,27 +18,27 @@ extern crate clap;
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{Cursor, Write};
 use std::io::ErrorKind::WouldBlock;
+use std::io::{Cursor, Write};
 use std::iter::Iterator;
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::time;
 
 use byteorder::{LittleEndian, ReadBytesExt};
-use chrono::{Local, TimeZone};
 use chrono::offset::Utc;
+use chrono::{Local, TimeZone};
 use clap::{App, Arg};
-use data_encoding::{Encoding, HEXLOWER_PERMISSIVE, BASE64};
+use data_encoding::{Encoding, BASE64, HEXLOWER_PERMISSIVE};
 use ring::rand;
 use ring::rand::SecureRandom;
 
-use roughenough::{
-    CERTIFICATE_CONTEXT, Error, RFC_REQUEST_FRAME_BYTES, roughenough_version, RtMessage, SIGNED_RESPONSE_CONTEXT,
-    Tag,
-};
 use roughenough::merkle::MerkleTree;
 use roughenough::sign::Verifier;
 use roughenough::version::Version;
+use roughenough::{
+    roughenough_version, Error, RtMessage, Tag, CERTIFICATE_CONTEXT, RFC_REQUEST_FRAME_BYTES,
+    SIGNED_RESPONSE_CONTEXT,
+};
 
 const HEX: Encoding = HEXLOWER_PERMISSIVE;
 
@@ -141,7 +141,12 @@ fn stress_test_forever(ver: Version, addr: &SocketAddr) -> ! {
     println!("Stress testing!");
 
     let nonce = create_nonce(ver);
-    let socket = UdpSocket::bind(if addr.is_ipv6() { "[::]:0" } else { "0.0.0.0:0" }).expect("Couldn't open UDP socket");
+    let socket = UdpSocket::bind(if addr.is_ipv6() {
+        "[::]:0"
+    } else {
+        "0.0.0.0:0"
+    })
+    .expect("Couldn't open UDP socket");
     let request = make_request(ver, &nonce, false);
     loop {
         socket.send_to(&request, addr).unwrap();
@@ -408,7 +413,10 @@ fn main() {
         0 => Version::Classic,
         1 => Version::Rfc,
         8 => Version::RfcDraft8,
-        _ => panic!("Invalid protocol '{}'; valid values are 0, 1, or 8", protocol),
+        _ => panic!(
+            "Invalid protocol '{}'; valid values are 0, 1, or 8",
+            protocol
+        ),
     };
 
     let addr = (host, port).to_socket_addrs().unwrap().next().unwrap();
@@ -425,7 +433,12 @@ fn main() {
 
     for _ in 0..num_requests {
         let nonce = create_nonce(version);
-        let socket = UdpSocket::bind(if addr.is_ipv6() { "[::]:0" } else { "0.0.0.0:0" }).expect("Couldn't open UDP socket");
+        let socket = UdpSocket::bind(if addr.is_ipv6() {
+            "[::]:0"
+        } else {
+            "0.0.0.0:0"
+        })
+        .expect("Couldn't open UDP socket");
         let request = make_request(version, &nonce, text_dump);
 
         if let Some(f) = file_for_requests.as_mut() {
@@ -441,7 +454,8 @@ fn main() {
 
     for (nonce, _, socket) in requests {
         let duration = time::Duration::from_secs(timeout_secs);
-        socket.set_read_timeout(Some(duration))
+        socket
+            .set_read_timeout(Some(duration))
             .expect("Failed setting send timeout");
 
         let mut buf = [0u8; 4096];
@@ -452,7 +466,7 @@ fn main() {
                 eprintln!("Timeout waiting for response");
                 return;
             }
-            Err(e) =>  panic!("{}", e),
+            Err(e) => panic!("{}", e),
         };
 
         if let Some(f) = file_for_responses.as_mut() {
@@ -484,7 +498,7 @@ fn main() {
                 let seconds = midpoint / 10_u64.pow(6);
                 let nsecs = (midpoint - (seconds * 10_u64.pow(6))) * 10_u64.pow(3);
                 (seconds, nsecs as u32)
-            },
+            }
             Version::Rfc | Version::RfcDraft8 => (midpoint, 0),
         };
 

@@ -18,8 +18,8 @@ use std::io::Cursor;
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
-use crate::{Error, MIN_REQUEST_LENGTH, RFC_REQUEST_FRAME_BYTES, RtMessage, Tag};
 use crate::version::Version;
+use crate::{Error, RtMessage, Tag, MIN_REQUEST_LENGTH, RFC_REQUEST_FRAME_BYTES};
 
 /// Guess which protocol the request is using and extract the client's nonce from the request
 pub fn nonce_from_request(buf: &[u8], num_bytes: usize) -> Result<(Vec<u8>, Version), Error> {
@@ -47,7 +47,6 @@ fn nonce_from_classic_request(buf: &[u8]) -> Result<(Vec<u8>, Version), Error> {
         None => Err(Error::InvalidRequest),
     }
 }
-
 
 // This could be any VER that we support. Extract VER from request and return it.
 fn nonce_from_rfc_request(buf: &[u8]) -> Result<(Vec<u8>, Version), Error> {

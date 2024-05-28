@@ -27,7 +27,7 @@ pub mod inner {
     use rusoto_core::Region;
     use rusoto_kms::{DecryptRequest, EncryptRequest, Kms, KmsClient};
 
-    use crate::kms::{AD, DEK_LEN_BYTES, EncryptedDEK, KmsError, KmsProvider, PlaintextDEK};
+    use crate::kms::{EncryptedDEK, KmsError, KmsProvider, PlaintextDEK, AD, DEK_LEN_BYTES};
 
     /// Amazon Web Services Key Management Service
     /// https://aws.amazon.com/kms/

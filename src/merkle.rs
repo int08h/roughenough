@@ -16,9 +16,9 @@
 //! Merkle Tree implementation that uses the Roughtime leaf and node tweak values.
 //!
 
-use ring::digest;
 use crate::version::Version;
 use crate::version::Version::{Classic, Rfc, RfcDraft8};
+use ring::digest;
 
 use super::{TREE_LEAF_TWEAK, TREE_NODE_TWEAK};
 
@@ -79,7 +79,10 @@ impl MerkleTree {
     }
 
     pub fn compute_root(&mut self) -> Hash {
-        assert!(!self.levels[0].is_empty(), "Must have at least one leaf to hash!");
+        assert!(
+            !self.levels[0].is_empty(),
+            "Must have at least one leaf to hash!"
+        );
 
         let mut level = 0;
         let mut node_count = self.levels[0].len();
@@ -180,7 +183,10 @@ mod test {
     use crate::merkle::*;
 
     fn test_paths_with_num(num: usize) {
-        for mut merkle_impl in [MerkleTree::new_sha512_ietf(), MerkleTree::new_sha512_classic()] {
+        for mut merkle_impl in [
+            MerkleTree::new_sha512_ietf(),
+            MerkleTree::new_sha512_classic(),
+        ] {
             for i in 0..num {
                 merkle_impl.push_leaf(&[i as u8]);
             }

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt::{Display, Formatter};
 use enum_iterator::Sequence;
+use std::fmt::{Display, Formatter};
 
 use crate::error::Error;
 
@@ -142,7 +142,6 @@ impl Display for Tag {
     }
 }
 
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -153,10 +152,9 @@ mod test {
         let values = enum_iterator::all::<Tag>().collect::<Vec<_>>();
         for (idx, _) in values.iter().enumerate() {
             if idx == 0 {
-                continue
+                continue;
             }
             assert!(values[idx - 1] < values[idx]);
         }
-
     }
 }

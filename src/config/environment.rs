@@ -12,15 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{env, thread};
 use std::time::Duration;
+use std::{env, thread};
 
 use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
 
-use crate::config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
 use crate::config::ServerConfig;
-use crate::Error;
+use crate::config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
 use crate::key::KmsProtection;
+use crate::Error;
 
 const HEX: Encoding = HEXLOWER_PERMISSIVE;
 

@@ -15,10 +15,10 @@
 use std::io::{Cursor, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use ring::aead::{Aad, AES_256_GCM, LessSafeKey, Nonce, UnboundKey};
+use ring::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM};
 use ring::rand::{SecureRandom, SystemRandom};
 
-use crate::kms::{AD, DEK_LEN_BYTES, KmsError, KmsProvider, NONCE_LEN_BYTES, TAG_LEN_BYTES};
+use crate::kms::{KmsError, KmsProvider, AD, DEK_LEN_BYTES, NONCE_LEN_BYTES, TAG_LEN_BYTES};
 use crate::SEED_LENGTH;
 
 const DEK_LEN_FIELD: usize = 2;
@@ -157,9 +157,9 @@ impl EnvelopeEncryption {
 
 #[cfg(test)]
 mod test {
-    use crate::kms::{KmsError, KmsProvider};
     use crate::kms::envelope::{DEK_LEN_FIELD, MIN_PAYLOAD_SIZE, NONCE_LEN_FIELD};
     use crate::kms::EnvelopeEncryption;
+    use crate::kms::{KmsError, KmsProvider};
 
     struct MockKmsProvider {}
 

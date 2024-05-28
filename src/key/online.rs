@@ -20,9 +20,9 @@ use byteorder::{LittleEndian, WriteBytesExt};
 
 use crate::message::RtMessage;
 use crate::sign::Signer;
-use crate::SIGNED_RESPONSE_CONTEXT;
 use crate::tag::Tag;
 use crate::version::Version;
+use crate::SIGNED_RESPONSE_CONTEXT;
 
 ///
 /// Represents the delegated Roughtime ephemeral online key.
@@ -71,9 +71,7 @@ impl OnlineKey {
 
     /// RFC protocol, a uint64 count of seconds since the Unix epoch in UTC.
     fn rfc_midp(&self, now: SystemTime) -> u64 {
-        now.duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
+        now.duration_since(UNIX_EPOCH).unwrap().as_secs()
     }
 
     /// Create an SREP response containing the provided time and Merkle root,
@@ -83,7 +81,7 @@ impl OnlineKey {
         let mut midp = [0; 8];
 
         let radi_time = match ver {
-            Version::Classic => 2_000_000, // two seconds in microseconds
+            Version::Classic => 2_000_000,          // two seconds in microseconds
             Version::Rfc | Version::RfcDraft8 => 2, // two seconds
         };
 

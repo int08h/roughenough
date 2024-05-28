@@ -24,8 +24,8 @@ use std::thread;
 use std::time::Duration;
 
 use humansize::{file_size_opts as fsopts, FileSize};
-use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio::net::{TcpListener, UdpSocket};
+use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio_extras::timer::Timer;
 
 use crate::config::ServerConfig;
@@ -187,9 +187,12 @@ impl Server {
                     let socket_now_empty = self.collect_requests();
 
                     let sock_copy = Arc::get_mut(&mut self.socket).unwrap();
-                    self.responder_rfc.send_responses(sock_copy, &mut self.stats);
-                    self.responder_draft.send_responses(sock_copy, &mut self.stats);
-                    self.responder_classic.send_responses(sock_copy, &mut self.stats);
+                    self.responder_rfc
+                        .send_responses(sock_copy, &mut self.stats);
+                    self.responder_draft
+                        .send_responses(sock_copy, &mut self.stats);
+                    self.responder_classic
+                        .send_responses(sock_copy, &mut self.stats);
 
                     if socket_now_empty {
                         break;
@@ -226,7 +229,8 @@ impl Server {
                         Err(e) => {
                             self.stats.add_invalid_request(&src_addr.ip());
 
-                            debug!("Invalid request: '{:?}' ({} bytes) from {} (#{} in batch)",
+                            debug!(
+                                "Invalid request: '{:?}' ({} bytes) from {} (#{} in batch)",
                                 e, num_bytes, src_addr, i
                             );
                         }

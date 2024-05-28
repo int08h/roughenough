@@ -23,8 +23,8 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
 
 use crate::error::Error;
-use crate::RFC_REQUEST_FRAME_BYTES;
 use crate::tag::Tag;
+use crate::RFC_REQUEST_FRAME_BYTES;
 
 const HEX: Encoding = HEXLOWER_PERMISSIVE;
 

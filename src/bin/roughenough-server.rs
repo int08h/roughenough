@@ -23,14 +23,14 @@
 #[macro_use]
 extern crate log;
 
-use std::{env, thread};
 use std::process;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::{env, thread};
 
 use log::LevelFilter;
-use mio::Events;
 use mio::net::UdpSocket;
+use mio::Events;
 use once_cell::sync::Lazy;
 use simple_logger::SimpleLogger;
 
@@ -74,7 +74,10 @@ fn display_config(server: &Server, cfg: &dyn ServerConfig) {
     info!("Number of workers          : {}", cfg.num_workers());
     info!("Long-term public key       : {}", server.get_public_key());
     info!("Max response batch size    : {}", cfg.batch_size());
-    info!("Status updates every       : {} seconds", cfg.status_interval().as_secs());
+    info!(
+        "Status updates every       : {} seconds",
+        cfg.status_interval().as_secs()
+    );
 
     info!(
         "Server listening on        : {}:{}",
@@ -103,7 +106,6 @@ fn display_config(server: &Server, cfg: &dyn ServerConfig) {
     } else {
         info!("Deliberate response errors : disabled");
     }
-
 }
 
 pub fn main() {
@@ -132,7 +134,11 @@ pub fn main() {
     };
 
     let socket = {
-        let sock_addr = config.lock().unwrap().udp_socket_addr().expect("udp sock addr");
+        let sock_addr = config
+            .lock()
+            .unwrap()
+            .udp_socket_addr()
+            .expect("udp sock addr");
         let sock = UdpSocket::bind(&sock_addr).expect("failed to bind to socket");
         Arc::new(sock)
     };
@@ -142,7 +148,7 @@ pub fn main() {
     // TODO(stuart) move TCP healthcheck out of worker threads as it currently conflicts
     let mut threads = Vec::new();
 
-    for i in 0 .. config.lock().unwrap().num_workers() {
+    for i in 0..config.lock().unwrap().num_workers() {
         let cfg = config.clone();
         let sock = socket.try_clone().unwrap();
         let thread = thread::Builder::new()

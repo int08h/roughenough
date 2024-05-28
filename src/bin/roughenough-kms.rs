@@ -42,7 +42,9 @@ fn encrypt_seed(_: &str, _: &str) {
 fn encrypt_seed(kms_key: &str, hex_seed: &str) {
     let kms_client = get_kms(kms_key);
 
-    let plaintext_seed = HEX.decode(hex_seed.as_ref()).expect("Error decoding hex seed value");
+    let plaintext_seed = HEX
+        .decode(hex_seed.as_ref())
+        .expect("Error decoding hex seed value");
 
     if plaintext_seed.len() != 32 {
         panic!(
@@ -71,7 +73,9 @@ fn decrypt_blob(_: &str, _: &str) {
 #[cfg(any(feature = "awskms", feature = "gcpkms"))]
 fn decrypt_blob(kms_key: &str, hex_blob: &str) {
     let kms_client = get_kms(kms_key);
-    let ciphertext = HEX.decode(hex_blob.as_ref()).expect("Error decoding hex blob value");
+    let ciphertext = HEX
+        .decode(hex_blob.as_ref())
+        .expect("Error decoding hex blob value");
 
     match EnvelopeEncryption::decrypt_seed(&kms_client, ciphertext.as_ref()) {
         Ok(plaintext) => {

@@ -24,7 +24,6 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
 use mio::net::UdpSocket;
 
-use crate::{Error, RtMessage, Tag};
 use crate::config::ServerConfig;
 use crate::error::Error::SendingResponseFailed;
 use crate::grease::Grease;
@@ -32,6 +31,7 @@ use crate::key::{LongTermKey, OnlineKey};
 use crate::merkle::MerkleTree;
 use crate::stats::ServerStats;
 use crate::version::Version;
+use crate::{Error, RtMessage, Tag};
 
 const HEX: Encoding = HEXLOWER_PERMISSIVE;
 
@@ -99,7 +99,9 @@ impl Responder {
         let merkle_root = self.merkle.compute_root();
 
         // The SREP tag is identical for each response
-        let srep = self.online_key.make_srep(self.version, SystemTime::now(), &merkle_root);
+        let srep = self
+            .online_key
+            .make_srep(self.version, SystemTime::now(), &merkle_root);
 
         for (idx, &(ref nonce, ref src_addr)) in self.requests.iter().enumerate() {
             let paths = self.merkle.get_paths(idx);
@@ -137,7 +139,9 @@ impl Responder {
             if successful_send {
                 match self.version {
                     Version::Classic => stats.add_classic_response(&src_addr.ip(), bytes_sent),
-                    Version::Rfc | Version::RfcDraft8 => stats.add_rfc_response(&src_addr.ip(), bytes_sent),
+                    Version::Rfc | Version::RfcDraft8 => {
+                        stats.add_rfc_response(&src_addr.ip(), bytes_sent)
+                    }
                 }
             } else {
                 stats.add_failed_send_attempt(&src_addr.ip());
@@ -149,14 +153,14 @@ impl Responder {
         &self,
         socket: &mut UdpSocket,
         src_addr: &SocketAddr,
-        resp_bytes: &Vec<u8>
+        resp_bytes: &Vec<u8>,
     ) -> Result<usize, Error> {
         let mut retries_remaining = 2;
 
         while retries_remaining > 0 {
             match socket.send_to(&resp_bytes, &src_addr) {
                 Ok(bytes_sent) => return Ok(bytes_sent),
-                Err(_) => {}, // no-op
+                Err(_) => {} // no-op
             }
             retries_remaining -= 1;
         }

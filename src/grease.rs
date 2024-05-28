@@ -20,16 +20,16 @@
 //! on how to enable.
 //!
 
-use rand::{FromEntropy, Rng};
 use rand::distributions::Bernoulli;
 use rand::rngs::SmallRng;
 use rand::seq::index::sample as index_sample;
 use rand::seq::SliceRandom;
+use rand::{FromEntropy, Rng};
 
 use crate::grease::Pathologies::*;
+use crate::tag::Tag;
 use crate::RtMessage;
 use crate::SIGNATURE_LENGTH;
-use crate::tag::Tag;
 
 ///
 /// Ways that a message can be made invalid.
@@ -149,8 +149,8 @@ impl Grease {
 #[cfg(test)]
 mod test {
     use crate::grease::Grease;
-    use crate::RtMessage;
     use crate::tag::Tag;
+    use crate::RtMessage;
 
     #[test]
     fn verify_error_probability() {

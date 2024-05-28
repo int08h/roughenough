@@ -25,8 +25,8 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use crate::Error;
 use crate::key::KmsProtection;
+use crate::Error;
 use crate::SEED_LENGTH;
 
 pub use self::environment::EnvironmentConfig;
@@ -68,7 +68,7 @@ pub const DEFAULT_STATUS_INTERVAL: Duration = Duration::from_secs(600);
 ///   * [EnvironmentConfig](struct.EnvironmentConfig.html) - configure via environment variables
 ///   * [MemoryConfig](struct.MemoryConfig.html) - in-memory configuration for testing
 ///
-pub trait ServerConfig : Send {
+pub trait ServerConfig: Send {
     /// [Required] IP address or interface name to listen for client requests
     fn interface(&self) -> &str;
 

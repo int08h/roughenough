@@ -19,11 +19,11 @@
 use std::fmt;
 use std::fmt::Formatter;
 
-use crate::CERTIFICATE_CONTEXT;
 use crate::key::OnlineKey;
 use crate::message::RtMessage;
 use crate::sign::Signer;
 use crate::tag::Tag;
+use crate::CERTIFICATE_CONTEXT;
 
 ///
 /// Represents the server's long-term identity.

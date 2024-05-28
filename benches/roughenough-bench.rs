@@ -2,14 +2,14 @@
 extern crate criterion;
 extern crate roughenough;
 
-use std::time::SystemTime;
-use criterion::{BenchmarkId, black_box, Criterion, SamplingMode};
 use criterion::Throughput::Elements;
+use criterion::{black_box, BenchmarkId, Criterion, SamplingMode};
+use std::time::SystemTime;
 
-use roughenough::merkle::MerkleTree;
-use roughenough::{RtMessage, Tag};
 use roughenough::key::OnlineKey;
+use roughenough::merkle::MerkleTree;
 use roughenough::version::Version;
+use roughenough::{RtMessage, Tag};
 
 fn create_signed_srep_tags(c: &mut Criterion) {
     let mut group = c.benchmark_group("signing");
@@ -19,7 +19,7 @@ fn create_signed_srep_tags(c: &mut Criterion) {
     group.throughput(Elements(1));
     group.bench_function("create signed SREP tag", |b| {
         let now = SystemTime::now();
-        b.iter(|| black_box(key.make_srep(Version::Rfc, now, data.as_ref(), )))
+        b.iter(|| black_box(key.make_srep(Version::Rfc, now, data.as_ref())))
     });
     group.finish();
 }
@@ -60,17 +60,15 @@ fn create_new_merkle_tree(c: &mut Criterion) {
 
     for size in SIZES.iter() {
         group.throughput(Elements(*size as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(size), size,
-            |b, &size| {
-                b.iter(|| {
-                    let mut tree = MerkleTree::new_sha512_classic();
-                    for _ in 0..size {
-                        tree.push_leaf(DATA);
-                    }
-                    black_box(tree.compute_root())
-                })
-            }
-        );
+        group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
+            b.iter(|| {
+                let mut tree = MerkleTree::new_sha512_classic();
+                for _ in 0..size {
+                    tree.push_leaf(DATA);
+                }
+                black_box(tree.compute_root())
+            })
+        });
     }
     group.finish();
 }
@@ -83,25 +81,20 @@ fn reuse_merkle_tree(c: &mut Criterion) {
 
     for size in SIZES.iter() {
         group.throughput(Elements(*size as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(size), size,
-           |b, &size| {
-               b.iter(|| {
-                   tree.reset();
-                   for _ in 0..size {
-                       tree.push_leaf(DATA);
-                   }
-                   black_box(tree.compute_root())
-               })
-           }
-        );
+        group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
+            b.iter(|| {
+                tree.reset();
+                for _ in 0..size {
+                    tree.push_leaf(DATA);
+                }
+                black_box(tree.compute_root())
+            })
+        });
     }
     group.finish();
 }
 
-criterion_group!(
-    message_singing,
-    create_signed_srep_tags,
-);
+criterion_group!(message_singing, create_signed_srep_tags,);
 
 criterion_group!(
     message_creation,
@@ -110,10 +103,6 @@ criterion_group!(
     create_four_field_message,
 );
 
-criterion_group!(
-    merkle_tree,
-    create_new_merkle_tree,
-    reuse_merkle_tree
-);
+criterion_group!(merkle_tree, create_new_merkle_tree, reuse_merkle_tree);
 
 criterion_main!(message_singing, message_creation, merkle_tree);
