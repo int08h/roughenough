@@ -32,7 +32,8 @@ pub struct AggregatedStats {
     rfc_responses_sent: u64,
     classic_responses_sent: u64,
     bytes_sent: usize,
-    failed_send_attempts: u64,
+    send_failed_attempts: u64,
+    send_retry_attempts: u64,
     empty_map: HashMap<IpAddr, ClientStatEntry>,
 }
 
@@ -53,7 +54,8 @@ impl AggregatedStats {
             rfc_responses_sent: 0,
             classic_responses_sent: 0,
             bytes_sent: 0,
-            failed_send_attempts: 0,
+            send_failed_attempts: 0,
+            send_retry_attempts: 0,
             empty_map: HashMap::new(),
         }
     }
@@ -73,7 +75,11 @@ impl ServerStats for AggregatedStats {
     }
 
     fn add_failed_send_attempt(&mut self, _: &IpAddr) {
-        self.failed_send_attempts += 1;
+        self.send_failed_attempts += 1;
+    }
+
+    fn add_retried_send_attempt(&mut self, _: &IpAddr) {
+        self.send_retry_attempts += 1;
     }
 
     fn add_health_check(&mut self, _: &IpAddr) {
@@ -111,7 +117,11 @@ impl ServerStats for AggregatedStats {
     }
 
     fn total_failed_send_attempts(&self) -> u64 {
-        self.failed_send_attempts
+        self.send_failed_attempts
+    }
+
+    fn total_retried_send_attempts(&self) -> u64 {
+        self.send_retry_attempts
     }
 
     fn total_responses_sent(&self) -> u64 {
@@ -150,6 +160,7 @@ impl ServerStats for AggregatedStats {
         self.rfc_responses_sent = 0;
         self.classic_responses_sent = 0;
         self.bytes_sent = 0;
-        self.failed_send_attempts = 0;
+        self.send_failed_attempts = 0;
+        self.send_retry_attempts = 0;
     }
 }

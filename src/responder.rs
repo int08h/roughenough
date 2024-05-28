@@ -121,7 +121,7 @@ impl Responder {
 
             let mut bytes_sent: usize = 0;
             let mut successful_send: bool = true;
-            match self.send_with_retry(socket, &src_addr, &resp_bytes) {
+            match self.send_with_retry(socket, &src_addr, &resp_bytes, stats) {
                 Ok(num_bytes) => bytes_sent = num_bytes,
                 Err(_) => successful_send = false,
             }
@@ -154,6 +154,7 @@ impl Responder {
         socket: &mut UdpSocket,
         src_addr: &SocketAddr,
         resp_bytes: &Vec<u8>,
+        stats: &mut Box<dyn ServerStats>,
     ) -> Result<usize, Error> {
         let mut retries_remaining = 2;
 
@@ -162,6 +163,7 @@ impl Responder {
                 Ok(bytes_sent) => return Ok(bytes_sent),
                 Err(_) => {} // no-op
             }
+            stats.add_retried_send_attempt(&src_addr.ip());
             retries_remaining -= 1;
         }
 
