@@ -288,7 +288,7 @@ impl Server {
 
         for (addr, counts) in vec {
             info!(
-                "{:16}: {} classic req, {} rfc req; {} invalid requests; {} classic resp, {} rfc resp ({} sent); {} failed sends",
+                "{:16}: {} classic req, {} rfc req; {} invalid requests; {} classic resp, {} rfc resp ({} sent); {} failed sends, {} retried sends",
                 format!("{}", addr),
                 counts.classic_requests,
                 counts.rfc_requests,
@@ -296,12 +296,14 @@ impl Server {
                 counts.classic_responses_sent,
                 counts.rfc_responses_sent,
                 counts.bytes_sent.file_size(fsopts::BINARY).unwrap(),
-                counts.failed_send_attempts
+                counts.failed_send_attempts,
+                counts.retried_send_attempts
             );
         }
 
         info!(
-            "Totals: {} unique clients; {} total req ({} classic req, {} rfc req); {} invalid requests; {} total resp ({} classic resp, {} rfc resp); {} sent; {} failed sends",
+            "{} Totals: {} unique clients; {} total req ({} classic req, {} rfc req); {} invalid requests; {} total resp ({} classic resp, {} rfc resp); {} sent; {} failed sends, {} retried sends",
+            self.thread_name(),
             self.stats.total_unique_clients(),
             self.stats.total_valid_requests(),
             self.stats.num_classic_requests(),
@@ -311,7 +313,8 @@ impl Server {
             self.stats.num_classic_responses_sent(),
             self.stats.num_rfc_responses_sent(),
             self.stats.total_bytes_sent().file_size(fsopts::BINARY).unwrap(),
-            self.stats.total_failed_send_attempts()
+            self.stats.total_failed_send_attempts(),
+            self.stats.total_retried_send_attempts()
         );
 
         self.stats.clear();
