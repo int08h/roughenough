@@ -14,12 +14,12 @@ use roughenough::{RtMessage, Tag};
 fn create_signed_srep_tags(c: &mut Criterion) {
     let mut group = c.benchmark_group("signing");
     let mut key = OnlineKey::new();
+    let now = SystemTime::now();
     let data = [8u8; 32];
 
     group.throughput(Elements(1));
     group.bench_function("create signed SREP tag", |b| {
-        let now = SystemTime::now();
-        b.iter(|| black_box(key.make_srep(Version::Rfc, now, data.as_ref())))
+        b.iter(|| black_box(key.make_srep(Version::Rfc, now, &data)))
     });
     group.finish();
 }
