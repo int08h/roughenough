@@ -26,6 +26,7 @@ humansize = "1"
 log = "0.4"
 mio = "0.6"
 mio-extras = "2.0"
+nix = { version = "0.29", features = ["socket"] }
 once_cell = "1.19"
 rand = "0.6"
 ring = "0.16"

@@ -19,7 +19,6 @@
 use std::io::ErrorKind;
 use std::io::Write;
 use std::net::{IpAddr, Shutdown, SocketAddr};
-use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -56,7 +55,7 @@ const HTTP_RESPONSE: &str = "HTTP/1.1 200 OK\nContent-Length: 0\nConnection: clo
 ///
 pub struct Server {
     batch_size: u8,
-    socket: Arc<UdpSocket>,
+    socket: UdpSocket,
     health_listener: Option<TcpListener>,
     poll_duration: Option<Duration>,
     status_interval: Duration,
@@ -80,7 +79,7 @@ impl Server {
     /// Create a new server instance from the provided
     /// [`ServerConfig`](../config/trait.ServerConfig.html) trait object instance.
     ///
-    pub fn new(config: &dyn ServerConfig, socket: Arc<UdpSocket>) -> Server {
+    pub fn new(config: &dyn ServerConfig, socket: UdpSocket) -> Server {
         let mut timer: Timer<()> = Timer::default();
         timer.set_timeout(config.status_interval(), ());
 
@@ -186,13 +185,12 @@ impl Server {
 
                     let socket_now_empty = self.collect_requests();
 
-                    let sock_copy = Arc::get_mut(&mut self.socket).unwrap();
                     self.responder_rfc
-                        .send_responses(sock_copy, &mut self.stats);
+                        .send_responses(&mut self.socket, &mut self.stats);
                     self.responder_draft
-                        .send_responses(sock_copy, &mut self.stats);
+                        .send_responses(&mut self.socket, &mut self.stats);
                     self.responder_classic
-                        .send_responses(sock_copy, &mut self.stats);
+                        .send_responses(&mut self.socket, &mut self.stats);
 
                     if socket_now_empty {
                         break;
