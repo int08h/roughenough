@@ -1,4 +1,4 @@
-// Copyright 2017-2021 int08h LLC
+// Copyright 2017-2024 int08h LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,8 +16,8 @@
 //! An implementation of the [Roughtime](https://roughtime.googlesource.com/roughtime)
 //! secure time synchronization protocol.
 //!
-//! Roughtime aims to achieve rough time synchronisation in a secure way that doesn't
-//! depend on any particular time server, and in such a way that, if a time server does
+//! Roughtime aims to achieve rough time synchronization in a secure way that doesn't
+//! depend on any particular timeserver, and in such a way that, if a timeserver does
 //! misbehave, clients end up with cryptographic proof of it.
 //!
 //! # Protocol
@@ -79,7 +79,7 @@ pub mod stats;
 pub mod version;
 
 /// Version of Roughenough
-pub const VERSION: &str = "1.2.1-draft8";
+pub const VERSION: &str = "1.3.0-draft8";
 
 /// Roughenough version string enriched with any compile-time optional features
 pub fn roughenough_version() -> String {

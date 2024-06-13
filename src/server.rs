@@ -19,11 +19,10 @@
 use std::io::ErrorKind;
 use std::io::Write;
 use std::net::{IpAddr, Shutdown, SocketAddr};
-use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use humansize::{file_size_opts as fsopts, FileSize};
+use humansize::{BINARY, format_size};
 use mio::net::{TcpListener, UdpSocket};
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio_extras::timer::Timer;
@@ -56,7 +55,7 @@ const HTTP_RESPONSE: &str = "HTTP/1.1 200 OK\nContent-Length: 0\nConnection: clo
 ///
 pub struct Server {
     batch_size: u8,
-    socket: Arc<UdpSocket>,
+    socket: UdpSocket,
     health_listener: Option<TcpListener>,
     poll_duration: Option<Duration>,
     status_interval: Duration,
@@ -80,7 +79,7 @@ impl Server {
     /// Create a new server instance from the provided
     /// [`ServerConfig`](../config/trait.ServerConfig.html) trait object instance.
     ///
-    pub fn new(config: &dyn ServerConfig, socket: Arc<UdpSocket>) -> Server {
+    pub fn new(config: &dyn ServerConfig, socket: UdpSocket) -> Server {
         let mut timer: Timer<()> = Timer::default();
         timer.set_timeout(config.status_interval(), ());
 
@@ -186,13 +185,12 @@ impl Server {
 
                     let socket_now_empty = self.collect_requests();
 
-                    let sock_copy = Arc::get_mut(&mut self.socket).unwrap();
                     self.responder_rfc
-                        .send_responses(sock_copy, &mut self.stats);
+                        .send_responses(&mut self.socket, &mut self.stats);
                     self.responder_draft
-                        .send_responses(sock_copy, &mut self.stats);
+                        .send_responses(&mut self.socket, &mut self.stats);
                     self.responder_classic
-                        .send_responses(sock_copy, &mut self.stats);
+                        .send_responses(&mut self.socket, &mut self.stats);
 
                     if socket_now_empty {
                         break;
@@ -295,7 +293,7 @@ impl Server {
                 counts.invalid_requests,
                 counts.classic_responses_sent,
                 counts.rfc_responses_sent,
-                counts.bytes_sent.file_size(fsopts::BINARY).unwrap(),
+                format_size(counts.bytes_sent, BINARY),
                 counts.failed_send_attempts,
                 counts.retried_send_attempts
             );
@@ -312,7 +310,7 @@ impl Server {
             self.stats.total_responses_sent(),
             self.stats.num_classic_responses_sent(),
             self.stats.num_rfc_responses_sent(),
-            self.stats.total_bytes_sent().file_size(fsopts::BINARY).unwrap(),
+            format_size(self.stats.total_bytes_sent(), BINARY),
             self.stats.total_failed_send_attempts(),
             self.stats.total_retried_send_attempts()
         );

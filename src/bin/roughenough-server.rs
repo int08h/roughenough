@@ -23,14 +23,16 @@
 #[macro_use]
 extern crate log;
 
+use std::{env, io, thread};
 use std::process;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::{env, thread};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use log::LevelFilter;
-use mio::net::UdpSocket;
 use mio::Events;
+use mio::net::UdpSocket;
+use net2::UdpBuilder;
+use net2::unix::UnixUdpBuilderExt;
 use once_cell::sync::Lazy;
 use simple_logger::SimpleLogger;
 
@@ -43,7 +45,7 @@ use roughenough::server::Server;
 // the Ctrl-C (SIGINT) handler created in `set_ctrlc_handler()`
 static KEEP_RUNNING: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(true));
 
-fn polling_loop(cfg: Arc<Mutex<Box<dyn ServerConfig>>>, socket: Arc<UdpSocket>) {
+fn polling_loop(cfg: Arc<Mutex<Box<dyn ServerConfig>>>, socket: UdpSocket) {
     let mut server = {
         let config = cfg.lock().unwrap();
         let server = Server::new(config.as_ref(), socket);
@@ -52,7 +54,7 @@ fn polling_loop(cfg: Arc<Mutex<Box<dyn ServerConfig>>>, socket: Arc<UdpSocket>) 
         server
     };
 
-    let mut events = Events::with_capacity(2048);
+    let mut events = Events::with_capacity(1024);
 
     loop {
         server.process_events(&mut events);
@@ -67,6 +69,24 @@ fn polling_loop(cfg: Arc<Mutex<Box<dyn ServerConfig>>>, socket: Arc<UdpSocket>) 
 fn set_ctrlc_handler() {
     ctrlc::set_handler(move || KEEP_RUNNING.store(false, Ordering::Release))
         .expect("failed setting Ctrl-C handler");
+}
+
+// Bind to the server port using SO_REUSEPORT and SO_REUSEADDR so the kernel will more fairly
+// balance traffic to each worker. https://lwn.net/Articles/542629/
+fn bind_socket(config: Arc<Mutex<Box<dyn ServerConfig>>>) -> io::Result<UdpSocket> {
+    let sock_addr = config
+        .lock()
+        .unwrap()
+        .udp_socket_addr()
+        .expect("udp sock addr");
+
+    let std_socket = UdpBuilder::new_v4()?
+        .reuse_address(true)?
+        .reuse_port(true)?
+        .bind(sock_addr)?;
+
+    let mio_socket: UdpSocket = UdpSocket::from_socket(std_socket)?;
+    Ok(mio_socket)
 }
 
 fn display_config(server: &Server, cfg: &dyn ServerConfig) {
@@ -133,27 +153,19 @@ pub fn main() {
         Ok(cfg) => Arc::new(Mutex::new(cfg)),
     };
 
-    let socket = {
-        let sock_addr = config
-            .lock()
-            .unwrap()
-            .udp_socket_addr()
-            .expect("udp sock addr");
-        let sock = UdpSocket::bind(&sock_addr).expect("failed to bind to socket");
-        Arc::new(sock)
-    };
-
     set_ctrlc_handler();
 
-    // TODO(stuart) move TCP healthcheck out of worker threads as it currently conflicts
+    // TODO(stuart) TCP healthcheck REUSEADDR and RESUSEPORT on the tcp socket
+
     let mut threads = Vec::new();
 
-    for i in 0..config.lock().unwrap().num_workers() {
+    let num_workers = config.lock().unwrap().num_workers();
+    for i in 0..num_workers {
         let cfg = config.clone();
-        let sock = socket.try_clone().unwrap();
+        let socket = bind_socket(cfg.clone()).unwrap();
         let thread = thread::Builder::new()
             .name(format!("worker-{}", i))
-            .spawn(move || polling_loop(cfg, sock.into()))
+            .spawn(move || polling_loop(cfg.clone(), socket) )
             .expect("failure spawning thread");
 
         threads.push(thread);

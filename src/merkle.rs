@@ -65,7 +65,7 @@ impl MerkleTree {
     }
 
     pub fn get_paths(&self, mut index: usize) -> Vec<u8> {
-        let mut paths = Vec::with_capacity(self.levels.len() * self.algorithm.output_len);
+        let mut paths = Vec::with_capacity(self.levels.len() * self.algorithm.output_len());
         let mut level = 0;
 
         while !self.levels[level].is_empty() {
@@ -95,7 +95,7 @@ impl MerkleTree {
             }
 
             if node_count % 2 != 0 {
-                self.levels[level - 1].push(vec![0; self.algorithm.output_len]);
+                self.levels[level - 1].push(vec![0; self.algorithm.output_len()]);
                 node_count += 1;
             }
 
@@ -146,9 +146,9 @@ impl MerkleTree {
             Hash::from(ctx.finish().as_ref())
         };
 
-        assert_eq!(paths.len() % self.algorithm.output_len, 0);
+        assert_eq!(paths.len() % self.algorithm.output_len(), 0);
 
-        for path in paths.chunks(self.algorithm.output_len) {
+        for path in paths.chunks(self.algorithm.output_len()) {
             let mut ctx = digest::Context::new(self.algorithm);
             ctx.update(TREE_NODE_TWEAK);
 
