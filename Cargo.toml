@@ -1,6 +1,6 @@
 [package]
 name = "roughenough"
-version = "1.2.1-draft8"
+version = "1.3.0-draft8"
 repository = "https://github.com/int08h/roughenough"
 authors = ["Stuart Stock <stuart@int08h.com>", "Aaron Hill <aa1ronham@gmail.com>"]
 license = "Apache-2.0"
@@ -20,21 +20,21 @@ gcpkms = ["google-cloudkms1", "hyper", "hyper-rustls", "serde", "serde_json", "y
 [dependencies]
 byteorder = "1"
 chrono = "0.4"
-clap = "2"
-ctrlc = { version = "3.2", features = ["termination"] }
-humansize = "1"
+clap = "4"
+ctrlc = { version = "3.4", features = ["termination"] }
+humansize = "2"
 log = "0.4"
 mio = "0.6"
 mio-extras = "2.0"
-nix = { version = "0.29", features = ["socket"] }
+net2 = "0.2"
 once_cell = "1.19"
 rand = "0.6"
-ring = "0.16"
-simple_logger = "1"
+ring = "0.17"
+simple_logger = "5"
 yaml-rust = "0.4"
-zeroize = "1.4"
-data-encoding = "2.3"
-enum-iterator = "2.0"
+zeroize = "1.8"
+data-encoding = "2.6"
+enum-iterator = "2.1"
 
 # Used by 'awskms' and 'gcpkms'
 futures = { version = "^0.3", optional = true }
