@@ -308,7 +308,7 @@ impl ResponseHandler {
 
 fn main() {
     let matches = App::new("roughenough client")
-        .version(roughenough_version().as_ref())
+        .version(&*roughenough_version())
         .arg(Arg::with_name("host")
             .required(true)
             .help("The Roughtime server to connect to.")

@@ -114,7 +114,7 @@ pub fn main() {
     }
 
     let matches = App::new("roughenough-kms")
-        .version(roughenough_version().as_ref())
+        .version(&*roughenough_version())
         .long_about("Encrypt and decrypt Roughenough long-term server seeds using a KMS")
         .arg(
             Arg::with_name("KEY_ID")
