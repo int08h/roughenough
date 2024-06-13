@@ -22,7 +22,7 @@ use std::net::{IpAddr, Shutdown, SocketAddr};
 use std::thread;
 use std::time::Duration;
 
-use humansize::{file_size_opts as fsopts, FileSize};
+use humansize::{BINARY, format_size};
 use mio::net::{TcpListener, UdpSocket};
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio_extras::timer::Timer;
@@ -293,7 +293,7 @@ impl Server {
                 counts.invalid_requests,
                 counts.classic_responses_sent,
                 counts.rfc_responses_sent,
-                counts.bytes_sent.file_size(fsopts::BINARY).unwrap(),
+                format_size(counts.bytes_sent, BINARY),
                 counts.failed_send_attempts,
                 counts.retried_send_attempts
             );
@@ -310,7 +310,7 @@ impl Server {
             self.stats.total_responses_sent(),
             self.stats.num_classic_responses_sent(),
             self.stats.num_rfc_responses_sent(),
-            self.stats.total_bytes_sent().file_size(fsopts::BINARY).unwrap(),
+            format_size(self.stats.total_bytes_sent(), BINARY),
             self.stats.total_failed_send_attempts(),
             self.stats.total_retried_send_attempts()
         );
