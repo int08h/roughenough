@@ -20,7 +20,7 @@ gcpkms = ["google-cloudkms1", "hyper", "hyper-rustls", "serde", "serde_json", "y
 [dependencies]
 byteorder = "1"
 chrono = "0.4"
-clap = "4"
+clap = "2"
 ctrlc = { version = "3.4", features = ["termination"] }
 humansize = "2"
 log = "0.4"
