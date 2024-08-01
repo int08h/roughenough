@@ -404,7 +404,7 @@ mod test {
     fn two_field_message_size() {
         let mut msg = RtMessage::with_capacity(2);
         msg.add_field(Tag::NONC, "1234".as_bytes()).unwrap();
-        msg.add_field(Tag::PAD_CLASSIC, "abcd".as_bytes()).unwrap();
+        msg.add_field(Tag::PAD, "abcd".as_bytes()).unwrap();
 
         assert_eq!(msg.num_fields(), 2);
         // Two tag message
@@ -532,7 +532,7 @@ mod test {
     fn from_bytes_offset_past_end_of_message() {
         let mut msg = RtMessage::with_capacity(2);
         msg.add_field(Tag::NONC, "1111".as_bytes()).unwrap();
-        msg.add_field(Tag::PAD_CLASSIC, "aaaaaaaaa".as_bytes())
+        msg.add_field(Tag::PAD, "aaaaaaaaa".as_bytes())
             .unwrap();
 
         let mut bytes = msg.encode().unwrap();

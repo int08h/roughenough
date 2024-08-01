@@ -35,7 +35,7 @@ fn create_two_field_message(c: &mut Criterion) {
         b.iter(|| {
             let mut msg = RtMessage::with_capacity(2);
             msg.add_field(Tag::NONC, "1234".as_bytes()).unwrap();
-            msg.add_field(Tag::PAD_CLASSIC, "abcd".as_bytes()).unwrap();
+            msg.add_field(Tag::PAD, "abcd".as_bytes()).unwrap();
         })
     });
 }
