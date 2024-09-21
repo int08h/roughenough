@@ -35,15 +35,16 @@ pub struct LongTermKey {
 }
 
 impl LongTermKey {
+    pub fn calc_srv_value(pubkey: &[u8]) -> Vec<u8> {
+        let mut ctx = digest::Context::new(&SHA512);
+        ctx.update(Tag::HASH_PREFIX_SRV);
+        ctx.update(pubkey);
+        ctx.finish().as_ref()[0..32].to_vec()
+    }
+
     pub fn new(seed: &[u8]) -> Self {
         let signer = Signer::from_seed(seed);
-
-        let srv_value = {
-            let mut ctx = digest::Context::new(&SHA512);
-            ctx.update(Tag::HASH_PREFIX_SRV);
-            ctx.update(signer.public_key_bytes());
-            ctx.finish().as_ref()[0..32].to_vec()
-        };
+        let srv_value = LongTermKey::calc_srv_value(signer.public_key_bytes());
 
         LongTermKey {
             signer,

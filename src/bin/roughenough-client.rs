@@ -31,7 +31,7 @@ use clap::{App, Arg};
 use data_encoding::{Encoding, BASE64, HEXLOWER_PERMISSIVE};
 use ring::rand;
 use ring::rand::SecureRandom;
-
+use roughenough::key::LongTermKey;
 use roughenough::merkle::MerkleTree;
 use roughenough::sign::Verifier;
 use roughenough::version::Version;
@@ -60,8 +60,13 @@ fn create_nonce(ver: Version) -> Nonce {
     }
 }
 
-fn make_request(ver: Version, nonce: &Nonce, text_dump: bool) -> Vec<u8> {
+fn make_request(ver: Version, nonce: &Nonce, text_dump: bool, pub_key: &Option<Vec<u8>>) -> Vec<u8> {
     let mut msg = RtMessage::with_capacity(3);
+
+    let srv_value = match pub_key {
+        None => None,
+        Some(ref pk) => Some(LongTermKey::calc_srv_value(&pk)),
+    };
 
     match ver {
         Version::Classic => {
@@ -82,6 +87,10 @@ fn make_request(ver: Version, nonce: &Nonce, text_dump: bool) -> Vec<u8> {
             msg.encode().unwrap()
         }
         Version::Rfc | Version::RfcDraft11 => {
+            if srv_value.is_some() {
+                let val = srv_value.as_ref().unwrap();
+                msg.add_field(Tag::SRV, val).unwrap();
+            }
             msg.add_field(Tag::VER, ver.wire_bytes()).unwrap();
             msg.add_field(Tag::NONC, nonce).unwrap();
             msg.add_field(Tag::ZZZZ, &[]).unwrap();
@@ -90,6 +99,11 @@ fn make_request(ver: Version, nonce: &Nonce, text_dump: bool) -> Vec<u8> {
             let padding: Vec<u8> = (0..padding_needed).map(|_| 0).collect();
 
             msg.clear();
+
+            if srv_value.is_some() {
+                let val = srv_value.as_ref().unwrap();
+                msg.add_field(Tag::SRV, val).unwrap();
+            }
             msg.add_field(Tag::VER, ver.wire_bytes()).unwrap();
             msg.add_field(Tag::NONC, nonce).unwrap();
             msg.add_field(Tag::ZZZZ, &padding).unwrap();
@@ -146,8 +160,8 @@ fn stress_test_forever(ver: Version, addr: &SocketAddr) -> ! {
     } else {
         "0.0.0.0:0"
     })
-    .expect("Couldn't open UDP socket");
-    let request = make_request(ver, &nonce, false);
+        .expect("Couldn't open UDP socket");
+    let request = make_request(ver, &nonce, false, &None);
     loop {
         socket.send_to(&request, addr).unwrap();
     }
@@ -333,7 +347,7 @@ fn main() {
             .short("k")
             .long("public-key")
             .takes_value(true)
-            .help("The server public key used to validate responses. If unset, no validation will be performed."))
+            .help("The server public key used to validate responses. When set, will add SRV tag to request to bind request to the expected public key. If unset, no validation will be performed."))
         .arg(Arg::with_name("time-format")
             .short("f")
             .long("time-format")
@@ -412,7 +426,7 @@ fn main() {
     let version = match protocol {
         0 => Version::Classic,
         1 => Version::Rfc,
-        8 => Version::RfcDraft11,
+        11 => Version::RfcDraft11,
         _ => panic!(
             "Invalid protocol '{}'; valid values are 0, 1, or 8",
             protocol
@@ -438,8 +452,8 @@ fn main() {
         } else {
             "0.0.0.0:0"
         })
-        .expect("Couldn't open UDP socket");
-        let request = make_request(version, &nonce, text_dump);
+            .expect("Couldn't open UDP socket");
+        let request = make_request(version, &nonce, text_dump, &pub_key);
 
         if let Some(f) = file_for_requests.as_mut() {
             f.write_all(&request).expect("Failed to write to file!")
