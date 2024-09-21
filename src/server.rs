@@ -22,7 +22,7 @@ use std::net::{IpAddr, Shutdown, SocketAddr};
 use std::thread;
 use std::time::Duration;
 
-use humansize::{BINARY, format_size};
+use humansize::{format_size, BINARY};
 use mio::net::{TcpListener, UdpSocket};
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio_extras::timer::Timer;
@@ -66,6 +66,7 @@ pub struct Server {
     responder_classic: Responder,
     buf: [u8; 65_536],
     thread_name: String,
+    srv_value: Vec<u8>,
 
     stats: Box<dyn ServerStats>,
 
@@ -127,13 +128,14 @@ impl Server {
         };
 
         let responder_rfc = Responder::new(Version::Rfc, config, &mut long_term_key);
-        let responder_draft = Responder::new(Version::RfcDraft8, config, &mut long_term_key);
+        let responder_draft = Responder::new(Version::RfcDraft11, config, &mut long_term_key);
         let responder_classic = Responder::new(Version::Classic, config, &mut long_term_key);
 
         let batch_size = config.batch_size();
         let status_interval = config.status_interval();
         let thread_name = thread::current().name().unwrap().to_string();
         let poll_duration = Some(Duration::from_millis(100));
+        let srv_value = long_term_key.srv_value().to_vec();
 
         Server {
             batch_size,
@@ -148,6 +150,7 @@ impl Server {
             responder_classic,
             buf: [0u8; 65_536],
             thread_name,
+            srv_value,
             stats,
 
             #[cfg(fuzzing)]
@@ -209,13 +212,13 @@ impl Server {
         for i in 0..self.batch_size {
             match self.socket.recv_from(&mut self.buf) {
                 Ok((num_bytes, src_addr)) => {
-                    match request::nonce_from_request(&self.buf, num_bytes) {
+                    match request::nonce_from_request(&self.buf, num_bytes, &self.srv_value) {
                         Ok((nonce, Version::Rfc)) => {
                             self.responder_rfc.add_request(nonce, src_addr);
                             self.stats.add_rfc_request(&src_addr.ip());
                         }
                         // TODO(stuart) remove when RFC is ratified
-                        Ok((nonce, Version::RfcDraft8)) => {
+                        Ok((nonce, Version::RfcDraft11)) => {
                             self.responder_draft.add_request(nonce, src_addr);
                             // Mismatch of draft responder vs rfc stats is intentional
                             self.stats.add_rfc_request(&src_addr.ip());
@@ -225,7 +228,7 @@ impl Server {
                             self.stats.add_classic_request(&src_addr.ip());
                         }
                         Err(e) => {
-                            self.stats.add_invalid_request(&src_addr.ip());
+                            self.stats.add_invalid_request(&src_addr.ip(), &e);
 
                             debug!(
                                 "Invalid request: '{:?}' ({} bytes) from {} (#{} in batch)",

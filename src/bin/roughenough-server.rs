@@ -23,16 +23,16 @@
 #[macro_use]
 extern crate log;
 
-use std::{env, io, thread};
 use std::process;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::{env, io, thread};
 
 use log::LevelFilter;
-use mio::Events;
 use mio::net::UdpSocket;
-use net2::UdpBuilder;
+use mio::Events;
 use net2::unix::UnixUdpBuilderExt;
+use net2::UdpBuilder;
 use once_cell::sync::Lazy;
 use simple_logger::SimpleLogger;
 

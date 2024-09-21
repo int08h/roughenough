@@ -19,25 +19,27 @@ use std::io::Cursor;
 use byteorder::{LittleEndian, ReadBytesExt};
 
 use crate::version::Version;
-use crate::{Error, RtMessage, Tag, MIN_REQUEST_LENGTH, RFC_REQUEST_FRAME_BYTES};
+use crate::{Error, RtMessage, Tag, MAX_REQUEST_LENGTH, MIN_REQUEST_LENGTH, REQUEST_FRAMING_BYTES};
 
 /// Guess which protocol the request is using and extract the client's nonce from the request
-pub fn nonce_from_request(buf: &[u8], num_bytes: usize) -> Result<(Vec<u8>, Version), Error> {
-    if num_bytes < MIN_REQUEST_LENGTH as usize {
-        return Err(Error::RequestTooShort);
+pub fn nonce_from_request(buf: &[u8], num_bytes: usize, expected_srv: &[u8]) -> Result<(Vec<u8>, Version), Error> {
+    if num_bytes < MIN_REQUEST_LENGTH {
+        return Err(Error::RequestTooShort)
+    } else if num_bytes > MAX_REQUEST_LENGTH {
+        return Err(Error::RequestTooLarge)
     }
 
     if is_classic_request(buf) {
-        return nonce_from_classic_request(&buf[..num_bytes]);
+        nonce_from_classic_request(&buf[..num_bytes])
     } else {
-        return nonce_from_rfc_request(&buf[..num_bytes]);
+        nonce_from_rfc_request(&buf[..num_bytes], expected_srv)
     }
 }
 
 /// Inspect the message in `buf`, if it doesn't start with RFC framing, we guess
 /// it is a classic request
 fn is_classic_request(buf: &[u8]) -> bool {
-    return &buf[0..8] != RFC_REQUEST_FRAME_BYTES;
+    &buf[0..8] != REQUEST_FRAMING_BYTES
 }
 
 fn nonce_from_classic_request(buf: &[u8]) -> Result<(Vec<u8>, Version), Error> {
@@ -49,7 +51,7 @@ fn nonce_from_classic_request(buf: &[u8]) -> Result<(Vec<u8>, Version), Error> {
 }
 
 // This could be any VER that we support. Extract VER from request and return it.
-fn nonce_from_rfc_request(buf: &[u8]) -> Result<(Vec<u8>, Version), Error> {
+fn nonce_from_rfc_request(buf: &[u8], expected_srv: &[u8]) -> Result<(Vec<u8>, Version), Error> {
     // first 8 bytes were RFC_REQUEST_FRAME_BYTES, [0..8]
     let mut cur = Cursor::new(&buf[8..12]);
     let reported_len = cur.read_u32::<LittleEndian>()?;
@@ -62,9 +64,14 @@ fn nonce_from_rfc_request(buf: &[u8]) -> Result<(Vec<u8>, Version), Error> {
     let msg = RtMessage::from_bytes(&buf[12..])?;
 
     let version = get_supported_version(&msg);
-
     if version.is_none() {
         return Err(Error::NoCompatibleVersion);
+    }
+
+    if let Some(request_srv) = msg.get_field(Tag::SRV) {
+        if request_srv != expected_srv {
+            return Err(Error::SrvMismatch);
+        }
     }
 
     match msg.get_field(Tag::NONC) {
@@ -74,7 +81,7 @@ fn nonce_from_rfc_request(buf: &[u8]) -> Result<(Vec<u8>, Version), Error> {
 }
 
 fn get_supported_version(msg: &RtMessage) -> Option<Version> {
-    const SUPPORTED_VERSIONS: &[Version] = &[Version::RfcDraft8, Version::Rfc];
+    const SUPPORTED_VERSIONS: &[Version] = &[Version::RfcDraft11, Version::Rfc];
 
     if let Some(tag_bytes) = msg.get_field(Tag::VER) {
         // Iterate the list of supplied versions, looking for the first match

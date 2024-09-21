@@ -38,6 +38,9 @@ pub enum Error {
     /// Request was less than 1024 bytes
     RequestTooShort,
 
+    /// Request was larger than 1500 bytes
+    RequestTooLarge,
+
     /// Offset was not 32-bit aligned
     InvalidAlignment(u32),
 
@@ -64,6 +67,9 @@ pub enum Error {
 
     /// Sending response to a client request has failed
     SendingResponseFailed,
+
+    /// The request's SRV value and this server's SRV value do not match
+    SrvMismatch,
 }
 
 impl From<std::io::Error> for Error {

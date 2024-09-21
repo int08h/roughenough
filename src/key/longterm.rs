@@ -16,26 +16,39 @@
 //! Represents the server's long-term identity.
 //!
 
-use std::fmt;
-use std::fmt::Formatter;
-
 use crate::key::OnlineKey;
 use crate::message::RtMessage;
 use crate::sign::Signer;
 use crate::tag::Tag;
 use crate::CERTIFICATE_CONTEXT;
+use ring::digest;
+use ring::digest::SHA512;
+use std::fmt;
+use std::fmt::Formatter;
 
 ///
 /// Represents the server's long-term identity.
 ///
 pub struct LongTermKey {
     signer: Signer,
+    srv_value: Vec<u8>,
 }
 
 impl LongTermKey {
+    pub fn calc_srv_value(pubkey: &[u8]) -> Vec<u8> {
+        let mut ctx = digest::Context::new(&SHA512);
+        ctx.update(Tag::HASH_PREFIX_SRV);
+        ctx.update(pubkey);
+        ctx.finish().as_ref()[0..32].to_vec()
+    }
+
     pub fn new(seed: &[u8]) -> Self {
+        let signer = Signer::from_seed(seed);
+        let srv_value = LongTermKey::calc_srv_value(signer.public_key_bytes());
+
         LongTermKey {
-            signer: Signer::from_seed(seed),
+            signer,
+            srv_value,
         }
     }
 
@@ -59,6 +72,11 @@ impl LongTermKey {
     /// Return the public key for the provided seed
     pub fn public_key(&self) -> &[u8] {
         self.signer.public_key_bytes()
+    }
+
+    /// Return the SRV tag value, which is SHA512[0:32] over (0xff || public key)
+    pub fn srv_value(&self) -> &[u8] {
+        self.srv_value.as_ref()
     }
 }
 

@@ -20,9 +20,9 @@ use std::fmt;
 use std::fmt::Formatter;
 
 use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
-use ring::rand;
 use ring::rand::SecureRandom;
 use ring::signature::{self, Ed25519KeyPair, KeyPair};
+use ring::rand;
 
 const HEX: Encoding = HEXLOWER_PERMISSIVE;
 

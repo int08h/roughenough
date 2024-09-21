@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::stats::ClientStatEntry;
+use crate::stats::ServerStats;
+use crate::Error;
 use std::collections::hash_map::Iter;
 use std::collections::HashMap;
 use std::net::IpAddr;
-
-use crate::stats::ClientStatEntry;
-use crate::stats::ServerStats;
 
 ///
 /// Implementation of `ServerStats` that provides high-level aggregated client statistics. No
@@ -70,7 +70,7 @@ impl ServerStats for AggregatedStats {
         self.classic_requests += 1
     }
 
-    fn add_invalid_request(&mut self, _: &IpAddr) {
+    fn add_invalid_request(&mut self, _: &IpAddr, _: &Error) {
         self.invalid_requests += 1
     }
 

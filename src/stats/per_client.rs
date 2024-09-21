@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::stats::ClientStatEntry;
+use crate::stats::ServerStats;
+use crate::Error;
 use std::collections::hash_map::Iter;
 use std::collections::HashMap;
 use std::net::IpAddr;
-
-use crate::stats::ClientStatEntry;
-use crate::stats::ServerStats;
 
 ///
 /// Implementation of `ServerStats` that provides granular per-client request/response counts.
@@ -98,7 +98,7 @@ impl ServerStats for PerClientStats {
             .classic_requests += 1;
     }
 
-    fn add_invalid_request(&mut self, addr: &IpAddr) {
+    fn add_invalid_request(&mut self, addr: &IpAddr, _: &Error) {
         if self.too_many_entries() {
             return;
         }

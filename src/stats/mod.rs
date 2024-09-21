@@ -16,11 +16,11 @@
 //! Facilities for tracking client requests to the server
 //!
 
-use std::collections::hash_map::Iter;
-use std::net::IpAddr;
-
 pub use crate::stats::aggregated::AggregatedStats;
 pub use crate::stats::per_client::PerClientStats;
+use crate::Error;
+use std::collections::hash_map::Iter;
+use std::net::IpAddr;
 
 mod aggregated;
 mod per_client;
@@ -65,7 +65,7 @@ pub trait ServerStats {
 
     fn add_classic_request(&mut self, addr: &IpAddr);
 
-    fn add_invalid_request(&mut self, addr: &IpAddr);
+    fn add_invalid_request(&mut self, addr: &IpAddr, err: &Error);
 
     fn add_failed_send_attempt(&mut self, addr: &IpAddr);
 
@@ -110,9 +110,9 @@ pub trait ServerStats {
 
 #[cfg(test)]
 mod test {
-    use std::net::{IpAddr, Ipv4Addr};
-
     use crate::stats::{PerClientStats, ServerStats};
+    use crate::Error;
+    use std::net::{IpAddr, Ipv4Addr};
 
     #[test]
     fn simple_stats_starts_empty() {
@@ -145,7 +145,7 @@ mod test {
         assert_eq!(stats.num_classic_requests(), 3);
         assert_eq!(stats.num_rfc_requests(), 1);
 
-        stats.add_invalid_request(&ip2);
+        stats.add_invalid_request(&ip2, &Error::RequestTooLarge);
         assert_eq!(stats.total_invalid_requests(), 1);
 
         assert_eq!(stats.total_unique_clients(), 3);
