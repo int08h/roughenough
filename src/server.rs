@@ -22,7 +22,7 @@ use std::net::{IpAddr, Shutdown, SocketAddr};
 use std::thread;
 use std::time::Duration;
 
-use humansize::{BINARY, format_size};
+use humansize::{format_size, BINARY};
 use mio::net::{TcpListener, UdpSocket};
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio_extras::timer::Timer;

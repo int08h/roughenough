@@ -16,16 +16,15 @@
 //! Represents the server's long-term identity.
 //!
 
-use std::fmt;
-use std::fmt::Formatter;
-use ring::digest;
-use ring::digest::{digest, SHA512};
-use ring::hmac::sign;
 use crate::key::OnlineKey;
 use crate::message::RtMessage;
 use crate::sign::Signer;
 use crate::tag::Tag;
 use crate::CERTIFICATE_CONTEXT;
+use ring::digest;
+use ring::digest::SHA512;
+use std::fmt;
+use std::fmt::Formatter;
 
 ///
 /// Represents the server's long-term identity.

@@ -16,11 +16,11 @@
 //! Facilities for tracking client requests to the server
 //!
 
-use std::collections::hash_map::Iter;
-use std::net::IpAddr;
-use crate::Error;
 pub use crate::stats::aggregated::AggregatedStats;
 pub use crate::stats::per_client::PerClientStats;
+use crate::Error;
+use std::collections::hash_map::Iter;
+use std::net::IpAddr;
 
 mod aggregated;
 mod per_client;
@@ -110,9 +110,9 @@ pub trait ServerStats {
 
 #[cfg(test)]
 mod test {
-    use std::net::{IpAddr, Ipv4Addr};
-    use crate::Error;
     use crate::stats::{PerClientStats, ServerStats};
+    use crate::Error;
+    use std::net::{IpAddr, Ipv4Addr};
 
     #[test]
     fn simple_stats_starts_empty() {
