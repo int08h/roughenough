@@ -18,7 +18,9 @@
 
 use std::fmt;
 use std::fmt::Formatter;
-
+use ring::digest;
+use ring::digest::{digest, SHA512};
+use ring::hmac::sign;
 use crate::key::OnlineKey;
 use crate::message::RtMessage;
 use crate::sign::Signer;
@@ -30,12 +32,23 @@ use crate::CERTIFICATE_CONTEXT;
 ///
 pub struct LongTermKey {
     signer: Signer,
+    srv_value: Vec<u8>,
 }
 
 impl LongTermKey {
     pub fn new(seed: &[u8]) -> Self {
+        let signer = Signer::from_seed(seed);
+
+        let srv_value = {
+            let mut ctx = digest::Context::new(&SHA512);
+            ctx.update(Tag::HASH_PREFIX_SRV);
+            ctx.update(signer.public_key_bytes());
+            ctx.finish().as_ref()[0..32].to_vec()
+        };
+
         LongTermKey {
-            signer: Signer::from_seed(seed),
+            signer,
+            srv_value,
         }
     }
 
@@ -59,6 +72,11 @@ impl LongTermKey {
     /// Return the public key for the provided seed
     pub fn public_key(&self) -> &[u8] {
         self.signer.public_key_bytes()
+    }
+
+    /// Return the SRV tag value, which is SHA512[0:32] over (0xff || public key)
+    pub fn srv_value(&self) -> &[u8] {
+        self.srv_value.as_ref()
     }
 }
 

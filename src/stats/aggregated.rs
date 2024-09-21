@@ -15,7 +15,7 @@
 use std::collections::hash_map::Iter;
 use std::collections::HashMap;
 use std::net::IpAddr;
-
+use crate::Error;
 use crate::stats::ClientStatEntry;
 use crate::stats::ServerStats;
 
@@ -70,7 +70,7 @@ impl ServerStats for AggregatedStats {
         self.classic_requests += 1
     }
 
-    fn add_invalid_request(&mut self, _: &IpAddr) {
+    fn add_invalid_request(&mut self, _: &IpAddr, _: &Error) {
         self.invalid_requests += 1
     }
 

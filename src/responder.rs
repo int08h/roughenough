@@ -116,7 +116,7 @@ impl Responder {
 
             let resp_bytes = match self.version {
                 Version::Classic => resp_msg.encode().unwrap(),
-                Version::Rfc | Version::RfcDraft8 => resp_msg.encode_framed().unwrap(),
+                Version::Rfc | Version::RfcDraft11 => resp_msg.encode_framed().unwrap(),
             };
 
             let mut bytes_sent: usize = 0;
@@ -140,7 +140,7 @@ impl Responder {
             if successful_send {
                 match self.version {
                     Version::Classic => stats.add_classic_response(&src_addr.ip(), bytes_sent),
-                    Version::Rfc | Version::RfcDraft8 => {
+                    Version::Rfc | Version::RfcDraft11 => {
                         stats.add_rfc_response(&src_addr.ip(), bytes_sent)
                     }
                 }

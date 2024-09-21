@@ -92,7 +92,7 @@ impl OnlineKey {
 
         let midp_time = match ver {
             Version::Classic => self.classic_midp(now),
-            Version::Rfc | Version::RfcDraft8 => self.rfc_midp(now),
+            Version::Rfc | Version::RfcDraft11 => self.rfc_midp(now),
         };
 
         (&mut midp as &mut [u8])

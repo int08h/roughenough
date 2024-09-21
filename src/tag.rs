@@ -49,6 +49,8 @@ pub enum Tag {
 }
 
 impl Tag {
+    pub (crate) const HASH_PREFIX_SRV: &'static [u8] = &[0xff];
+
     const BYTES_CERT: &'static [u8] = b"CERT";
     const BYTES_DELE: &'static [u8] = b"DELE";
     const BYTES_INDX: &'static [u8] = b"INDX";

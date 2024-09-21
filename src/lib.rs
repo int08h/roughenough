@@ -96,8 +96,11 @@ pub fn roughenough_version() -> String {
 
 //  Constants and magic numbers of the Roughtime protocol
 
-/// Minimum size (in bytes) of a client request
-pub const MIN_REQUEST_LENGTH: u32 = 1024;
+/// Minimum size (in bytes) of a client request. Any request smaller than is will be dropped.
+pub const MIN_REQUEST_LENGTH: usize = 1024;
+
+/// Maximum size (in bytes) of a client request. Any request larger than is will be dropped.
+pub const MAX_REQUEST_LENGTH: usize = 1500;
 
 /// Size (in bytes) of seeds used to derive private keys
 pub const SEED_LENGTH: u32 = 32;
