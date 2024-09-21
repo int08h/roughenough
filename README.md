@@ -15,7 +15,7 @@ Requires latest stable Rust to compile. Contributions welcome, see
 
 ## RFC Work-In-Progress
 
-Roughenough implements the Roughtime protocol as specified in [the draft-8 RFC](https://www.ietf.org/archive/id/draft-ietf-ntp-roughtime-08.html).
+Roughenough implements the Roughtime protocol as specified in [the draft-11 RFC](https://www.ietf.org/archive/id/draft-ietf-ntp-roughtime-11.html).
 
 The Roughenough server operates both the "classic" protocol **and** the RFC compliant 
 protocol at the same time on a single serving port (the 8-byte magic frame value added 
@@ -23,8 +23,8 @@ by the RFC is used to distinguish classic vs. RFC requests).
 
 The new `-p/--protocol` flag of `roughenough-client` controls the protocol version to
 use in requests. `0` = classic protocol (no `VER` tag), `1` = anticipated RFC protocol 
-(`VER` tag with value `0x00000001`), and `8` is the RFC Draft8 protocol (`VER` tag with
-value `0x80000008`). The default is `0` the "classic" protocol, until the RFC is finalized.
+(`VER` tag with value `0x00000001`), and `8` is the RFC Draft11 protocol (`VER` tag with
+value `0x0b000008`). The default is `0` the "classic" protocol, until the RFC is finalized.
 
 ```
 # send RFC protocol Roughtime requests
