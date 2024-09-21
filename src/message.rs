@@ -24,7 +24,7 @@ use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
 
 use crate::error::Error;
 use crate::tag::Tag;
-use crate::RFC_REQUEST_FRAME_BYTES;
+use crate::REQUEST_FRAMING_BYTES;
 
 const HEX: Encoding = HEXLOWER_PERMISSIVE;
 
@@ -237,8 +237,8 @@ impl RtMessage {
     /// Encode this message into an on-the-wire representation prefixed with RFC framing.
     pub fn encode_framed(&self) -> Result<Vec<u8>, Error> {
         let encoded = self.encode()?;
-        let mut frame = Vec::with_capacity(RFC_REQUEST_FRAME_BYTES.len() + 4 + encoded.len());
-        frame.write_all(RFC_REQUEST_FRAME_BYTES)?;
+        let mut frame = Vec::with_capacity(REQUEST_FRAMING_BYTES.len() + 4 + encoded.len());
+        frame.write_all(REQUEST_FRAMING_BYTES)?;
         frame.write_u32::<LittleEndian>(encoded.len() as u32)?;
         frame.write_all(&encoded)?;
 

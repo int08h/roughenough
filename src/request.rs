@@ -19,7 +19,7 @@ use std::io::Cursor;
 use byteorder::{LittleEndian, ReadBytesExt};
 
 use crate::version::Version;
-use crate::{Error, RtMessage, Tag, MAX_REQUEST_LENGTH, MIN_REQUEST_LENGTH, RFC_REQUEST_FRAME_BYTES};
+use crate::{Error, RtMessage, Tag, MAX_REQUEST_LENGTH, MIN_REQUEST_LENGTH, REQUEST_FRAMING_BYTES};
 
 /// Guess which protocol the request is using and extract the client's nonce from the request
 pub fn nonce_from_request(buf: &[u8], num_bytes: usize, expected_srv: &[u8]) -> Result<(Vec<u8>, Version), Error> {
@@ -39,7 +39,7 @@ pub fn nonce_from_request(buf: &[u8], num_bytes: usize, expected_srv: &[u8]) -> 
 /// Inspect the message in `buf`, if it doesn't start with RFC framing, we guess
 /// it is a classic request
 fn is_classic_request(buf: &[u8]) -> bool {
-    &buf[0..8] != RFC_REQUEST_FRAME_BYTES
+    &buf[0..8] != REQUEST_FRAMING_BYTES
 }
 
 fn nonce_from_classic_request(buf: &[u8]) -> Result<(Vec<u8>, Version), Error> {

@@ -105,17 +105,8 @@ pub const MAX_REQUEST_LENGTH: usize = 1500;
 /// Size (in bytes) of seeds used to derive private keys
 pub const SEED_LENGTH: u32 = 32;
 
-/// Size (in bytes) of an Ed25519 public key
-pub const PUBKEY_LENGTH: u32 = 32;
-
 /// Size (in bytes) of an Ed25519 signature
 pub const SIGNATURE_LENGTH: u32 = 64;
-
-/// Size (in bytes) of server's timestamp value
-pub const TIMESTAMP_LENGTH: u32 = 8;
-
-/// Size (in bytes) of server's time uncertainty value
-pub const RADIUS_LENGTH: u32 = 4;
 
 /// Prefixed to the server's certificate before generating or verifying certificate's signature
 pub const CERTIFICATE_CONTEXT: &str = "RoughTime v1 delegation signature--\x00";
@@ -130,4 +121,4 @@ pub const TREE_LEAF_TWEAK: &[u8] = &[0x00];
 pub const TREE_NODE_TWEAK: &[u8] = &[0x01];
 
 /// RFC first field magic value
-pub const RFC_REQUEST_FRAME_BYTES: &[u8] = b"ROUGHTIM";
+pub const REQUEST_FRAMING_BYTES: &[u8] = b"ROUGHTIM";

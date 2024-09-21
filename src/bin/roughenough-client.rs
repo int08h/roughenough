@@ -36,7 +36,7 @@ use roughenough::merkle::MerkleTree;
 use roughenough::sign::Verifier;
 use roughenough::version::Version;
 use roughenough::{
-    roughenough_version, Error, RtMessage, Tag, CERTIFICATE_CONTEXT, RFC_REQUEST_FRAME_BYTES,
+    roughenough_version, Error, RtMessage, Tag, CERTIFICATE_CONTEXT, REQUEST_FRAMING_BYTES,
     SIGNED_RESPONSE_CONTEXT,
 };
 
@@ -128,7 +128,7 @@ fn receive_response(ver: Version, buf: &[u8], buf_len: usize) -> RtMessage {
 }
 
 fn verify_framing(buf: &[u8]) -> Result<(), Error> {
-    if &buf[0..8] != RFC_REQUEST_FRAME_BYTES {
+    if &buf[0..8] != REQUEST_FRAMING_BYTES {
         eprintln!("RFC response is missing framing header bytes");
         return Err(Error::InvalidResponse);
     }
