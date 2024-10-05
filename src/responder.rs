@@ -25,13 +25,12 @@ use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
 use mio::net::UdpSocket;
 
 use crate::config::ServerConfig;
-use crate::error::Error::SendingResponseFailed;
 use crate::grease::Grease;
 use crate::key::{LongTermKey, OnlineKey};
 use crate::merkle::MerkleTree;
 use crate::stats::ServerStats;
 use crate::version::Version;
-use crate::{Error, RtMessage, Tag};
+use crate::{RtMessage, Tag};
 
 const HEX: Encoding = HEXLOWER_PERMISSIVE;
 

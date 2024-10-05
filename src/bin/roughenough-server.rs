@@ -40,15 +40,16 @@ use roughenough::config;
 use roughenough::config::ServerConfig;
 use roughenough::roughenough_version;
 use roughenough::server::Server;
+use roughenough::stats::StatsQueue;
 
 // All processing threads poll this. Starts TRUE and will be set to FASLE by
 // the Ctrl-C (SIGINT) handler created in `set_ctrlc_handler()`
 static KEEP_RUNNING: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(true));
 
-fn polling_loop(cfg: Arc<Mutex<Box<dyn ServerConfig>>>, socket: UdpSocket) {
+fn polling_loop(cfg: Arc<Mutex<Box<dyn ServerConfig>>>, socket: UdpSocket, queue: Arc<StatsQueue>) {
     let mut server = {
         let config = cfg.lock().unwrap();
-        let server = Server::new(config.as_ref(), socket);
+        let server = Server::new(config.as_ref(), socket, queue);
 
         display_config(&server, config.as_ref());
         server
@@ -157,15 +158,16 @@ pub fn main() {
 
     // TODO(stuart) TCP healthcheck REUSEADDR and RESUSEPORT on the tcp socket
 
+    let num_workers = config.lock().unwrap().num_workers();
+    let stats_queue = Arc::new(StatsQueue::new(num_workers * 2));
     let mut threads = Vec::new();
 
-    let num_workers = config.lock().unwrap().num_workers();
     for i in 0..num_workers {
         let cfg = config.clone();
         let socket = bind_socket(cfg.clone()).unwrap();
         let thread = thread::Builder::new()
             .name(format!("worker-{}", i))
-            .spawn(move || polling_loop(cfg.clone(), socket) )
+            .spawn(|| polling_loop(cfg.clone(), socket, stats_queue.clone()))
             .expect("failure spawning thread");
 
         threads.push(thread);

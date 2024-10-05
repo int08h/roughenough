@@ -18,7 +18,8 @@
 
 use std::io::ErrorKind;
 use std::io::Write;
-use std::net::{IpAddr, Shutdown, SocketAddr};
+use std::net::{Shutdown, SocketAddr};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -32,7 +33,7 @@ use crate::key::LongTermKey;
 use crate::kms;
 use crate::request;
 use crate::responder::Responder;
-use crate::stats::{AggregatedStats, ClientStatEntry, PerClientStats, ServerStats};
+use crate::stats::{AggregatedStats, PerClientStats, ServerStats, StatsQueue};
 use crate::version::Version;
 
 // mio event registrations
@@ -68,7 +69,8 @@ pub struct Server {
     thread_name: String,
     srv_value: Vec<u8>,
 
-    stats: Box<dyn ServerStats>,
+    stats_recorder: Box<dyn ServerStats>,
+    stats_queue: Arc<StatsQueue>,
 
     // Used to send requests to ourselves in fuzzing mode
     #[cfg(fuzzing)]
@@ -80,20 +82,15 @@ impl Server {
     /// Create a new server instance from the provided
     /// [`ServerConfig`](../config/trait.ServerConfig.html) trait object instance.
     ///
-    pub fn new(config: &dyn ServerConfig, socket: UdpSocket) -> Server {
+    pub fn new(config: &dyn ServerConfig, socket: UdpSocket, queue: Arc<StatsQueue>) -> Server {
         let mut timer: Timer<()> = Timer::default();
         timer.set_timeout(config.status_interval(), ());
 
         let poll = Poll::new().unwrap();
         poll.register(&socket, EVT_MESSAGE, Ready::readable(), PollOpt::edge())
             .unwrap();
-        poll.register(
-            &timer,
-            EVT_STATUS_UPDATE,
-            Ready::readable(),
-            PollOpt::edge(),
-        )
-        .unwrap();
+        poll.register(&timer, EVT_STATUS_UPDATE, Ready::readable(), PollOpt::edge())
+            .unwrap();
 
         let health_listener = if let Some(hc_port) = config.health_check_port() {
             let hc_sock_addr: SocketAddr = format!("{}:{}", config.interface(), hc_port)
@@ -151,7 +148,8 @@ impl Server {
             buf: [0u8; 65_536],
             thread_name,
             srv_value,
-            stats,
+            stats_recorder: stats,
+            stats_queue: queue,
 
             #[cfg(fuzzing)]
             fake_client_socket: UdpSocket::bind(&"127.0.0.1:0".parse().unwrap()).unwrap(),
@@ -189,11 +187,11 @@ impl Server {
                     let socket_now_empty = self.collect_requests();
 
                     self.responder_rfc
-                        .send_responses(&mut self.socket, &mut self.stats);
+                        .send_responses(&mut self.socket, &mut self.stats_recorder);
                     self.responder_draft
-                        .send_responses(&mut self.socket, &mut self.stats);
+                        .send_responses(&mut self.socket, &mut self.stats_recorder);
                     self.responder_classic
-                        .send_responses(&mut self.socket, &mut self.stats);
+                        .send_responses(&mut self.socket, &mut self.stats_recorder);
 
                     if socket_now_empty {
                         break;
@@ -215,20 +213,20 @@ impl Server {
                     match request::nonce_from_request(&self.buf, num_bytes, &self.srv_value) {
                         Ok((nonce, Version::Rfc)) => {
                             self.responder_rfc.add_request(nonce, src_addr);
-                            self.stats.add_rfc_request(&src_addr.ip());
+                            self.stats_recorder.add_rfc_request(&src_addr.ip());
                         }
                         // TODO(stuart) remove when RFC is ratified
                         Ok((nonce, Version::RfcDraft11)) => {
                             self.responder_draft.add_request(nonce, src_addr);
                             // Mismatch of draft responder vs rfc stats is intentional
-                            self.stats.add_rfc_request(&src_addr.ip());
+                            self.stats_recorder.add_rfc_request(&src_addr.ip());
                         }
                         Ok((nonce, Version::Classic)) => {
                             self.responder_classic.add_request(nonce, src_addr);
-                            self.stats.add_classic_request(&src_addr.ip());
+                            self.stats_recorder.add_classic_request(&src_addr.ip());
                         }
                         Err(e) => {
-                            self.stats.add_invalid_request(&src_addr.ip(), &e);
+                            self.stats_recorder.add_invalid_request(&src_addr.ip(), &e);
 
                             debug!(
                                 "Invalid request: '{:?}' ({} bytes) from {} (#{} in batch)",
@@ -257,7 +255,7 @@ impl Server {
         match listener.accept() {
             Ok((ref mut stream, src_addr)) => {
                 info!("health check from {}", src_addr);
-                self.stats.add_health_check(&src_addr.ip());
+                self.stats_recorder.add_health_check(&src_addr.ip());
 
                 match stream.write(HTTP_RESPONSE.as_bytes()) {
                     Ok(_) => (),
@@ -279,46 +277,52 @@ impl Server {
     }
 
     fn handle_status_update(&mut self) {
-        let mut vec: Vec<(&IpAddr, &ClientStatEntry)> = self.stats.iter().collect();
-        // sort in descending order
-        vec.sort_by(|lhs, rhs| {
-            let lhs_total = lhs.1.classic_requests + lhs.1.rfc_requests;
-            let rhs_total = rhs.1.classic_requests + rhs.1.rfc_requests;
-            rhs_total.cmp(&lhs_total)
-        });
+        let clients = self.stats_recorder
+            .iter()
+            .map(|(_, v)| v.clone())
+            .collect();
 
-        for (addr, counts) in vec {
-            info!(
-                "{:16}: {} classic req, {} rfc req; {} invalid requests; {} classic resp, {} rfc resp ({} sent); {} failed sends, {} retried sends",
-                format!("{}", addr),
-                counts.classic_requests,
-                counts.rfc_requests,
-                counts.invalid_requests,
-                counts.classic_responses_sent,
-                counts.rfc_responses_sent,
-                format_size(counts.bytes_sent, BINARY),
-                counts.failed_send_attempts,
-                counts.retried_send_attempts
-            );
-        }
+        self.stats_queue.force_push(clients);
+
+        // sort in descending order
+        // vec.sort_by(|lhs, rhs| {
+        //     let lhs_total = lhs.1.classic_requests + lhs.1.rfc_requests;
+        //     let rhs_total = rhs.1.classic_requests + rhs.1.rfc_requests;
+        //     rhs_total.cmp(&lhs_total)
+        // });
+        //
+        // for (addr, counts) in vec {
+        //     info!(
+        //         "{:16}: {} classic req, {} rfc req; {} invalid requests; {} classic resp, {} rfc resp ({} sent); {} failed sends, {} retried sends",
+        //         format!("{}", addr),
+        //         counts.classic_requests,
+        //         counts.rfc_requests,
+        //         counts.invalid_requests,
+        //         counts.classic_responses_sent,
+        //         counts.rfc_responses_sent,
+        //         format_size(counts.bytes_sent, BINARY),
+        //         counts.failed_send_attempts,
+        //         counts.retried_send_attempts
+        //     );
+        // }
 
         info!(
             "{} Totals: {} unique clients; {} total req ({} classic req, {} rfc req); {} invalid requests; {} total resp ({} classic resp, {} rfc resp); {} sent; {} failed sends, {} retried sends",
             self.thread_name(),
-            self.stats.total_unique_clients(),
-            self.stats.total_valid_requests(),
-            self.stats.num_classic_requests(),
-            self.stats.num_rfc_requests(),
-            self.stats.total_invalid_requests(),
-            self.stats.total_responses_sent(),
-            self.stats.num_classic_responses_sent(),
-            self.stats.num_rfc_responses_sent(),
-            format_size(self.stats.total_bytes_sent(), BINARY),
-            self.stats.total_failed_send_attempts(),
-            self.stats.total_retried_send_attempts()
+            self.stats_recorder.total_unique_clients(),
+            self.stats_recorder.total_valid_requests(),
+            self.stats_recorder.num_classic_requests(),
+            self.stats_recorder.num_rfc_requests(),
+            self.stats_recorder.total_invalid_requests(),
+            self.stats_recorder.total_responses_sent(),
+            self.stats_recorder.num_classic_responses_sent(),
+            self.stats_recorder.num_rfc_responses_sent(),
+            format_size(self.stats_recorder.total_bytes_sent(), BINARY),
+            self.stats_recorder.total_failed_send_attempts(),
+            self.stats_recorder.total_retried_send_attempts()
         );
 
-        self.stats.clear();
+        self.stats_recorder.clear();
         self.timer.set_timeout(self.status_interval, ());
     }
 

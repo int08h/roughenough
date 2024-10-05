@@ -19,17 +19,21 @@
 pub use crate::stats::aggregated::AggregatedStats;
 pub use crate::stats::per_client::PerClientStats;
 use crate::Error;
+use crossbeam_queue::ArrayQueue;
 use std::collections::hash_map::Iter;
 use std::net::IpAddr;
 
 mod aggregated;
 mod per_client;
+mod reporter;
+
+pub type StatsQueue = ArrayQueue<Vec<ClientStats>>;
 
 ///
 /// Specific metrics tracked per each client
 ///
-#[derive(Debug, Clone, Copy)]
-pub struct ClientStatEntry {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClientStats {
     pub rfc_requests: u64,
     pub classic_requests: u64,
     pub invalid_requests: u64,
@@ -39,11 +43,12 @@ pub struct ClientStatEntry {
     pub bytes_sent: usize,
     pub failed_send_attempts: u64,
     pub retried_send_attempts: u64,
+    pub ip_addr: IpAddr,
 }
 
-impl ClientStatEntry {
-    fn new() -> Self {
-        ClientStatEntry {
+impl ClientStats {
+    fn new(ip_addr: IpAddr) -> Self {
+        ClientStats {
             rfc_requests: 0,
             classic_requests: 0,
             invalid_requests: 0,
@@ -53,6 +58,7 @@ impl ClientStatEntry {
             bytes_sent: 0,
             failed_send_attempts: 0,
             retried_send_attempts: 0,
+            ip_addr,
         }
     }
 }
@@ -101,9 +107,9 @@ pub trait ServerStats {
 
     fn total_unique_clients(&self) -> u64;
 
-    fn stats_for_client(&self, addr: &IpAddr) -> Option<&ClientStatEntry>;
+    fn stats_for_client(&self, addr: &IpAddr) -> Option<&ClientStats>;
 
-    fn iter(&self) -> Iter<IpAddr, ClientStatEntry>;
+    fn iter(&self) -> Iter<IpAddr, ClientStats>;
 
     fn clear(&mut self);
 }
