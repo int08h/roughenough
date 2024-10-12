@@ -33,7 +33,7 @@ use ring::rand;
 use ring::rand::SecureRandom;
 use roughenough::key::LongTermKey;
 use roughenough::merkle::MerkleTree;
-use roughenough::sign::MsgVerifier;
+use roughenough::sign::Verifier;
 use roughenough::version::Version;
 use roughenough::{
     roughenough_version, Error, RtMessage, Tag, CERTIFICATE_CONTEXT, REQUEST_FRAMING_BYTES,
@@ -314,7 +314,7 @@ impl ResponseHandler {
     }
 
     fn validate_sig(&self, public_key: &[u8], sig: &[u8], data: &[u8]) -> bool {
-        let mut verifier = MsgVerifier::new(public_key);
+        let mut verifier = Verifier::new(public_key);
         verifier.update(data);
         verifier.verify(sig)
     }

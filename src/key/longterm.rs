@@ -18,7 +18,7 @@
 
 use crate::key::OnlineKey;
 use crate::message::RtMessage;
-use crate::sign::MsgSigner;
+use crate::sign::Signer;
 use crate::tag::Tag;
 use crate::CERTIFICATE_CONTEXT;
 use ring::digest;
@@ -30,7 +30,7 @@ use std::fmt::Formatter;
 /// Represents the server's long-term identity.
 ///
 pub struct LongTermKey {
-    signer: MsgSigner,
+    signer: Signer,
     srv_value: Vec<u8>,
 }
 
@@ -43,8 +43,8 @@ impl LongTermKey {
     }
 
     pub fn new(seed: &[u8]) -> Self {
-        let signer = MsgSigner::from_seed(seed);
-        let srv_value = LongTermKey::calc_srv_value(&signer.public_key_bytes());
+        let signer = Signer::from_seed(seed);
+        let srv_value = LongTermKey::calc_srv_value(signer.public_key_bytes());
 
         LongTermKey {
             signer,
@@ -70,7 +70,7 @@ impl LongTermKey {
     }
 
     /// Return the public key for the provided seed
-    pub fn public_key(&self) -> Vec<u8> {
+    pub fn public_key(&self) -> &[u8] {
         self.signer.public_key_bytes()
     }
 
