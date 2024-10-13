@@ -17,68 +17,105 @@
 //!
 
 use crate::stats::{ClientStats, StatsQueue};
-use std::cmp::Ordering;
+use chrono::Utc;
+use csv::WriterBuilder;
 use std::collections::HashMap;
-use std::io::{Error, ErrorKind};
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 static MAX_CLIENTS: usize = 256_000;
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
-struct Client {
-    ip_addr: IpAddr,
-    last_seen: Instant,
-    first_seen: Instant,
-}
-
-// Implement Ord to make our priority queue a min-heap instead of default max-heap
-impl Ord for Client {
-    fn cmp(&self, other: &Self) -> Ordering {
-        other.last_seen
-            .cmp(&self.last_seen)
-            .then_with(|| self.first_seen.cmp(&other.first_seen))
-    }
-}
-
-impl PartialOrd for Client {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
 pub struct Reporter {
     source_queue: Arc<StatsQueue>,
     client_stats: HashMap<IpAddr, ClientStats>,
-    last_update: Instant,
+    next_update: Instant,
     report_interval: Duration,
     output_location: PathBuf,
 }
 
 impl Reporter {
-
-    pub fn new(source_queue: Arc<StatsQueue>, output_location: &Path, report_interval: &Duration) -> Result<Reporter, Error> {
-        if !output_location.is_dir() {
-            return Err(Error::new(ErrorKind::InvalidInput, "output location is not a directory"));
-        }
-
-        if output_location.metadata()?.permissions().readonly() {
-            return Err(Error::new(ErrorKind::PermissionDenied, "output location is readonly"));
-        }
-
-        if report_interval.is_zero() || report_interval.as_secs() < 1 {
-            return Err(Error::new(ErrorKind::InvalidInput, "report interval invalid"));
-        }
-
-        Ok(Reporter {
+    pub fn new(
+        source_queue: Arc<StatsQueue>,
+        report_interval: &Duration,
+        output_location: &Path
+    ) -> Reporter
+    {
+        Reporter {
             source_queue,
             client_stats: HashMap::with_capacity(MAX_CLIENTS),
-            last_update: Instant::now(),
+            next_update: Instant::now() + *report_interval,
             report_interval: report_interval.clone(),
             output_location: output_location.to_path_buf(),
-        })
+        }
     }
 
+    pub fn processing_loop(&mut self) {
+        self.receive_client_stats();
+
+        if Instant::now() >= self.next_update {
+            self.report();
+            self.client_stats.clear();
+            self.next_update = Instant::now() + self.report_interval;
+        }
+
+        sleep(Duration::from_secs(1));
+    }
+
+    pub fn receive_client_stats(&mut self) {
+        let start = Instant::now();
+        let mut num_processed = 0;
+
+        while let Some(stats) = self.source_queue.pop() {
+            for client in stats {
+                self.client_stats.entry(client.ip_addr)
+                    .or_insert_with_key(|ip_addr| { ClientStats::new(ip_addr.clone()) })
+                    .merge(&client);
+
+                num_processed += 1;
+            }
+        }
+
+        if num_processed > 0 {
+            let elapsed = Instant::now().duration_since(start);
+            info!("Received {} client stat entries in {:.6} seconds", num_processed, elapsed.as_secs_f32());
+        }
+    }
+
+    pub fn report(&mut self) {
+        let start = Instant::now();
+
+        let filename = Utc::now()
+            .format("roughenough-stats-%Y%m%d-%H%M%S.csv")
+            .to_string();
+
+        let mut outpath = self.output_location.clone();
+        outpath.set_file_name(filename);
+
+        info!("Writing client statistics to: {}", outpath.display());
+
+        let mut writer = match WriterBuilder::new().has_headers(true).from_path(outpath.clone()) {
+            Ok(writer) => writer,
+            Err(e) => {
+                warn!("failed to create stats output: {}", e);
+                return
+            }
+        };
+
+        let mut num_processed = 0;
+        for stat in self.client_stats.values() {
+            match writer.serialize(stat) {
+                Ok(_) => num_processed += 1,
+                Err(e) => {
+                    warn!("serializing record failed: {}", e);
+                    break
+                }
+            }
+        }
+
+        writer.flush().unwrap();
+        info!("Wrote {} statistics records in {:.3} seconds", num_processed, start.elapsed().as_secs_f32());
+    }
 }

@@ -21,19 +21,17 @@ use std::io::Write;
 use std::net::{Shutdown, SocketAddr};
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use humansize::{format_size, BINARY};
 use mio::net::{TcpListener, UdpSocket};
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio_extras::timer::Timer;
-
 use crate::config::ServerConfig;
 use crate::key::LongTermKey;
 use crate::kms;
 use crate::request;
 use crate::responder::Responder;
-use crate::stats::{AggregatedStats, PerClientStats, ServerStats, StatsQueue};
+use crate::stats::{AggregatedStats, ClientStats, PerClientStats, ServerStats, StatsQueue};
 use crate::version::Version;
 
 // mio event registrations
@@ -100,13 +98,8 @@ impl Server {
             let tcp_listener = TcpListener::bind(&hc_sock_addr)
                 .expect("failed to bind TCP listener for health check");
 
-            poll.register(
-                &tcp_listener,
-                EVT_HEALTH_CHECK,
-                Ready::readable(),
-                PollOpt::edge(),
-            )
-            .unwrap();
+            poll.register(&tcp_listener, EVT_HEALTH_CHECK, Ready::readable(), PollOpt::edge())
+                .unwrap();
 
             Some(tcp_listener)
         } else {
@@ -198,7 +191,7 @@ impl Server {
                     }
                 },
                 EVT_HEALTH_CHECK => self.handle_health_check(),
-                EVT_STATUS_UPDATE => self.handle_status_update(),
+                EVT_STATUS_UPDATE => self.send_client_stats(),
                 _ => unreachable!(),
             }
         }
@@ -276,54 +269,26 @@ impl Server {
         }
     }
 
-    fn handle_status_update(&mut self) {
-        let clients = self.stats_recorder
+    fn send_client_stats(&mut self) {
+        let start = Instant::now();
+
+        let clients: Vec<ClientStats> = self.stats_recorder
             .iter()
-            .map(|(_, v)| v.clone())
+            .map(|(_, s)| s.clone())
             .collect();
 
+        let client_count = clients.len();
+
         self.stats_queue.force_push(clients);
-
-        // sort in descending order
-        // vec.sort_by(|lhs, rhs| {
-        //     let lhs_total = lhs.1.classic_requests + lhs.1.rfc_requests;
-        //     let rhs_total = rhs.1.classic_requests + rhs.1.rfc_requests;
-        //     rhs_total.cmp(&lhs_total)
-        // });
-        //
-        // for (addr, counts) in vec {
-        //     info!(
-        //         "{:16}: {} classic req, {} rfc req; {} invalid requests; {} classic resp, {} rfc resp ({} sent); {} failed sends, {} retried sends",
-        //         format!("{}", addr),
-        //         counts.classic_requests,
-        //         counts.rfc_requests,
-        //         counts.invalid_requests,
-        //         counts.classic_responses_sent,
-        //         counts.rfc_responses_sent,
-        //         format_size(counts.bytes_sent, BINARY),
-        //         counts.failed_send_attempts,
-        //         counts.retried_send_attempts
-        //     );
-        // }
-
-        info!(
-            "{} Totals: {} unique clients; {} total req ({} classic req, {} rfc req); {} invalid requests; {} total resp ({} classic resp, {} rfc resp); {} sent; {} failed sends, {} retried sends",
-            self.thread_name(),
-            self.stats_recorder.total_unique_clients(),
-            self.stats_recorder.total_valid_requests(),
-            self.stats_recorder.num_classic_requests(),
-            self.stats_recorder.num_rfc_requests(),
-            self.stats_recorder.total_invalid_requests(),
-            self.stats_recorder.total_responses_sent(),
-            self.stats_recorder.num_classic_responses_sent(),
-            self.stats_recorder.num_rfc_responses_sent(),
-            format_size(self.stats_recorder.total_bytes_sent(), BINARY),
-            self.stats_recorder.total_failed_send_attempts(),
-            self.stats_recorder.total_retried_send_attempts()
-        );
-
         self.stats_recorder.clear();
         self.timer.set_timeout(self.status_interval, ());
+
+        let elapsed = start.elapsed();
+        info!(
+            "{} enqueued {} client stats in {:.6} seconds",
+            self.thread_name(), client_count, elapsed.as_secs_f32()
+        );
+
     }
 
     pub fn thread_name(&self) -> &str {

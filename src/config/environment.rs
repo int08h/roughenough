@@ -14,7 +14,7 @@
 
 use std::time::Duration;
 use std::{env, thread};
-
+use std::path::{PathBuf};
 use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
 
 use crate::config::ServerConfig;
@@ -40,6 +40,8 @@ const HEX: Encoding = HEXLOWER_PERMISSIVE;
 ///   client_stats      | `ROUGHENOUGH_CLIENT_STATS`
 ///   fault_percentage  | `ROUGHENOUGH_FAULT_PERCENTAGE`
 ///   num_workers       | `ROUGHENOUGH_NUM_WORKERS`
+///   stats_dir         | `ROUGHENOUGH_STATS_DIR`
+///
 ///
 pub struct EnvironmentConfig {
     port: u16,
@@ -52,6 +54,7 @@ pub struct EnvironmentConfig {
     client_stats: bool,
     fault_percentage: u8,
     num_workers: usize,
+    persist_dir: Option<PathBuf>,
 }
 
 const ROUGHENOUGH_PORT: &str = "ROUGHENOUGH_PORT";
@@ -64,6 +67,7 @@ const ROUGHENOUGH_HEALTH_CHECK_PORT: &str = "ROUGHENOUGH_HEALTH_CHECK_PORT";
 const ROUGHENOUGH_CLIENT_STATS: &str = "ROUGHENOUGH_CLIENT_STATS";
 const ROUGHENOUGH_FAULT_PERCENTAGE: &str = "ROUGHENOUGH_FAULT_PERCENTAGE";
 const ROUGHENOUGH_NUM_WORKERS: &str = "ROUGHENOUGH_NUM_WORKERS:";
+const ROUGHENOUGH_PERSIST_DIRECTORY: &str = "ROUGHENOUGH_PERSISTENCE_DIRECTORY";
 
 impl EnvironmentConfig {
     pub fn new() -> Result<Self, Error> {
@@ -78,6 +82,7 @@ impl EnvironmentConfig {
             client_stats: false,
             fault_percentage: 0,
             num_workers: thread::available_parallelism().unwrap().get(),
+            persist_dir: None,
         };
 
         if let Ok(port) = env::var(ROUGHENOUGH_PORT) {
@@ -142,6 +147,14 @@ impl EnvironmentConfig {
                 .unwrap_or_else(|_| panic!("invalid num_workers: {}", num_workers));
         };
 
+        if let Ok(persist_dir) = env::var(ROUGHENOUGH_PERSIST_DIRECTORY) {
+            let tmp: String = persist_dir
+                .parse()
+                .unwrap_or_else(|_| panic!("invalid persistence_directory: {}", persist_dir));
+
+            cfg.persist_dir = Some(PathBuf::from(&tmp));
+        }
+
         Ok(cfg)
     }
 }
@@ -177,6 +190,10 @@ impl ServerConfig for EnvironmentConfig {
 
     fn client_stats_enabled(&self) -> bool {
         self.client_stats
+    }
+
+    fn persistence_directory(&self) -> Option<PathBuf> {
+        self.persist_dir.clone()
     }
 
     fn fault_percentage(&self) -> u8 {

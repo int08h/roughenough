@@ -27,7 +27,8 @@ use std::process;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::{env, io, thread};
-
+use std::path::Path;
+use std::time::Duration;
 use log::LevelFilter;
 use mio::net::UdpSocket;
 use mio::Events;
@@ -40,7 +41,7 @@ use roughenough::config;
 use roughenough::config::ServerConfig;
 use roughenough::roughenough_version;
 use roughenough::server::Server;
-use roughenough::stats::StatsQueue;
+use roughenough::stats::{Reporter, StatsQueue};
 
 // All processing threads poll this. Starts TRUE and will be set to FASLE by
 // the Ctrl-C (SIGINT) handler created in `set_ctrlc_handler()`
@@ -122,6 +123,9 @@ fn display_config(server: &Server, cfg: &dyn ServerConfig) {
             "aggregated"
         }
     );
+    if cfg.client_stats_enabled() && cfg.persistence_directory().is_some() {
+        info!("Persistence directory      : {}", cfg.persistence_directory().unwrap().display());
+    }
     if cfg.fault_percentage() > 0 {
         info!("Deliberate response errors : ~{}%", cfg.fault_percentage());
     } else {
@@ -163,15 +167,25 @@ pub fn main() {
     let mut threads = Vec::new();
 
     for i in 0..num_workers {
+        let queue = stats_queue.clone();
         let cfg = config.clone();
         let socket = bind_socket(cfg.clone()).unwrap();
         let thread = thread::Builder::new()
             .name(format!("worker-{}", i))
-            .spawn(|| polling_loop(cfg.clone(), socket, stats_queue.clone()))
+            .spawn(move || polling_loop(cfg, socket, queue))
             .expect("failure spawning thread");
 
         threads.push(thread);
     }
+
+    let mut reporter = Reporter::new(stats_queue.clone(), &Duration::from_secs(10), Path::new("/tmp"));
+
+    let report_thread = thread::Builder::new()
+        .name("stats-reporting".to_string())
+        .spawn(move || { reporter.processing_loop() })
+        .expect("failure spawning thread");
+
+    threads.push(report_thread);
 
     for t in threads {
         t.join().expect("join failed")
