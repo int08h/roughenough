@@ -39,7 +39,8 @@ impl Default for PerClientStats {
 }
 
 /// Maximum number of entries to prevent DoS and unbounded memory growth.
-pub const MAX_CLIENTS: usize = 100_000;
+/// This is effectively the entire IPv4 address space.
+pub const MAX_CLIENTS: usize = u32::MAX as usize;
 
 impl PerClientStats {
     pub fn new() -> Self {

@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
-static MAX_CLIENTS: usize = 256_000;
+static MAX_CLIENTS: usize = u32::MAX as usize;
 
 pub struct Reporter {
     source_queue: Arc<StatsQueue>,
