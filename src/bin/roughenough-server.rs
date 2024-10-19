@@ -23,11 +23,6 @@
 #[macro_use]
 extern crate log;
 
-use std::process;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::{env, io, thread};
-
 use log::LevelFilter;
 use mio::net::UdpSocket;
 use mio::Events;
@@ -35,20 +30,26 @@ use net2::unix::UnixUdpBuilderExt;
 use net2::UdpBuilder;
 use once_cell::sync::Lazy;
 use simple_logger::SimpleLogger;
+use std::ops::Deref;
+use std::process;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::{env, io, thread};
 
 use roughenough::config;
 use roughenough::config::ServerConfig;
 use roughenough::roughenough_version;
 use roughenough::server::Server;
+use roughenough::stats::{Reporter, StatsQueue};
 
-// All processing threads poll this. Starts TRUE and will be set to FASLE by
+// All processing threads poll this. Starts TRUE and will be set to FALSE by
 // the Ctrl-C (SIGINT) handler created in `set_ctrlc_handler()`
 static KEEP_RUNNING: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(true));
 
-fn polling_loop(cfg: Arc<Mutex<Box<dyn ServerConfig>>>, socket: UdpSocket) {
+fn polling_loop(cfg: Arc<Mutex<Box<dyn ServerConfig>>>, socket: UdpSocket, queue: Arc<StatsQueue>) {
     let mut server = {
         let config = cfg.lock().unwrap();
-        let server = Server::new(config.as_ref(), socket);
+        let server = Server::new(config.as_ref(), socket, queue);
 
         display_config(&server, config.as_ref());
         server
@@ -121,6 +122,9 @@ fn display_config(server: &Server, cfg: &dyn ServerConfig) {
             "aggregated"
         }
     );
+    if cfg.client_stats_enabled() && cfg.persistence_directory().is_some() {
+        info!("Persistence directory      : {}", cfg.persistence_directory().unwrap().display());
+    }
     if cfg.fault_percentage() > 0 {
         info!("Deliberate response errors : ~{}%", cfg.fault_percentage());
     } else {
@@ -157,18 +161,38 @@ pub fn main() {
 
     // TODO(stuart) TCP healthcheck REUSEADDR and RESUSEPORT on the tcp socket
 
+    let num_workers = config.lock().unwrap().num_workers();
+    let stats_queue = Arc::new(StatsQueue::new(num_workers * 2));
     let mut threads = Vec::new();
 
-    let num_workers = config.lock().unwrap().num_workers();
     for i in 0..num_workers {
+        let queue = stats_queue.clone();
         let cfg = config.clone();
         let socket = bind_socket(cfg.clone()).unwrap();
         let thread = thread::Builder::new()
             .name(format!("worker-{}", i))
-            .spawn(move || polling_loop(cfg.clone(), socket) )
+            .spawn(move || polling_loop(cfg, socket, queue))
             .expect("failure spawning thread");
 
         threads.push(thread);
+    }
+
+    let client_stats_enabled = config.lock().unwrap().client_stats_enabled();
+    let persistence_directory = config.lock().unwrap().persistence_directory();
+
+    if client_stats_enabled && persistence_directory.is_some() {
+        let mut reporter = Reporter::new(
+            stats_queue.clone(),
+            &config.lock().unwrap().status_interval(),
+            persistence_directory.unwrap().as_path(),
+        );
+
+        let report_thread = thread::Builder::new()
+            .name("stats-reporting".to_string())
+            .spawn(move || { reporter.processing_loop(KEEP_RUNNING.deref()) })
+            .expect("failure spawning thread");
+
+        threads.push(report_thread);
     }
 
     for t in threads {

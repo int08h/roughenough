@@ -18,32 +18,42 @@
 
 pub use crate::stats::aggregated::AggregatedStats;
 pub use crate::stats::per_client::PerClientStats;
+pub use crate::stats::reporter::Reporter;
 use crate::Error;
+use chrono::Utc;
+use crossbeam_queue::ArrayQueue;
+use serde::Serialize;
+use std::cmp;
 use std::collections::hash_map::Iter;
 use std::net::IpAddr;
 
 mod aggregated;
 mod per_client;
+mod reporter;
+
+pub type StatsQueue = ArrayQueue<Vec<ClientStats>>;
 
 ///
 /// Specific metrics tracked per each client
 ///
-#[derive(Debug, Clone, Copy)]
-pub struct ClientStatEntry {
-    pub rfc_requests: u64,
-    pub classic_requests: u64,
-    pub invalid_requests: u64,
-    pub health_checks: u64,
-    pub rfc_responses_sent: u64,
-    pub classic_responses_sent: u64,
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+pub struct ClientStats {
+    pub rfc_requests: u32,
+    pub classic_requests: u32,
+    pub invalid_requests: u32,
+    pub health_checks: u32,
+    pub rfc_responses_sent: u32,
+    pub classic_responses_sent: u32,
     pub bytes_sent: usize,
-    pub failed_send_attempts: u64,
-    pub retried_send_attempts: u64,
+    pub failed_send_attempts: u32,
+    pub retried_send_attempts: u32,
+    pub ip_addr: IpAddr,
+    pub first_seen: i64,
 }
 
-impl ClientStatEntry {
-    fn new() -> Self {
-        ClientStatEntry {
+impl ClientStats {
+    fn new(ip_addr: IpAddr) -> Self {
+        ClientStats {
             rfc_requests: 0,
             classic_requests: 0,
             invalid_requests: 0,
@@ -53,7 +63,25 @@ impl ClientStatEntry {
             bytes_sent: 0,
             failed_send_attempts: 0,
             retried_send_attempts: 0,
+            ip_addr: ip_addr,
+            first_seen: Utc::now().timestamp(),
         }
+    }
+
+    fn merge(&mut self, other: &Self) {
+        if self.ip_addr != other.ip_addr {
+            return;
+        }
+        self.rfc_requests += other.rfc_requests;
+        self.classic_requests += other.classic_requests;
+        self.invalid_requests += other.invalid_requests;
+        self.health_checks += other.health_checks;
+        self.rfc_responses_sent += other.rfc_responses_sent;
+        self.classic_responses_sent += other.classic_responses_sent;
+        self.bytes_sent += other.bytes_sent;
+        self.failed_send_attempts += other.failed_send_attempts;
+        self.retried_send_attempts += other.retried_send_attempts;
+        self.first_seen = cmp::min(other.first_seen, self.first_seen);
     }
 }
 
@@ -101,9 +129,9 @@ pub trait ServerStats {
 
     fn total_unique_clients(&self) -> u64;
 
-    fn stats_for_client(&self, addr: &IpAddr) -> Option<&ClientStatEntry>;
+    fn stats_for_client(&self, addr: &IpAddr) -> Option<&ClientStats>;
 
-    fn iter(&self) -> Iter<IpAddr, ClientStatEntry>;
+    fn iter(&self) -> Iter<IpAddr, ClientStats>;
 
     fn clear(&mut self);
 }

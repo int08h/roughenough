@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::stats::ClientStatEntry;
+use crate::stats::ClientStats;
 use crate::stats::ServerStats;
 use crate::Error;
 use std::collections::hash_map::Iter;
@@ -27,7 +27,7 @@ use std::net::IpAddr;
 /// and `num_overflows` is incremented.
 ///
 pub struct PerClientStats {
-    clients: HashMap<IpAddr, ClientStatEntry>,
+    clients: HashMap<IpAddr, ClientStats>,
     num_overflows: u64,
     max_clients: usize,
 }
@@ -54,7 +54,7 @@ impl PerClientStats {
     #[cfg(test)]
     pub fn with_limit(limit: usize) -> Self {
         PerClientStats {
-            clients: HashMap::with_capacity(64),
+            clients: HashMap::with_capacity(limit),
             num_overflows: 0,
             max_clients: limit,
         }
@@ -84,7 +84,7 @@ impl ServerStats for PerClientStats {
         }
         self.clients
             .entry(*addr)
-            .or_insert_with(ClientStatEntry::new)
+            .or_insert_with_key(|addr| ClientStats::new(addr.clone()))
             .rfc_requests += 1;
     }
 
@@ -94,7 +94,7 @@ impl ServerStats for PerClientStats {
         }
         self.clients
             .entry(*addr)
-            .or_insert_with(ClientStatEntry::new)
+            .or_insert_with_key(|addr| ClientStats::new(addr.clone()))
             .classic_requests += 1;
     }
 
@@ -104,7 +104,7 @@ impl ServerStats for PerClientStats {
         }
         self.clients
             .entry(*addr)
-            .or_insert_with(ClientStatEntry::new)
+            .or_insert_with_key(|addr| ClientStats::new(addr.clone()))
             .invalid_requests += 1;
     }
 
@@ -114,7 +114,7 @@ impl ServerStats for PerClientStats {
         }
         self.clients
             .entry(*addr)
-            .or_insert_with(ClientStatEntry::new)
+            .or_insert_with_key(|addr| ClientStats::new(addr.clone()))
             .failed_send_attempts += 1;
     }
 
@@ -124,7 +124,7 @@ impl ServerStats for PerClientStats {
         }
         self.clients
             .entry(*addr)
-            .or_insert_with(ClientStatEntry::new)
+            .or_insert_with_key(|addr| ClientStats::new(addr.clone()))
             .retried_send_attempts += 1;
     }
 
@@ -134,7 +134,7 @@ impl ServerStats for PerClientStats {
         }
         self.clients
             .entry(*addr)
-            .or_insert_with(ClientStatEntry::new)
+            .or_insert_with_key(|addr| ClientStats::new(addr.clone()))
             .health_checks += 1;
     }
 
@@ -145,7 +145,7 @@ impl ServerStats for PerClientStats {
         let entry = self
             .clients
             .entry(*addr)
-            .or_insert_with(ClientStatEntry::new);
+            .or_insert_with_key(|addr| ClientStats::new(addr.clone()));
 
         entry.rfc_responses_sent += 1;
         entry.bytes_sent += bytes_sent;
@@ -158,74 +158,91 @@ impl ServerStats for PerClientStats {
         let entry = self
             .clients
             .entry(*addr)
-            .or_insert_with(ClientStatEntry::new);
+            .or_insert_with_key(|addr| ClientStats::new(addr.clone()));
 
         entry.classic_responses_sent += 1;
         entry.bytes_sent += bytes_sent;
     }
 
     fn total_valid_requests(&self) -> u64 {
-        self.clients
-            .values()
-            .map(|&v| v.rfc_requests + v.classic_requests)
+        self.clients.values()
+            .map(|&v| v.rfc_requests as u64 + v.classic_requests as u64)
             .sum()
     }
 
     fn num_rfc_requests(&self) -> u64 {
-        self.clients.values().map(|&v| v.rfc_requests).sum()
+        self.clients.values()
+            .map(|&v| v.rfc_requests as u64)
+            .sum()
     }
 
     fn num_classic_requests(&self) -> u64 {
-        self.clients.values().map(|&v| v.classic_requests).sum()
+        self.clients.values()
+            .map(|&v| v.classic_requests as u64)
+            .sum()
     }
 
     fn total_invalid_requests(&self) -> u64 {
-        self.clients.values().map(|&v| v.invalid_requests).sum()
+        self.clients.values()
+            .map(|&v| v.invalid_requests as u64)
+            .sum()
     }
 
     fn total_health_checks(&self) -> u64 {
-        self.clients.values().map(|&v| v.health_checks).sum()
+        self.clients.values()
+            .map(|&v| v.health_checks as u64)
+            .sum()
     }
 
     fn total_failed_send_attempts(&self) -> u64 {
-        self.clients.values().map(|&v| v.failed_send_attempts).sum()
+        self.clients.values()
+            .map(|&v| v.failed_send_attempts as u64)
+            .sum()
     }
 
     fn total_retried_send_attempts(&self) -> u64 {
-        self.clients.values().map(|&v| v.retried_send_attempts).sum()
+        self.clients.values()
+            .map(|&v| v.retried_send_attempts as u64)
+            .sum()
     }
 
     fn total_responses_sent(&self) -> u64 {
         self.clients
             .values()
             .map(|&v| v.rfc_responses_sent + v.classic_responses_sent)
+            .map(|v| v as u64)
             .sum()
     }
 
     fn num_rfc_responses_sent(&self) -> u64 {
-        self.clients.values().map(|&v| v.rfc_responses_sent).sum()
+        self.clients.values()
+            .map(|&v| v.rfc_responses_sent as u64)
+            .sum()
     }
 
     fn num_classic_responses_sent(&self) -> u64 {
         self.clients
             .values()
             .map(|&v| v.classic_responses_sent)
+            .map(|v| v as u64)
             .sum()
     }
 
     fn total_bytes_sent(&self) -> usize {
-        self.clients.values().map(|&v| v.bytes_sent).sum()
+        self.clients.values()
+            .map(|&v| v.bytes_sent)
+            .sum()
     }
 
     fn total_unique_clients(&self) -> u64 {
         self.clients.len() as u64
     }
 
-    fn stats_for_client(&self, addr: &IpAddr) -> Option<&ClientStatEntry> {
+    fn stats_for_client(&self, addr: &IpAddr) -> Option<&ClientStats> {
         self.clients.get(addr)
     }
 
-    fn iter(&self) -> Iter<IpAddr, ClientStatEntry> {
+    fn iter(&self) -> Iter<IpAddr, ClientStats> {
         self.clients.iter()
     }
 

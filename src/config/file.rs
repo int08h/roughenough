@@ -14,6 +14,7 @@
 
 use std::fs::File;
 use std::io::Read;
+use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 
@@ -50,6 +51,7 @@ pub struct FileConfig {
     client_stats: bool,
     fault_percentage: u8,
     num_workers: usize,
+    persist_dir: Option<PathBuf>,
 }
 
 impl FileConfig {
@@ -83,6 +85,7 @@ impl FileConfig {
             client_stats: false,
             fault_percentage: 0,
             num_workers: thread::available_parallelism().unwrap().get(),
+            persist_dir: None,
         };
 
         for (key, value) in cfg[0].as_hash().unwrap() {
@@ -114,6 +117,13 @@ impl FileConfig {
                 "client_stats" => {
                     let val = value.as_str().unwrap().to_ascii_lowercase();
                     config.client_stats = val == "yes" || val == "on";
+                }
+                "persistence_directory" => {
+                    let val = match value.as_str() {
+                        Some(path) => Some(PathBuf::from(path)),
+                        None => None
+                    };
+                    config.persist_dir = val;
                 }
                 "fault_percentage" => {
                     let val = value.as_i64().unwrap() as u8;
@@ -167,6 +177,10 @@ impl ServerConfig for FileConfig {
 
     fn client_stats_enabled(&self) -> bool {
         self.client_stats
+    }
+
+    fn persistence_directory(&self) -> Option<PathBuf> {
+        self.persist_dir.clone()
     }
 
     fn fault_percentage(&self) -> u8 {
