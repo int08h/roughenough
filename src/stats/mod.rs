@@ -20,12 +20,12 @@ pub use crate::stats::aggregated::AggregatedStats;
 pub use crate::stats::per_client::PerClientStats;
 pub use crate::stats::reporter::Reporter;
 use crate::Error;
+use chrono::Utc;
 use crossbeam_queue::ArrayQueue;
 use serde::Serialize;
 use std::cmp;
 use std::collections::hash_map::Iter;
 use std::net::IpAddr;
-use std::time::SystemTime;
 
 mod aggregated;
 mod per_client;
@@ -48,7 +48,7 @@ pub struct ClientStats {
     pub failed_send_attempts: u32,
     pub retried_send_attempts: u32,
     pub ip_addr: IpAddr,
-    pub first_seen: SystemTime,
+    pub first_seen: i64,
 }
 
 impl ClientStats {
@@ -64,7 +64,7 @@ impl ClientStats {
             failed_send_attempts: 0,
             retried_send_attempts: 0,
             ip_addr: ip_addr,
-            first_seen: SystemTime::now(),
+            first_seen: Utc::now().timestamp(),
         }
     }
 

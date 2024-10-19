@@ -278,6 +278,10 @@ impl Server {
             .collect();
 
         let client_count = clients.len();
+        if client_count == 0 {
+            debug!("{} 0 client stats", self.thread_name());
+            return;
+        }
 
         self.stats_queue.force_push(clients);
         self.stats_recorder.clear();

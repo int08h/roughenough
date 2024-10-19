@@ -58,9 +58,9 @@ impl Reporter {
             self.receive_client_stats();
 
             if Instant::now() >= self.next_update {
+                self.next_update = Instant::now() + self.report_interval;
                 self.report();
                 self.client_stats.clear();
-                self.next_update = Instant::now() + self.report_interval;
             }
 
             sleep(Duration::from_secs(1));
@@ -90,14 +90,19 @@ impl Reporter {
     pub fn report(&mut self) {
         let start = Instant::now();
 
+        if self.client_stats.is_empty() {
+            info!("No client stats to persist");
+            return
+        }
+
         let filename = Utc::now()
             .format("roughenough-stats-%Y%m%d-%H%M%S.csv")
             .to_string();
 
         let mut outpath = self.output_location.clone();
-        outpath.set_file_name(filename);
+        outpath.push(filename);
 
-        info!("Writing client statistics to: {}", outpath.display());
+        info!("Writing {} client statistics to: {}", self.client_stats.len(), outpath.display());
 
         let mut writer = match WriterBuilder::new().has_headers(true).from_path(outpath.clone()) {
             Ok(writer) => writer,

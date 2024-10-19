@@ -23,13 +23,6 @@
 #[macro_use]
 extern crate log;
 
-use std::process;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::{env, io, thread};
-use std::ops::Deref;
-use std::path::Path;
-use std::time::Duration;
 use log::LevelFilter;
 use mio::net::UdpSocket;
 use mio::Events;
@@ -37,6 +30,11 @@ use net2::unix::UnixUdpBuilderExt;
 use net2::UdpBuilder;
 use once_cell::sync::Lazy;
 use simple_logger::SimpleLogger;
+use std::ops::Deref;
+use std::process;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::{env, io, thread};
 
 use roughenough::config;
 use roughenough::config::ServerConfig;
@@ -44,7 +42,7 @@ use roughenough::roughenough_version;
 use roughenough::server::Server;
 use roughenough::stats::{Reporter, StatsQueue};
 
-// All processing threads poll this. Starts TRUE and will be set to FASLE by
+// All processing threads poll this. Starts TRUE and will be set to FALSE by
 // the Ctrl-C (SIGINT) handler created in `set_ctrlc_handler()`
 static KEEP_RUNNING: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(true));
 
