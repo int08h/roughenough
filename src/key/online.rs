@@ -19,7 +19,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use byteorder::{LittleEndian, WriteBytesExt};
 
 use crate::message::RtMessage;
-use crate::sign::Signer;
+use crate::sign::MsgSigner;
 use crate::tag::Tag;
 use crate::version::Version;
 use crate::SIGNED_RESPONSE_CONTEXT;
@@ -28,7 +28,7 @@ use crate::SIGNED_RESPONSE_CONTEXT;
 /// Represents the delegated Roughtime ephemeral online key.
 ///
 pub struct OnlineKey {
-    signer: Signer,
+    signer: MsgSigner,
 }
 
 impl Default for OnlineKey {
@@ -40,7 +40,7 @@ impl Default for OnlineKey {
 impl OnlineKey {
     pub fn new() -> Self {
         OnlineKey {
-            signer: Signer::new(),
+            signer: MsgSigner::new(),
         }
     }
 
@@ -51,7 +51,7 @@ impl OnlineKey {
         let pub_key_bytes = self.signer.public_key_bytes();
 
         let mut dele_msg = RtMessage::with_capacity(3);
-        dele_msg.add_field(Tag::PUBK, pub_key_bytes).unwrap();
+        dele_msg.add_field(Tag::PUBK, &pub_key_bytes).unwrap();
         dele_msg.add_field(Tag::MINT, &zeros).unwrap();
         dele_msg.add_field(Tag::MAXT, &max).unwrap();
 

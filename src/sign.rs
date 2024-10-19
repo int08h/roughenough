@@ -20,8 +20,8 @@ use std::fmt;
 use std::fmt::Formatter;
 
 use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
+use ed25519_dalek::{SigningKey, Signature, Verifier, Signer, VerifyingKey, SecretKey};
 use ring::rand::SecureRandom;
-use ring::signature::{self, Ed25519KeyPair, KeyPair};
 use ring::rand;
 
 const HEX: Encoding = HEXLOWER_PERMISSIVE;
@@ -30,28 +30,27 @@ const INITIAL_BUF_SIZE: usize = 1024;
 
 /// A multi-step (init-update-finish) interface for verifying an Ed25519 signature
 #[derive(Debug)]
-pub struct Verifier {
-    pubkey: Vec<u8>,
+pub struct MsgVerifier {
+    pubkey: VerifyingKey,
     buf: Vec<u8>,
 }
 
-impl Verifier {
+impl MsgVerifier {
     pub fn new(pubkey: &[u8]) -> Self {
-        Verifier {
-            pubkey: Vec::from(pubkey),
+        let pk: &[u8; 32] = pubkey.try_into().expect("valid pubkey");
+        MsgVerifier {
+            pubkey: VerifyingKey::from_bytes(pk).unwrap(),
             buf: Vec::with_capacity(INITIAL_BUF_SIZE),
         }
     }
 
     pub fn update(&mut self, data: &[u8]) {
-        self.buf.reserve(data.len());
         self.buf.extend_from_slice(data);
     }
 
-    pub fn verify(&self, expected_sig: &[u8]) -> bool {
-        let pk = signature::UnparsedPublicKey::new(&signature::ED25519, &self.pubkey);
-
-        match pk.verify(&self.buf, expected_sig) {
+    pub fn verify(&self, provided_sig: &[u8]) -> bool {
+        let sig = Signature::from_slice(provided_sig).expect("valid signature");
+        match self.pubkey.verify(&self.buf, &sig) {
             Ok(_) => true,
             _ => false,
         }
@@ -59,29 +58,30 @@ impl Verifier {
 }
 
 /// A multi-step (init-update-finish) interface for creating an Ed25519 signature
-pub struct Signer {
-    key_pair: Ed25519KeyPair,
+pub struct MsgSigner {
+    signing_key: SigningKey,
     buf: Vec<u8>,
 }
 
-impl Default for Signer {
+impl Default for MsgSigner {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Signer {
+impl MsgSigner {
     pub fn new() -> Self {
         let rng = rand::SystemRandom::new();
         let mut seed = [0u8; 32];
         rng.fill(&mut seed).unwrap();
 
-        Signer::from_seed(&seed)
+        MsgSigner::from_seed(&seed)
     }
 
     pub fn from_seed(seed: &[u8]) -> Self {
-        Signer {
-            key_pair: Ed25519KeyPair::from_seed_unchecked(seed).unwrap(),
+        let secret_key = SecretKey::try_from(seed).expect("invalid seed");
+        MsgSigner {
+            signing_key: SigningKey::from(secret_key),
             buf: Vec::with_capacity(INITIAL_BUF_SIZE),
         }
     }
@@ -92,29 +92,30 @@ impl Signer {
     }
 
     pub fn sign(&mut self) -> Vec<u8> {
-        let signature = self.key_pair.sign(&self.buf).as_ref().to_vec();
+        let signature = self.signing_key.sign(&self.buf).to_vec();
         self.buf.clear();
 
         signature
     }
 
-    pub fn public_key_bytes(&self) -> &[u8] {
-        self.key_pair.public_key().as_ref()
+    pub fn public_key_bytes(&self) -> Vec<u8> {
+        let binding = self.signing_key.verifying_key();
+        binding.as_bytes().to_vec()
     }
 }
 
-impl fmt::Display for Signer {
+impl fmt::Display for MsgSigner {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}", HEX.encode(self.public_key_bytes()))
+        write!(f, "{}", HEX.encode(&self.public_key_bytes()))
     }
 }
 
-impl fmt::Debug for Signer {
+impl fmt::Debug for MsgSigner {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(
             f,
             "Signer({}, {:?})",
-            HEX.encode(self.public_key_bytes()),
+            HEX.encode(&self.public_key_bytes()),
             self.buf
         )
     }
@@ -135,7 +136,7 @@ mod test {
             "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b".as_ref()
         ).unwrap();
 
-        let v = Verifier::new(&pubkey);
+        let v = MsgVerifier::new(&pubkey);
         let result = v.verify(&signature);
         assert_eq!(result, true);
     }
@@ -152,7 +153,7 @@ mod test {
             "124f6fc6b0d100842769e71bd530664d888df8507df6c56dedfdb509aeb93416e26b918d38aa06305df3095697c18b2aa832eaa52edc0ae49fbae5a85e150c07".as_ref()
         ).unwrap();
 
-        let mut v = Verifier::new(&pubkey);
+        let mut v = MsgVerifier::new(&pubkey);
         v.update(&message);
         let result = v.verify(&signature);
         assert_eq!(result, true);
@@ -167,7 +168,7 @@ mod test {
             "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b".as_ref()
         ).unwrap();
 
-        let mut s = Signer::from_seed(&seed);
+        let mut s = MsgSigner::from_seed(&seed);
         let sig = s.sign();
         assert_eq!(sig, expected_sig);
     }
@@ -183,7 +184,7 @@ mod test {
             "d9868d52c2bebce5f3fa5a79891970f309cb6591e3e1702a70276fa97c24b3a8e58606c38c9758529da50ee31b8219cba45271c689afa60b0ea26c99db19b00c".as_ref()
         ).unwrap();
 
-        let mut s = Signer::from_seed(&seed);
+        let mut s = MsgSigner::from_seed(&seed);
         s.update(&message);
         let sig = s.sign();
         assert_eq!(sig, expected_sig);
@@ -196,11 +197,11 @@ mod test {
 
         let message = "Hello world".as_bytes();
 
-        let mut signer = Signer::from_seed(&seed);
+        let mut signer = MsgSigner::from_seed(&seed);
         signer.update(&message);
         let signature = signer.sign();
 
-        let mut v = Verifier::new(signer.public_key_bytes());
+        let mut v = MsgVerifier::new(&signer.public_key_bytes());
         v.update(&message);
         let result = v.verify(&signature);
 
