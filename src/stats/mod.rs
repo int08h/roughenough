@@ -33,6 +33,9 @@ mod reporter;
 
 pub type StatsQueue = ArrayQueue<Vec<ClientStats>>;
 
+/// Maximum number of tracked clients to prevent DoS and unbounded memory growth.
+pub const MAX_CLIENTS: usize = 4_000_000;
+
 ///
 /// Specific metrics tracked per each client
 ///

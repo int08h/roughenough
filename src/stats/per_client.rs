@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::stats::ClientStats;
+use crate::stats::{ClientStats, MAX_CLIENTS};
 use crate::stats::ServerStats;
 use crate::Error;
 use std::collections::hash_map::Iter;
@@ -37,10 +37,6 @@ impl Default for PerClientStats {
         Self::new()
     }
 }
-
-/// Maximum number of entries to prevent DoS and unbounded memory growth.
-/// This is effectively the entire IPv4 address space.
-pub const MAX_CLIENTS: usize = u32::MAX as usize;
 
 impl PerClientStats {
     pub fn new() -> Self {

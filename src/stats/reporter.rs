@@ -16,7 +16,7 @@
 //! Coalesces client statistics from all workers and persists aggregated data.
 //!
 
-use crate::stats::{ClientStats, StatsQueue};
+use crate::stats::{ClientStats, StatsQueue, MAX_CLIENTS};
 use chrono::Utc;
 use csv::WriterBuilder;
 use std::collections::HashMap;
@@ -26,8 +26,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
-
-static MAX_CLIENTS: usize = u32::MAX as usize;
 
 pub struct Reporter {
     source_queue: Arc<StatsQueue>,
