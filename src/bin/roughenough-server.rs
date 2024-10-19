@@ -27,6 +27,7 @@ use std::process;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::{env, io, thread};
+use std::ops::Deref;
 use std::path::Path;
 use std::time::Duration;
 use log::LevelFilter;
@@ -178,14 +179,23 @@ pub fn main() {
         threads.push(thread);
     }
 
-    let mut reporter = Reporter::new(stats_queue.clone(), &Duration::from_secs(10), Path::new("/tmp"));
+    let client_stats_enabled = config.lock().unwrap().client_stats_enabled();
+    let persistence_directory = config.lock().unwrap().persistence_directory();
 
-    let report_thread = thread::Builder::new()
-        .name("stats-reporting".to_string())
-        .spawn(move || { reporter.processing_loop() })
-        .expect("failure spawning thread");
+    if client_stats_enabled && persistence_directory.is_some() {
+        let mut reporter = Reporter::new(
+            stats_queue.clone(),
+            &config.lock().unwrap().status_interval(),
+            persistence_directory.unwrap().as_path(),
+        );
 
-    threads.push(report_thread);
+        let report_thread = thread::Builder::new()
+            .name("stats-reporting".to_string())
+            .spawn(move || { reporter.processing_loop(KEEP_RUNNING.deref()) })
+            .expect("failure spawning thread");
+
+        threads.push(report_thread);
+    }
 
     for t in threads {
         t.join().expect("join failed")

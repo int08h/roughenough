@@ -23,6 +23,7 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
@@ -52,16 +53,18 @@ impl Reporter {
         }
     }
 
-    pub fn processing_loop(&mut self) {
-        self.receive_client_stats();
+    pub fn processing_loop(&mut self, keep_running: &AtomicBool) {
+        while keep_running.load(Ordering::Relaxed) {
+            self.receive_client_stats();
 
-        if Instant::now() >= self.next_update {
-            self.report();
-            self.client_stats.clear();
-            self.next_update = Instant::now() + self.report_interval;
+            if Instant::now() >= self.next_update {
+                self.report();
+                self.client_stats.clear();
+                self.next_update = Instant::now() + self.report_interval;
+            }
+
+            sleep(Duration::from_secs(1));
         }
-
-        sleep(Duration::from_secs(1));
     }
 
     pub fn receive_client_stats(&mut self) {
