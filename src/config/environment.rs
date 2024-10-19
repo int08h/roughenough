@@ -28,19 +28,19 @@ const HEX: Encoding = HEXLOWER_PERMISSIVE;
 /// Obtain a Roughenough server configuration ([ServerConfig](trait.ServerConfig.html))
 /// from environment variables.
 ///
-///   Config parameter  | Environment Variable
-///   ----------------  | --------------------
-///   port              | `ROUGHENOUGH_PORT`
-///   interface         | `ROUGHENOUGH_INTERFACE`
-///   seed              | `ROUGHENOUGH_SEED`
-///   batch_size        | `ROUGHENOUGH_BATCH_SIZE`
-///   status_interval   | `ROUGHENOUGH_STATUS_INTERVAL`
-///   kms_protection    | `ROUGHENOUGH_KMS_PROTECTION`
-///   health_check_port | `ROUGHENOUGH_HEALTH_CHECK_PORT`
-///   client_stats      | `ROUGHENOUGH_CLIENT_STATS`
-///   fault_percentage  | `ROUGHENOUGH_FAULT_PERCENTAGE`
-///   num_workers       | `ROUGHENOUGH_NUM_WORKERS`
-///   stats_dir         | `ROUGHENOUGH_STATS_DIR`
+///   Config parameter      | Environment Variable
+///   ----------------      | --------------------
+///   port                  | `ROUGHENOUGH_PORT`
+///   interface             | `ROUGHENOUGH_INTERFACE`
+///   seed                  | `ROUGHENOUGH_SEED`
+///   batch_size            | `ROUGHENOUGH_BATCH_SIZE`
+///   status_interval       | `ROUGHENOUGH_STATUS_INTERVAL`
+///   kms_protection        | `ROUGHENOUGH_KMS_PROTECTION`
+///   health_check_port     | `ROUGHENOUGH_HEALTH_CHECK_PORT`
+///   client_stats          | `ROUGHENOUGH_CLIENT_STATS`
+///   fault_percentage      | `ROUGHENOUGH_FAULT_PERCENTAGE`
+///   num_workers           | `ROUGHENOUGH_NUM_WORKERS`
+///   persistence_directory | `ROUGHENOUGH_PERSISTENCE_DIRECTORY`
 ///
 ///
 pub struct EnvironmentConfig {
