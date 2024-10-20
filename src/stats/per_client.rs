@@ -125,8 +125,14 @@ impl ServerStats for PerClientStats {
             .retried_send_attempts += 1;
     }
 
-    fn add_health_check(&mut self, _: &IpAddr) {
-        // no-op
+    fn add_health_check(&mut self, addr: &IpAddr) {
+        if self.too_many_entries() {
+            return;
+        }
+        self.clients
+            .entry(*addr)
+            .or_insert_with_key(|addr| ClientStats::new(addr.clone()))
+            .health_checks += 1;
     }
 
     fn add_rfc_response(&mut self, addr: &IpAddr, bytes_sent: usize) {
@@ -180,7 +186,9 @@ impl ServerStats for PerClientStats {
     }
 
     fn total_health_checks(&self) -> u64 {
-        0
+        self.clients.values()
+            .map(|&v| v.health_checks as u64)
+            .sum()
     }
 
     fn total_failed_send_attempts(&self) -> u64 {
