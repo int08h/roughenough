@@ -21,8 +21,12 @@ gcpkms = ["google-cloudkms1", "hyper", "hyper-rustls", "yup-oauth2", "futures", 
 byteorder = "1"
 chrono = "0.4"
 clap = "2"
+crossbeam-queue = "0.3"
 csv = "1.3"
 ctrlc = { version = "3.4", features = ["termination"] }
+data-encoding = "2.6"
+ed25519-dalek = "2.1"
+enum-iterator = "2.1"
 humansize = "2"
 log = "0.4"
 mio = "0.6"
@@ -33,13 +37,9 @@ rand = "0.6"
 ring = "0.17"
 simple_logger = "5"
 serde = { version = "1.0", features = ["derive", "std"] }
-serde_json = { version = "1.0"}
 yaml-rust = "0.4"
 zeroize = "1.8"
-data-encoding = "2.6"
-enum-iterator = "2.1"
-ed25519-dalek = "2.1"
-crossbeam-queue = "0.3"
+zstd = {  version = "0.13", features = ["zstdmt"] }
 
 # Used by 'awskms' and 'gcpkms'
 futures = { version = "^0.3", optional = true }

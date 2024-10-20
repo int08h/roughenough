@@ -18,8 +18,9 @@
 
 use crate::stats::{ClientStats, StatsQueue, MAX_CLIENTS};
 use chrono::Utc;
-use csv::WriterBuilder;
+use csv;
 use std::collections::HashMap;
+use std::fs::File;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -94,7 +95,7 @@ impl Reporter {
         }
 
         let filename = Utc::now()
-            .format("roughenough-stats-%Y%m%d-%H%M%S.csv")
+            .format("roughenough-stats-%Y%m%d-%H%M%S.csv.zst")
             .to_string();
 
         let mut outpath = self.output_location.clone();
@@ -102,17 +103,25 @@ impl Reporter {
 
         info!("Writing {} client statistics to: {}", self.client_stats.len(), outpath.display());
 
-        let mut writer = match WriterBuilder::new().has_headers(true).from_path(outpath.clone()) {
-            Ok(writer) => writer,
+        let outfile = match File::create(&outpath) {
+            Ok(file) => file,
             Err(e) => {
-                warn!("failed to create stats output: {}", e);
-                return
+                warn!("failed to open output file: {}", e);
+                return;
             }
         };
 
+        let zstd_writer = zstd::Encoder::new(outfile, 9)
+            .unwrap()
+            .auto_finish();
+
+        let mut csv_writer = csv::WriterBuilder::new()
+            .has_headers(true)
+            .from_writer(zstd_writer);
+
         let mut num_processed = 0;
         for stat in self.client_stats.values() {
-            match writer.serialize(stat) {
+            match csv_writer.serialize(stat) {
                 Ok(_) => num_processed += 1,
                 Err(e) => {
                     warn!("serializing record failed: {}", e);
@@ -121,7 +130,6 @@ impl Reporter {
             }
         }
 
-        writer.flush().unwrap();
         info!("Wrote {} statistics records in {:.3} seconds", num_processed, start.elapsed().as_secs_f32());
     }
 }
