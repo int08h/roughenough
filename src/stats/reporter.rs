@@ -18,12 +18,13 @@
 
 use crate::stats::{ClientStats, StatsQueue, MAX_CLIENTS};
 use chrono::Utc;
-use csv::WriterBuilder;
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::Write;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
@@ -39,7 +40,7 @@ impl Reporter {
     pub fn new(
         source_queue: Arc<StatsQueue>,
         report_interval: &Duration,
-        output_location: &Path
+        output_location: &Path,
     ) -> Reporter
     {
         Reporter {
@@ -90,11 +91,11 @@ impl Reporter {
 
         if self.client_stats.is_empty() {
             info!("No client stats to persist");
-            return
+            return;
         }
 
         let filename = Utc::now()
-            .format("roughenough-stats-%Y%m%d-%H%M%S.csv")
+            .format("roughenough-stats-%Y%m%d-%H%M%S.cbor")
             .to_string();
 
         let mut outpath = self.output_location.clone();
@@ -102,26 +103,26 @@ impl Reporter {
 
         info!("Writing {} client statistics to: {}", self.client_stats.len(), outpath.display());
 
-        let mut writer = match WriterBuilder::new().has_headers(true).from_path(outpath.clone()) {
-            Ok(writer) => writer,
+        let mut outfile = match File::create(outpath.as_path()) {
+            Ok(f) => f,
             Err(e) => {
                 warn!("failed to create stats output: {}", e);
-                return
+                return;
             }
         };
 
-        let mut num_processed = 0;
-        for stat in self.client_stats.values() {
-            match writer.serialize(stat) {
-                Ok(_) => num_processed += 1,
-                Err(e) => {
-                    warn!("serializing record failed: {}", e);
-                    break
-                }
+        match ciborium::ser::into_writer(&self.client_stats, &outfile) {
+            Ok(_) => {
+                info!("Wrote {} client statistics in {:.3} seconds",
+                    self.client_stats.len(), start.elapsed().as_secs_f32()
+                );
+            }
+            Err(e) => {
+                warn!("failed to write stats: {}", e);
+                return;
             }
         }
 
-        writer.flush().unwrap();
-        info!("Wrote {} statistics records in {:.3} seconds", num_processed, start.elapsed().as_secs_f32());
+        outfile.flush().unwrap();
     }
 }
