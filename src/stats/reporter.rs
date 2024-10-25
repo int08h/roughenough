@@ -19,18 +19,20 @@
 use crate::stats::{ClientStats, StatsQueue, MAX_CLIENTS};
 use chrono::Utc;
 use csv;
+use fixedbitset::FixedBitSet;
 use std::collections::HashMap;
 use std::fs::File;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 pub struct Reporter {
     source_queue: Arc<StatsQueue>,
     client_stats: HashMap<IpAddr, ClientStats>,
+    seen_addrs: FixedBitSet,
     next_update: Instant,
     report_interval: Duration,
     output_location: PathBuf,
@@ -46,6 +48,7 @@ impl Reporter {
         Reporter {
             source_queue,
             client_stats: HashMap::with_capacity(MAX_CLIENTS),
+            seen_addrs: FixedBitSet::with_capacity(u32::MAX as usize),
             next_update: Instant::now() + *report_interval,
             report_interval: report_interval.clone(),
             output_location: output_location.to_path_buf(),
@@ -60,6 +63,7 @@ impl Reporter {
                 self.next_update = Instant::now() + self.report_interval;
                 self.report();
                 self.client_stats.clear();
+                self.seen_addrs.clear();
             }
 
             sleep(Duration::from_secs(1));
@@ -72,6 +76,15 @@ impl Reporter {
 
         while let Some(stats) = self.source_queue.pop() {
             for client in stats {
+                match client.ip_addr {
+                    IpAddr::V4(addr) => {
+                        let ip = u32::from(addr);
+                        // SAFETY: above cast to u32 ensures ip is within bitset bounds
+                        unsafe { self.seen_addrs.insert_unchecked(ip as usize); }
+                    }
+                    IpAddr::V6(_) => {} // no-op for now, IPv6 not supported
+                }
+
                 self.client_stats.entry(client.ip_addr)
                     .or_insert_with_key(|ip_addr| { ClientStats::new(ip_addr.clone()) })
                     .merge(&client);
@@ -82,7 +95,7 @@ impl Reporter {
 
         if num_processed > 0 {
             let elapsed = Instant::now().duration_since(start);
-            info!("Received {} client stat entries in {:.6} seconds", num_processed, elapsed.as_secs_f32());
+            info!("Received {} client stat entries in {:.3} seconds", num_processed, elapsed.as_secs_f32());
         }
     }
 
@@ -130,6 +143,11 @@ impl Reporter {
             }
         }
 
-        info!("Wrote {} statistics records in {:.3} seconds", num_processed, start.elapsed().as_secs_f32());
+        let popcount = self.seen_addrs.count_ones(0..self.seen_addrs.len());
+
+        info!(
+            "Wrote {} records with {} unique addresses in {:.3} seconds",
+            num_processed, popcount, start.elapsed().as_secs_f32()
+        );
     }
 }

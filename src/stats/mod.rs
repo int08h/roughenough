@@ -34,7 +34,7 @@ mod reporter;
 pub type StatsQueue = ArrayQueue<Vec<ClientStats>>;
 
 /// Maximum number of tracked clients to prevent DoS and unbounded memory growth.
-pub const MAX_CLIENTS: usize = 4_000_000;
+pub const MAX_CLIENTS: usize = 5_000_000;
 
 ///
 /// Specific metrics tracked per each client
@@ -50,8 +50,8 @@ pub struct ClientStats {
     pub bytes_sent: usize,
     pub failed_send_attempts: u32,
     pub retried_send_attempts: u32,
-    pub ip_addr: IpAddr,
     pub first_seen: i64,
+    pub ip_addr: IpAddr,
 }
 
 impl ClientStats {
@@ -66,8 +66,8 @@ impl ClientStats {
             bytes_sent: 0,
             failed_send_attempts: 0,
             retried_send_attempts: 0,
-            ip_addr: ip_addr,
             first_seen: Utc::now().timestamp(),
+            ip_addr: ip_addr,
         }
     }
 
