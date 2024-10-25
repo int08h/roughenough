@@ -19,13 +19,11 @@
 use std::io::ErrorKind;
 use std::io::Write;
 use std::net::{Shutdown, SocketAddr};
+use std::ops::Div;
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use mio::net::{TcpListener, UdpSocket};
-use mio::{Events, Poll, PollOpt, Ready, Token};
-use mio_extras::timer::Timer;
 use crate::config::ServerConfig;
 use crate::key::LongTermKey;
 use crate::kms;
@@ -33,6 +31,10 @@ use crate::request;
 use crate::responder::Responder;
 use crate::stats::{AggregatedStats, ClientStats, PerClientStats, ServerStats, StatsQueue};
 use crate::version::Version;
+use mio::net::{TcpListener, UdpSocket};
+use mio::{Events, Poll, PollOpt, Ready, Token};
+use mio_extras::timer::Timer;
+use rand::{thread_rng, RngCore};
 
 // mio event registrations
 const EVT_MESSAGE: Token = Token(0);
@@ -57,8 +59,6 @@ pub struct Server {
     socket: UdpSocket,
     health_listener: Option<TcpListener>,
     poll_duration: Option<Duration>,
-    status_interval: Duration,
-    timer: Timer<()>,
     poll: Poll,
     responder_rfc: Responder,
     responder_draft: Responder,
@@ -67,6 +67,8 @@ pub struct Server {
     thread_name: String,
     srv_value: Vec<u8>,
 
+    stats_pub_freq: Duration,
+    stats_pub_timer: Timer<()>,
     stats_recorder: Box<dyn ServerStats>,
     stats_queue: Arc<StatsQueue>,
 
@@ -81,8 +83,10 @@ impl Server {
     /// [`ServerConfig`](../config/trait.ServerConfig.html) trait object instance.
     ///
     pub fn new(config: &dyn ServerConfig, socket: UdpSocket, queue: Arc<StatsQueue>) -> Server {
+        let stats_freq = config.status_interval() / 10;
+        let delay = Self::compute_delay(stats_freq);
         let mut timer: Timer<()> = Timer::default();
-        timer.set_timeout(config.status_interval(), ());
+        timer.set_timeout(delay, ());
 
         let poll = Poll::new().unwrap();
         poll.register(&socket, EVT_MESSAGE, Ready::readable(), PollOpt::edge())
@@ -122,7 +126,6 @@ impl Server {
         let responder_classic = Responder::new(Version::Classic, config, &mut long_term_key);
 
         let batch_size = config.batch_size();
-        let status_interval = config.status_interval();
         let thread_name = thread::current().name().unwrap().to_string();
         let poll_duration = Some(Duration::from_millis(100));
         let srv_value = long_term_key.srv_value().to_vec();
@@ -132,8 +135,6 @@ impl Server {
             socket,
             health_listener,
             poll_duration,
-            status_interval,
-            timer,
             poll,
             responder_rfc,
             responder_draft,
@@ -141,6 +142,8 @@ impl Server {
             buf: [0u8; 65_536],
             thread_name,
             srv_value,
+            stats_pub_freq: stats_freq,
+            stats_pub_timer: timer,
             stats_recorder: stats,
             stats_queue: queue,
 
@@ -278,24 +281,70 @@ impl Server {
             .collect();
 
         let client_count = clients.len();
-        if client_count == 0 {
-            debug!("{} 0 client stats", self.thread_name());
-            return;
+        if client_count > 0 {
+            self.stats_queue.force_push(clients);
+            self.stats_recorder.clear();
         }
 
-        self.stats_queue.force_push(clients);
-        self.stats_recorder.clear();
-        self.timer.set_timeout(self.status_interval, ());
+        let delay = Self::compute_delay(self.stats_pub_freq);
+        self.stats_pub_timer.set_timeout(delay, ());
 
         let elapsed = start.elapsed();
         info!(
-            "{} enqueued {} client stats in {:.6} seconds",
+            "{} enqueued {} client stats in {:.3} seconds",
             self.thread_name(), client_count, elapsed.as_secs_f32()
         );
-
     }
 
     pub fn thread_name(&self) -> &str {
         &self.thread_name
+    }
+
+    fn compute_delay(base: Duration) -> Duration {
+        if base.as_secs() < 1 {
+            return base;
+        }
+
+        let mut jitter: u8 = 0;
+        while jitter == 0 {
+            jitter = (thread_rng().next_u32() & 0xff) as u8;
+        }
+
+        if jitter & 1 == 1 {
+            base - Duration::from_millis(jitter as u64)
+        } else {
+            base + Duration::from_millis(jitter as u64)
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::server::Server;
+    use std::time::Duration;
+
+    #[test]
+    fn no_jitter_when_duration_lt_1sec() {
+        assert_eq!(Server::compute_delay(Duration::from_millis(999)), Duration::from_millis(999));
+        assert_eq!(Server::compute_delay(Duration::from_millis(500)), Duration::from_millis(500));
+    }
+
+    #[test]
+    fn jitter_is_added() {
+        for i in 2..20 {
+            let base = Duration::from_secs(i);
+            let computed = Server::compute_delay(base);
+
+            // jitter is always added, we never see the same value back
+            assert_ne!(computed, base);
+
+            // difference is always within 256 milliseconds
+            let limit = Duration::from_millis(256);
+            if base > computed {
+                assert!(base - computed < limit);
+            } else {
+                assert!(computed - base < limit);
+            }
+        };
     }
 }
