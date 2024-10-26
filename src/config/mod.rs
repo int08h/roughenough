@@ -205,28 +205,30 @@ pub fn is_valid_config(cfg: &dyn ServerConfig) -> bool {
         is_valid = false;
     }
 
-    if cfg.client_stats_enabled() && cfg.persistence_directory().is_some() {
-        let dir = cfg.persistence_directory().unwrap();
+    if cfg.client_stats_enabled() {
+        if cfg.persistence_directory().is_some() {
+            let dir = cfg.persistence_directory().unwrap();
 
-        if !dir.is_dir() {
-            error!("stats_persistence_directory {} is not a directory", dir.display());
-            is_valid = false;
-        }
+            if !dir.is_dir() {
+                error!("persistence_directory {} is not a directory", dir.display());
+                is_valid = false;
+            }
 
-        if dir.metadata().unwrap().permissions().readonly() {
-            error!("stats_persistence_directory {} is not writable", dir.display());
+            if dir.metadata().unwrap().permissions().readonly() {
+                error!("persistence_directory {} is not writable", dir.display());
+                is_valid = false;
+            }
+
+        } else {
+            error!("Per-client tracking is enabled (client_stats=true), but no persistence_directory was set");
+            error!("This will result in high memory usage and is likely a misconfiguration");
             is_valid = false;
         }
     }
 
     if is_valid {
         if let Err(e) = cfg.udp_socket_addr() {
-            error!(
-                "failed to create UDP socket {}:{} {:?}",
-                cfg.interface(),
-                cfg.port(),
-                e
-            );
+            error!("failed to create UDP socket {}:{} {:?}", cfg.interface(), cfg.port(), e);
             is_valid = false;
         }
     }
