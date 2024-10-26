@@ -37,7 +37,7 @@ mod environment;
 mod file;
 mod memory;
 
-/// Maximum number of requests to process in one batch and include the the Merkle tree.
+/// Maximum number of requests to process in one batch and include in the Merkle tree.
 pub const DEFAULT_BATCH_SIZE: u8 = 64;
 
 /// Amount of time between each logged status update.
