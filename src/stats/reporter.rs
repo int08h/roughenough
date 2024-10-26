@@ -40,9 +40,8 @@ impl Reporter {
     pub fn new(
         source_queue: Arc<StatsQueue>,
         report_interval: &Duration,
-        output_location: Option<PathBuf>
-    ) -> Reporter
-    {
+        output_location: Option<PathBuf>,
+    ) -> Reporter {
         Reporter {
             source_queue,
             client_stats: HashMap::with_capacity(MAX_CLIENTS),
@@ -72,8 +71,9 @@ impl Reporter {
 
         while let Some(stats) = self.source_queue.pop() {
             for client in stats {
-                self.client_stats.entry(client.ip_addr)
-                    .or_insert_with_key(|ip_addr| { ClientStats::new(*ip_addr) })
+                self.client_stats
+                    .entry(client.ip_addr)
+                    .or_insert_with_key(|ip_addr| ClientStats::new(*ip_addr))
                     .merge(&client);
 
                 num_processed += 1;
@@ -82,7 +82,11 @@ impl Reporter {
 
         if num_processed > 0 {
             let elapsed = Instant::now().duration_since(start);
-            info!("Received {} client stat entries in {:.3} seconds", num_processed, elapsed.as_secs_f32());
+            info!(
+                "Received {} client stat entries in {:.3} seconds",
+                num_processed,
+                elapsed.as_secs_f32()
+            );
         }
     }
 
@@ -91,7 +95,7 @@ impl Reporter {
 
         if self.client_stats.is_empty() {
             info!("No client stats to persist");
-            return
+            return;
         }
 
         if self.output_location.is_none() {
@@ -106,7 +110,11 @@ impl Reporter {
         let mut outpath = self.output_location.clone().unwrap();
         outpath.push(filename);
 
-        info!("Writing {} client statistics to: {}", self.client_stats.len(), outpath.display());
+        info!(
+            "Writing {} client statistics to: {}",
+            self.client_stats.len(),
+            outpath.display()
+        );
 
         let outfile = match File::create(&outpath) {
             Ok(file) => file,
@@ -116,9 +124,7 @@ impl Reporter {
             }
         };
 
-        let zstd_writer = zstd::Encoder::new(outfile, 9)
-            .unwrap()
-            .auto_finish();
+        let zstd_writer = zstd::Encoder::new(outfile, 9).unwrap().auto_finish();
 
         let mut csv_writer = csv::WriterBuilder::new()
             .has_headers(true)
@@ -130,11 +136,15 @@ impl Reporter {
                 Ok(_) => num_processed += 1,
                 Err(e) => {
                     warn!("serializing record failed: {}", e);
-                    break
+                    break;
                 }
             }
         }
 
-        info!("Wrote {} records in {:.3} seconds",num_processed, start.elapsed().as_secs_f32());
+        info!(
+            "Wrote {} records in {:.3} seconds",
+            num_processed,
+            start.elapsed().as_secs_f32()
+        );
     }
 }

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::stats::{ClientStats, MAX_CLIENTS};
 use crate::stats::ServerStats;
+use crate::stats::{ClientStats, MAX_CLIENTS};
 use crate::Error;
 use std::collections::hash_map::Iter;
 use std::collections::HashMap;
@@ -162,43 +162,44 @@ impl ServerStats for PerClientStats {
     }
 
     fn total_valid_requests(&self) -> u64 {
-        self.clients.values()
+        self.clients
+            .values()
             .map(|&v| v.rfc_requests as u64 + v.classic_requests as u64)
             .sum()
     }
 
     fn num_rfc_requests(&self) -> u64 {
-        self.clients.values()
-            .map(|&v| v.rfc_requests as u64)
-            .sum()
+        self.clients.values().map(|&v| v.rfc_requests as u64).sum()
     }
 
     fn num_classic_requests(&self) -> u64 {
-        self.clients.values()
+        self.clients
+            .values()
             .map(|&v| v.classic_requests as u64)
             .sum()
     }
 
     fn total_invalid_requests(&self) -> u64 {
-        self.clients.values()
+        self.clients
+            .values()
             .map(|&v| v.invalid_requests as u64)
             .sum()
     }
 
     fn total_health_checks(&self) -> u64 {
-        self.clients.values()
-            .map(|&v| v.health_checks as u64)
-            .sum()
+        self.clients.values().map(|&v| v.health_checks as u64).sum()
     }
 
     fn total_failed_send_attempts(&self) -> u64 {
-        self.clients.values()
+        self.clients
+            .values()
             .map(|&v| v.failed_send_attempts as u64)
             .sum()
     }
 
     fn total_retried_send_attempts(&self) -> u64 {
-        self.clients.values()
+        self.clients
+            .values()
             .map(|&v| v.retried_send_attempts as u64)
             .sum()
     }
@@ -212,7 +213,8 @@ impl ServerStats for PerClientStats {
     }
 
     fn num_rfc_responses_sent(&self) -> u64 {
-        self.clients.values()
+        self.clients
+            .values()
             .map(|&v| v.rfc_responses_sent as u64)
             .sum()
     }
@@ -226,9 +228,7 @@ impl ServerStats for PerClientStats {
     }
 
     fn total_bytes_sent(&self) -> usize {
-        self.clients.values()
-            .map(|&v| v.bytes_sent)
-            .sum()
+        self.clients.values().map(|&v| v.bytes_sent).sum()
     }
 
     fn total_unique_clients(&self) -> u64 {

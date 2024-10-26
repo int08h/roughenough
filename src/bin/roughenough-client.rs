@@ -60,7 +60,12 @@ fn create_nonce(ver: Version) -> Nonce {
     }
 }
 
-fn make_request(ver: Version, nonce: &Nonce, text_dump: bool, pub_key: &Option<Vec<u8>>) -> Vec<u8> {
+fn make_request(
+    ver: Version,
+    nonce: &Nonce,
+    text_dump: bool,
+    pub_key: &Option<Vec<u8>>,
+) -> Vec<u8> {
     let mut msg = RtMessage::with_capacity(3);
 
     let srv_value = pub_key.as_ref().map(|pk| LongTermKey::calc_srv_value(pk));
@@ -157,7 +162,7 @@ fn stress_test_forever(ver: Version, addr: &SocketAddr) -> ! {
     } else {
         "0.0.0.0:0"
     })
-        .expect("Couldn't open UDP socket");
+    .expect("Couldn't open UDP socket");
     let request = make_request(ver, &nonce, false, &None);
     loop {
         socket.send_to(&request, addr).unwrap();
@@ -449,7 +454,7 @@ fn main() {
         } else {
             "0.0.0.0:0"
         })
-            .expect("Couldn't open UDP socket");
+        .expect("Couldn't open UDP socket");
         let request = make_request(version, &nonce, text_dump, &pub_key);
 
         if let Some(f) = file_for_requests.as_mut() {

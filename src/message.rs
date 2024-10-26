@@ -532,8 +532,7 @@ mod test {
     fn from_bytes_offset_past_end_of_message() {
         let mut msg = RtMessage::with_capacity(2);
         msg.add_field(Tag::NONC, "1111".as_bytes()).unwrap();
-        msg.add_field(Tag::PAD, "aaaaaaaaa".as_bytes())
-            .unwrap();
+        msg.add_field(Tag::PAD, "aaaaaaaaa".as_bytes()).unwrap();
 
         let mut bytes = msg.encode().unwrap();
         // set the PAD value offset to beyond end of the message

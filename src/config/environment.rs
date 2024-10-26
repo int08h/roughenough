@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
+use std::path::PathBuf;
 use std::time::Duration;
 use std::{env, thread};
-use std::path::{PathBuf};
-use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
 
 use crate::config::ServerConfig;
 use crate::config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};

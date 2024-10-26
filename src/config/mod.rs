@@ -22,12 +22,12 @@
 //! such as files or environment variables.
 //!
 
-use std::net::SocketAddr;
-use std::path::PathBuf;
-use std::time::Duration;
 use crate::key::KmsProtection;
 use crate::Error;
 use crate::SEED_LENGTH;
+use std::net::SocketAddr;
+use std::path::PathBuf;
+use std::time::Duration;
 
 pub use self::environment::EnvironmentConfig;
 pub use self::file::FileConfig;
@@ -218,7 +218,6 @@ pub fn is_valid_config(cfg: &dyn ServerConfig) -> bool {
                 error!("persistence_directory {} is not writable", dir.display());
                 is_valid = false;
             }
-
         } else {
             error!("Per-client tracking is enabled (client_stats=true), but no persistence_directory was set");
             error!("This will result in high memory usage and is likely a misconfiguration");
@@ -228,7 +227,12 @@ pub fn is_valid_config(cfg: &dyn ServerConfig) -> bool {
 
     if is_valid {
         if let Err(e) = cfg.udp_socket_addr() {
-            error!("failed to create UDP socket {}:{} {:?}", cfg.interface(), cfg.port(), e);
+            error!(
+                "failed to create UDP socket {}:{} {:?}",
+                cfg.interface(),
+                cfg.port(),
+                e
+            );
             is_valid = false;
         }
     }

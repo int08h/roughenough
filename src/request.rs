@@ -22,11 +22,15 @@ use crate::version::Version;
 use crate::{Error, RtMessage, Tag, MAX_REQUEST_LENGTH, MIN_REQUEST_LENGTH, REQUEST_FRAMING_BYTES};
 
 /// Guess which protocol the request is using and extract the client's nonce from the request
-pub fn nonce_from_request(buf: &[u8], num_bytes: usize, expected_srv: &[u8]) -> Result<(Vec<u8>, Version), Error> {
+pub fn nonce_from_request(
+    buf: &[u8],
+    num_bytes: usize,
+    expected_srv: &[u8],
+) -> Result<(Vec<u8>, Version), Error> {
     if num_bytes < MIN_REQUEST_LENGTH {
-        return Err(Error::RequestTooShort)
+        return Err(Error::RequestTooShort);
     } else if num_bytes > MAX_REQUEST_LENGTH {
-        return Err(Error::RequestTooLarge)
+        return Err(Error::RequestTooLarge);
     }
 
     if is_classic_request(buf) {

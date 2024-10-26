@@ -123,7 +123,10 @@ fn display_config(server: &Server, cfg: &dyn ServerConfig) {
         }
     );
     if cfg.client_stats_enabled() && cfg.persistence_directory().is_some() {
-        info!("Persistence directory      : {}", cfg.persistence_directory().unwrap().display());
+        info!(
+            "Persistence directory      : {}",
+            cfg.persistence_directory().unwrap().display()
+        );
     }
     if cfg.fault_percentage() > 0 {
         info!("Deliberate response errors : ~{}%", cfg.fault_percentage());
@@ -189,7 +192,7 @@ pub fn main() {
 
         let report_thread = thread::Builder::new()
             .name("stats-reporting".to_string())
-            .spawn(move || { reporter.processing_loop(KEEP_RUNNING.deref()) })
+            .spawn(move || reporter.processing_loop(KEEP_RUNNING.deref()))
             .expect("failure spawning thread");
 
         threads.push(report_thread);

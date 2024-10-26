@@ -82,7 +82,7 @@ impl OnlineKey {
 
         // RADI is hard coded at 5 seconds (providing a 10-second measurement window overall)
         let radi_time = match ver {
-            Version::Classic => 5_000_000,           // five seconds in microseconds
+            Version::Classic => 5_000_000, // five seconds in microseconds
             Version::Rfc | Version::RfcDraft11 => 5, // five seconds
         };
 

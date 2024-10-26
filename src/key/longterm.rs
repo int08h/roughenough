@@ -46,10 +46,7 @@ impl LongTermKey {
         let signer = MsgSigner::from_seed(seed);
         let srv_value = LongTermKey::calc_srv_value(&signer.public_key_bytes());
 
-        LongTermKey {
-            signer,
-            srv_value,
-        }
+        LongTermKey { signer, srv_value }
     }
 
     /// Create a CERT message with a DELE containing the provided online key

@@ -127,10 +127,18 @@ impl Grease {
 
         let mut new_msg = RtMessage::with_capacity(src_msg.num_fields());
         new_msg.add_field(Tag::SIG, &random_sig).unwrap();
-        new_msg.add_field(Tag::PATH, src_msg.get_field(Tag::PATH).unwrap()).unwrap();
-        new_msg.add_field(Tag::SREP, src_msg.get_field(Tag::SREP).unwrap()).unwrap();
-        new_msg.add_field(Tag::CERT, src_msg.get_field(Tag::CERT).unwrap()).unwrap();
-        new_msg.add_field(Tag::INDX, src_msg.get_field(Tag::INDX).unwrap()).unwrap();
+        new_msg
+            .add_field(Tag::PATH, src_msg.get_field(Tag::PATH).unwrap())
+            .unwrap();
+        new_msg
+            .add_field(Tag::SREP, src_msg.get_field(Tag::SREP).unwrap())
+            .unwrap();
+        new_msg
+            .add_field(Tag::CERT, src_msg.get_field(Tag::CERT).unwrap())
+            .unwrap();
+        new_msg
+            .add_field(Tag::INDX, src_msg.get_field(Tag::INDX).unwrap())
+            .unwrap();
 
         new_msg
     }

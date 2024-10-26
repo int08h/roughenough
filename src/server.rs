@@ -90,8 +90,13 @@ impl Server {
         let poll = Poll::new().unwrap();
         poll.register(&socket, EVT_MESSAGE, Ready::readable(), PollOpt::edge())
             .unwrap();
-        poll.register(&timer, EVT_STATUS_UPDATE, Ready::readable(), PollOpt::edge())
-            .unwrap();
+        poll.register(
+            &timer,
+            EVT_STATUS_UPDATE,
+            Ready::readable(),
+            PollOpt::edge(),
+        )
+        .unwrap();
 
         let health_listener = if let Some(hc_port) = config.health_check_port() {
             let hc_sock_addr: SocketAddr = format!("{}:{}", config.interface(), hc_port)
@@ -101,8 +106,13 @@ impl Server {
             let tcp_listener = TcpListener::bind(&hc_sock_addr)
                 .expect("failed to bind TCP listener for health check");
 
-            poll.register(&tcp_listener, EVT_HEALTH_CHECK, Ready::readable(), PollOpt::edge())
-                .unwrap();
+            poll.register(
+                &tcp_listener,
+                EVT_HEALTH_CHECK,
+                Ready::readable(),
+                PollOpt::edge(),
+            )
+            .unwrap();
 
             Some(tcp_listener)
         } else {
@@ -274,10 +284,7 @@ impl Server {
     fn send_client_stats(&mut self) {
         let start = Instant::now();
 
-        let clients: Vec<ClientStats> = self.stats_recorder
-            .iter()
-            .map(|(_, s)| *s)
-            .collect();
+        let clients: Vec<ClientStats> = self.stats_recorder.iter().map(|(_, s)| *s).collect();
 
         let client_count = clients.len();
         if client_count > 0 {
@@ -291,7 +298,9 @@ impl Server {
         let elapsed = start.elapsed();
         info!(
             "{} enqueued {} client stats in {:.3} seconds",
-            self.thread_name(), client_count, elapsed.as_secs_f32()
+            self.thread_name(),
+            client_count,
+            elapsed.as_secs_f32()
         );
     }
 
@@ -324,8 +333,14 @@ mod test {
 
     #[test]
     fn no_jitter_when_duration_lt_1sec() {
-        assert_eq!(Server::compute_delay(Duration::from_millis(999)), Duration::from_millis(999));
-        assert_eq!(Server::compute_delay(Duration::from_millis(500)), Duration::from_millis(500));
+        assert_eq!(
+            Server::compute_delay(Duration::from_millis(999)),
+            Duration::from_millis(999)
+        );
+        assert_eq!(
+            Server::compute_delay(Duration::from_millis(500)),
+            Duration::from_millis(500)
+        );
     }
 
     #[test]
@@ -344,6 +359,6 @@ mod test {
             } else {
                 assert!(computed - base < limit);
             }
-        };
+        }
     }
 }
