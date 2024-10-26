@@ -28,16 +28,16 @@ pub enum Version {
 }
 
 // Google classic (unused)
-const BYTES_VER_CLASSIC: &'static [u8] = &[0x00, 0x00, 0x00, 0x00];
-const STR_VER_CLASSIC: &'static str = "Classic";
+const BYTES_VER_CLASSIC: &[u8] = &[0x00, 0x00, 0x00, 0x00];
+const STR_VER_CLASSIC: &str = "Classic";
 
 // RFC version 1
-const BYTES_VER_RFC: &'static [u8] = &[0x01, 0x00, 0x00, 0x00];
-const STR_VER_RFC: &'static str = "Rfc";
+const BYTES_VER_RFC: &[u8] = &[0x01, 0x00, 0x00, 0x00];
+const STR_VER_RFC: &str = "Rfc";
 
 // RFC draft 11 (keep updated as draft evolves)
-const BYTES_VER_RFC_DRAFT11: &'static [u8] = &[0x0b, 0x00, 0x00, 0x80];
-const STR_VER_RFC_DRAFT11: &'static str = "RfcDraft11";
+const BYTES_VER_RFC_DRAFT11: &[u8] = &[0x0b, 0x00, 0x00, 0x80];
+const STR_VER_RFC_DRAFT11: &str = "RfcDraft11";
 
 impl Version {
     /// On-the-wire representation of the version value

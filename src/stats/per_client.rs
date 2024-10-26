@@ -81,7 +81,7 @@ impl ServerStats for PerClientStats {
         }
         self.clients
             .entry(*addr)
-            .or_insert_with_key(|addr| ClientStats::new(addr.clone()))
+            .or_insert_with_key(|addr| ClientStats::new(*addr))
             .rfc_requests += 1;
     }
 
@@ -91,7 +91,7 @@ impl ServerStats for PerClientStats {
         }
         self.clients
             .entry(*addr)
-            .or_insert_with_key(|addr| ClientStats::new(addr.clone()))
+            .or_insert_with_key(|addr| ClientStats::new(*addr))
             .classic_requests += 1;
     }
 
@@ -101,7 +101,7 @@ impl ServerStats for PerClientStats {
         }
         self.clients
             .entry(*addr)
-            .or_insert_with_key(|addr| ClientStats::new(addr.clone()))
+            .or_insert_with_key(|addr| ClientStats::new(*addr))
             .invalid_requests += 1;
     }
 
@@ -111,7 +111,7 @@ impl ServerStats for PerClientStats {
         }
         self.clients
             .entry(*addr)
-            .or_insert_with_key(|addr| ClientStats::new(addr.clone()))
+            .or_insert_with_key(|addr| ClientStats::new(*addr))
             .failed_send_attempts += 1;
     }
 
@@ -121,7 +121,7 @@ impl ServerStats for PerClientStats {
         }
         self.clients
             .entry(*addr)
-            .or_insert_with_key(|addr| ClientStats::new(addr.clone()))
+            .or_insert_with_key(|addr| ClientStats::new(*addr))
             .retried_send_attempts += 1;
     }
 
@@ -131,7 +131,7 @@ impl ServerStats for PerClientStats {
         }
         self.clients
             .entry(*addr)
-            .or_insert_with_key(|addr| ClientStats::new(addr.clone()))
+            .or_insert_with_key(|addr| ClientStats::new(*addr))
             .health_checks += 1;
     }
 
@@ -142,7 +142,7 @@ impl ServerStats for PerClientStats {
         let entry = self
             .clients
             .entry(*addr)
-            .or_insert_with_key(|addr| ClientStats::new(addr.clone()));
+            .or_insert_with_key(|addr| ClientStats::new(*addr));
 
         entry.rfc_responses_sent += 1;
         entry.bytes_sent += bytes_sent;
@@ -155,7 +155,7 @@ impl ServerStats for PerClientStats {
         let entry = self
             .clients
             .entry(*addr)
-            .or_insert_with_key(|addr| ClientStats::new(addr.clone()));
+            .or_insert_with_key(|addr| ClientStats::new(*addr));
 
         entry.classic_responses_sent += 1;
         entry.bytes_sent += bytes_sent;

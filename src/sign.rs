@@ -50,10 +50,7 @@ impl MsgVerifier {
 
     pub fn verify(&self, provided_sig: &[u8]) -> bool {
         let sig = Signature::from_slice(provided_sig).expect("valid signature");
-        match self.pubkey.verify(&self.buf, &sig) {
-            Ok(_) => true,
-            _ => false,
-        }
+        self.pubkey.verify(&self.buf, &sig).is_ok()
     }
 }
 

@@ -134,7 +134,7 @@ impl EnvelopeEncryption {
         let dek_seal_key = LessSafeKey::new(unbound_dek);
 
         // Output overwrites context of 'buf' and appends auth tag to 'buf'
-        if let Err(_) = dek_seal_key.seal_in_place_append_tag(nonce, Aad::from(AD), &mut buf) {
+        if dek_seal_key.seal_in_place_append_tag(nonce, Aad::from(AD), &mut buf).is_err() {
             return Err(KmsError::OperationFailed(
                 "failed to encrypt plaintext seed".to_string(),
             ));

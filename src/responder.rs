@@ -102,7 +102,7 @@ impl Responder {
             .online_key
             .make_srep(self.version, SystemTime::now(), &merkle_root);
 
-        for (idx, &(ref nonce, ref src_addr)) in self.requests.iter().enumerate() {
+        for (idx, (nonce, src_addr)) in self.requests.iter().enumerate() {
             let paths = self.merkle.get_paths(idx);
             let resp_msg = {
                 let r = self.make_response(&srep, &self.cert_bytes, &paths, idx as u32);
@@ -121,7 +121,7 @@ impl Responder {
             let mut bytes_sent: usize = 0;
             let mut successful_send: bool = true;
 
-            match socket.send_to(&resp_bytes, &src_addr) {
+            match socket.send_to(&resp_bytes, src_addr) {
                 Ok(num_bytes) => bytes_sent = num_bytes,
                 Err(_) => successful_send = false,
             }

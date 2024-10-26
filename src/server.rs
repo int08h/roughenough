@@ -19,7 +19,6 @@
 use std::io::ErrorKind;
 use std::io::Write;
 use std::net::{Shutdown, SocketAddr};
-use std::ops::Div;
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -154,7 +153,7 @@ impl Server {
 
     /// Returns a reference to the server's long-term public key
     pub fn get_public_key(&self) -> &str {
-        &self.responder_rfc.get_public_key()
+        self.responder_rfc.get_public_key()
     }
 
     #[cfg(fuzzing)]
@@ -253,7 +252,7 @@ impl Server {
                 info!("health check from {}", src_addr);
                 self.stats_recorder.add_health_check(&src_addr.ip());
 
-                match stream.write(HTTP_RESPONSE.as_bytes()) {
+                match stream.write_all(HTTP_RESPONSE.as_bytes()) {
                     Ok(_) => (),
                     Err(e) => warn!("error writing health check {}", e),
                 };
@@ -277,7 +276,7 @@ impl Server {
 
         let clients: Vec<ClientStats> = self.stats_recorder
             .iter()
-            .map(|(_, s)| s.clone())
+            .map(|(_, s)| *s)
             .collect();
 
         let client_count = clients.len();

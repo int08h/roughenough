@@ -37,7 +37,7 @@ pub struct MerkleTree {
 impl MerkleTree {
     ///
     /// Create a new empty Merkle Tree based on SHA-512.
-    /// Output is the 32-bytes (256-bits), SHA-512[0:32]
+    /// Output is the 32-bytes (256-bits), `SHA-512[0:32]`
     ///
     pub fn new_sha512_ietf() -> MerkleTree {
         MerkleTree {

@@ -119,10 +119,7 @@ impl FileConfig {
                     config.client_stats = val == "yes" || val == "on";
                 }
                 "persistence_directory" => {
-                    let val = match value.as_str() {
-                        Some(path) => Some(PathBuf::from(path)),
-                        None => None
-                    };
+                    let val = value.as_str().map(PathBuf::from);
                     config.persist_dir = val;
                 }
                 "fault_percentage" => {

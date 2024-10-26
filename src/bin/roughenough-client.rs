@@ -63,10 +63,7 @@ fn create_nonce(ver: Version) -> Nonce {
 fn make_request(ver: Version, nonce: &Nonce, text_dump: bool, pub_key: &Option<Vec<u8>>) -> Vec<u8> {
     let mut msg = RtMessage::with_capacity(3);
 
-    let srv_value = match pub_key {
-        None => None,
-        Some(ref pk) => Some(LongTermKey::calc_srv_value(&pk)),
-    };
+    let srv_value = pub_key.as_ref().map(|pk| LongTermKey::calc_srv_value(pk));
 
     match ver {
         Version::Classic => {
@@ -121,7 +118,7 @@ fn receive_response(ver: Version, buf: &[u8], buf_len: usize) -> RtMessage {
     match ver {
         Version::Classic => RtMessage::from_bytes(&buf[0..buf_len]).unwrap(),
         Version::Rfc | Version::RfcDraft11 => {
-            verify_framing(&buf).unwrap();
+            verify_framing(buf).unwrap();
             RtMessage::from_bytes(&buf[12..buf_len]).unwrap()
         }
     }

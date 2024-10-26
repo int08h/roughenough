@@ -22,7 +22,7 @@ use csv;
 use std::collections::HashMap;
 use std::fs::File;
 use std::net::IpAddr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::sleep;
@@ -33,22 +33,22 @@ pub struct Reporter {
     client_stats: HashMap<IpAddr, ClientStats>,
     next_update: Instant,
     report_interval: Duration,
-    output_location: PathBuf,
+    output_location: Option<PathBuf>,
 }
 
 impl Reporter {
     pub fn new(
         source_queue: Arc<StatsQueue>,
         report_interval: &Duration,
-        output_location: &Path
+        output_location: Option<PathBuf>
     ) -> Reporter
     {
         Reporter {
             source_queue,
             client_stats: HashMap::with_capacity(MAX_CLIENTS),
             next_update: Instant::now() + *report_interval,
-            report_interval: report_interval.clone(),
-            output_location: output_location.to_path_buf(),
+            report_interval: *report_interval,
+            output_location,
         }
     }
 
@@ -73,7 +73,7 @@ impl Reporter {
         while let Some(stats) = self.source_queue.pop() {
             for client in stats {
                 self.client_stats.entry(client.ip_addr)
-                    .or_insert_with_key(|ip_addr| { ClientStats::new(ip_addr.clone()) })
+                    .or_insert_with_key(|ip_addr| { ClientStats::new(*ip_addr) })
                     .merge(&client);
 
                 num_processed += 1;
@@ -94,11 +94,16 @@ impl Reporter {
             return
         }
 
+        if self.output_location.is_none() {
+            info!("No output location to persist to");
+            return;
+        }
+
         let filename = Utc::now()
             .format("roughenough-stats-%Y%m%d-%H%M%S.csv.zst")
             .to_string();
 
-        let mut outpath = self.output_location.clone();
+        let mut outpath = self.output_location.clone().unwrap();
         outpath.push(filename);
 
         info!("Writing {} client statistics to: {}", self.client_stats.len(), outpath.display());

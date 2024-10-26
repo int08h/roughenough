@@ -67,7 +67,7 @@ impl ClientStats {
             failed_send_attempts: 0,
             retried_send_attempts: 0,
             first_seen: Utc::now().timestamp(),
-            ip_addr: ip_addr,
+            ip_addr,
         }
     }
 

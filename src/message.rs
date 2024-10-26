@@ -231,7 +231,7 @@ impl RtMessage {
 
     /// Converts the message into a `HashMap` mapping each tag to its value
     pub fn into_hash_map(self) -> HashMap<Tag, Vec<u8>> {
-        self.tags.into_iter().zip(self.values.into_iter()).collect()
+        self.tags.into_iter().zip(self.values).collect()
     }
 
     /// Encode this message into an on-the-wire representation prefixed with RFC framing.
@@ -330,7 +330,7 @@ impl RtMessage {
         for (tag, value) in self.tags.iter().zip(self.values.iter()) {
             result.push_str(&indent2);
             result.push_str(&tag.to_string());
-            result.push_str("(");
+            result.push('(');
             result.push_str(&value.len().to_string());
             result.push_str(") = ");
 
@@ -339,7 +339,7 @@ impl RtMessage {
                 result.push_str(&nested_msg.to_string(indent_level + 1))
             } else {
                 result.push_str(&HEX.encode(value));
-                result.push_str("\n");
+                result.push('\n');
             }
         }
 

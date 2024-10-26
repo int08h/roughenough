@@ -132,7 +132,7 @@ impl Tag {
     }
 
     /// A short (non canonical) string representation of the tag
-    fn to_string(&self) -> String {
+    fn as_string(self) -> String {
         match self {
             Tag::PAD => String::from("PAD"),
             Tag::SIG => String::from("SIG"),
@@ -145,7 +145,7 @@ impl Tag {
 
 impl Display for Tag {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_string())
+        write!(f, "{}", self.as_string())
     }
 }
 

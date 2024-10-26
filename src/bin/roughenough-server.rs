@@ -180,11 +180,11 @@ pub fn main() {
     let client_stats_enabled = config.lock().unwrap().client_stats_enabled();
     let persistence_directory = config.lock().unwrap().persistence_directory();
 
-    if client_stats_enabled && persistence_directory.is_some() {
+    if client_stats_enabled {
         let mut reporter = Reporter::new(
             stats_queue.clone(),
             &config.lock().unwrap().status_interval(),
-            persistence_directory.unwrap().as_path(),
+            persistence_directory,
         );
 
         let report_thread = thread::Builder::new()
