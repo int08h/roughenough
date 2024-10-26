@@ -72,7 +72,7 @@ pub struct Server {
     stats_queue: Arc<StatsQueue>,
 
     // Used to send requests to ourselves in fuzzing mode
-    #[cfg(fuzzing)]
+    #[cfg(feature = "fuzzing")]
     fake_client_socket: UdpSocket,
 }
 
@@ -146,7 +146,7 @@ impl Server {
             stats_recorder: stats,
             stats_queue: queue,
 
-            #[cfg(fuzzing)]
+            #[cfg(feature = "fuzzing")]
             fake_client_socket: UdpSocket::bind(&"127.0.0.1:0".parse().unwrap()).unwrap(),
         }
     }
@@ -156,7 +156,7 @@ impl Server {
         self.responder_rfc.get_public_key()
     }
 
-    #[cfg(fuzzing)]
+    #[cfg(feature = "fuzzing")]
     pub fn send_to_self(&mut self, data: &[u8]) {
         let res = self
             .fake_client_socket
