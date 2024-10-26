@@ -15,8 +15,8 @@
 use crate::stats::ServerStats;
 use crate::stats::{ClientStats, MAX_CLIENTS};
 use crate::Error;
+use ahash::AHashMap;
 use std::collections::hash_map::Iter;
-use std::collections::HashMap;
 use std::net::IpAddr;
 
 ///
@@ -27,7 +27,7 @@ use std::net::IpAddr;
 /// and `num_overflows` is incremented.
 ///
 pub struct PerClientStats {
-    clients: HashMap<IpAddr, ClientStats>,
+    clients: AHashMap<IpAddr, ClientStats>,
     num_overflows: u64,
     max_clients: usize,
 }
@@ -41,7 +41,7 @@ impl Default for PerClientStats {
 impl PerClientStats {
     pub fn new() -> Self {
         PerClientStats {
-            clients: HashMap::with_capacity(MAX_CLIENTS),
+            clients: AHashMap::with_capacity(MAX_CLIENTS),
             num_overflows: 0,
             max_clients: MAX_CLIENTS,
         }
@@ -51,7 +51,7 @@ impl PerClientStats {
     #[cfg(test)]
     pub fn with_limit(limit: usize) -> Self {
         PerClientStats {
-            clients: HashMap::with_capacity(limit),
+            clients: AHashMap::with_capacity(limit),
             num_overflows: 0,
             max_clients: limit,
         }

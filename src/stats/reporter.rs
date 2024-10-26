@@ -17,9 +17,9 @@
 //!
 
 use crate::stats::{ClientStats, StatsQueue, MAX_CLIENTS};
+use ahash::AHashMap;
 use chrono::Utc;
 use csv;
-use std::collections::HashMap;
 use std::fs::File;
 use std::net::IpAddr;
 use std::path::PathBuf;
@@ -30,7 +30,7 @@ use std::time::{Duration, Instant};
 
 pub struct Reporter {
     source_queue: Arc<StatsQueue>,
-    client_stats: HashMap<IpAddr, ClientStats>,
+    client_stats: AHashMap<IpAddr, ClientStats>,
     next_update: Instant,
     report_interval: Duration,
     output_location: Option<PathBuf>,
@@ -44,7 +44,7 @@ impl Reporter {
     ) -> Reporter {
         Reporter {
             source_queue,
-            client_stats: HashMap::with_capacity(MAX_CLIENTS),
+            client_stats: AHashMap::with_capacity(MAX_CLIENTS),
             next_update: Instant::now() + *report_interval,
             report_interval: *report_interval,
             output_location,
