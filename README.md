@@ -23,7 +23,7 @@ by the RFC is used to distinguish classic vs. RFC requests).
 
 The new `-p/--protocol` flag of `roughenough-client` controls the protocol version to
 use in requests. `0` = classic protocol (no `VER` tag), `1` = anticipated RFC protocol 
-(`VER` tag with value `0x00000001`), and `8` is the RFC Draft11 protocol (`VER` tag with
+(`VER` tag with value `0x00000001`), and `11` is the RFC Draft11 protocol (`VER` tag with
 value `0x0b000008`). The default is `0` the "classic" protocol, until the RFC is finalized.
 
 ```
@@ -87,7 +87,7 @@ sudo date -u "$(roughenough-client -z roughtime.int08h.com 2002 -f %Y%m%d%H%M.%S
 
 ### Validating Server Responses 
 
-Use the `-p` flag with the client to validate the server's response with its public key.
+Use the `-k` flag with the client to validate the server's response with its public key.
 
 ```bash
 # The public key of 'roughtime.int08h.com' is stored in a DNS TXT record 
