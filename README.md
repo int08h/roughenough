@@ -226,6 +226,7 @@ created by Adam Langley and Robert Obryk.
 * Zicklag (github.com/zicklag)
 * Greg at Unrelenting Tech (github.com/unrelentingtech)
 * Eric Swanson (github.com/lachesis)
+* Marcus Dansarie (github.com/dansarie)
 
 ## Copyright and License
 Roughenough is copyright (c) 2017-2024 int08h LLC. All rights reserved. 
