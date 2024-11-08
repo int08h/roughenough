@@ -27,8 +27,8 @@ pub enum Tag {
     //
     // Tags are written here in ascending order
     SIG,
-    SRV,
     VER,
+    SRV,
     DUT1,
     NONC,
     DELE,

@@ -383,7 +383,7 @@ fn main() {
             .short("p")
             .long("protocol")
             .takes_value(true)
-            .help("Roughtime protocol version to use (0 = classic, 1 = rfc, 8 = draft8)")
+            .help("Roughtime protocol version to use (0 = classic, 1 = rfc, 11 = draft11)")
             .default_value("0")
         )
         .arg(Arg::with_name("timeout")
@@ -428,7 +428,7 @@ fn main() {
         1 => Version::Rfc,
         11 => Version::RfcDraft11,
         _ => panic!(
-            "Invalid protocol '{}'; valid values are 0, 1, or 8",
+            "Invalid protocol '{}'; valid values are 0, 1, or 11",
             protocol
         ),
     };
