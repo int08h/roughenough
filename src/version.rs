@@ -23,8 +23,8 @@ pub enum Version {
     /// Placeholder for final IETF standardized version
     Rfc,
 
-    /// IETF draft version 11
-    RfcDraft11,
+    /// IETF draft version 12
+    RfcDraft12,
 }
 
 // Google classic (unused)
@@ -35,9 +35,9 @@ const STR_VER_CLASSIC: &str = "Classic";
 const BYTES_VER_RFC: &[u8] = &[0x01, 0x00, 0x00, 0x00];
 const STR_VER_RFC: &str = "Rfc";
 
-// RFC draft 11 (keep updated as draft evolves)
-const BYTES_VER_RFC_DRAFT11: &[u8] = &[0x0b, 0x00, 0x00, 0x80];
-const STR_VER_RFC_DRAFT11: &str = "RfcDraft11";
+// RFC draft 12 (keep updated as draft evolves)
+const BYTES_VER_RFC_DRAFT12: &[u8] = &[0x0c, 0x00, 0x00, 0x80];
+const STR_VER_RFC_DRAFT12: &str = "RfcDraft12";
 
 impl Version {
     /// On-the-wire representation of the version value
@@ -45,7 +45,7 @@ impl Version {
         match self {
             Version::Classic => BYTES_VER_CLASSIC,
             Version::Rfc => BYTES_VER_RFC,
-            Version::RfcDraft11 => BYTES_VER_RFC_DRAFT11,
+            Version::RfcDraft12 => BYTES_VER_RFC_DRAFT12,
         }
     }
 
@@ -54,7 +54,7 @@ impl Version {
         match self {
             Version::Classic => STR_VER_CLASSIC,
             Version::Rfc => STR_VER_RFC,
-            Version::RfcDraft11 => STR_VER_RFC_DRAFT11,
+            Version::RfcDraft12 => STR_VER_RFC_DRAFT12,
         }
     }
 }

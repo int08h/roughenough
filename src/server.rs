@@ -131,7 +131,7 @@ impl Server {
         };
 
         let responder_rfc = Responder::new(Version::Rfc, config, &mut long_term_key);
-        let responder_draft = Responder::new(Version::RfcDraft11, config, &mut long_term_key);
+        let responder_draft = Responder::new(Version::RfcDraft12, config, &mut long_term_key);
         let responder_classic = Responder::new(Version::Classic, config, &mut long_term_key);
 
         let batch_size = config.batch_size();
@@ -221,7 +221,7 @@ impl Server {
                             self.stats_recorder.add_rfc_request(&src_addr.ip());
                         }
                         // TODO(stuart) remove when RFC is ratified
-                        Ok((nonce, Version::RfcDraft11)) => {
+                        Ok((nonce, Version::RfcDraft12)) => {
                             self.responder_draft.add_request(nonce, src_addr);
                             // Mismatch of draft responder vs rfc stats is intentional
                             self.stats_recorder.add_rfc_request(&src_addr.ip());

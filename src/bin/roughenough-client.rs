@@ -52,7 +52,7 @@ fn create_nonce(ver: Version) -> Nonce {
             rng.fill(&mut nonce).unwrap();
             nonce.to_vec()
         }
-        Version::Rfc | Version::RfcDraft11 => {
+        Version::Rfc | Version::RfcDraft12 => {
             let mut nonce = [0u8; 32];
             rng.fill(&mut nonce).unwrap();
             nonce.to_vec()
@@ -88,7 +88,7 @@ fn make_request(
 
             msg.encode().unwrap()
         }
-        Version::Rfc | Version::RfcDraft11 => {
+        Version::Rfc | Version::RfcDraft12 => {
             if srv_value.is_some() {
                 let val = srv_value.as_ref().unwrap();
                 msg.add_field(Tag::SRV, val).unwrap();
@@ -122,7 +122,7 @@ fn make_request(
 fn receive_response(ver: Version, buf: &[u8], buf_len: usize) -> RtMessage {
     match ver {
         Version::Classic => RtMessage::from_bytes(&buf[0..buf_len]).unwrap(),
-        Version::Rfc | Version::RfcDraft11 => {
+        Version::Rfc | Version::RfcDraft12 => {
             verify_framing(buf).unwrap();
             RtMessage::from_bytes(&buf[12..buf_len]).unwrap()
         }
@@ -278,7 +278,7 @@ impl ResponseHandler {
 
         let hash = match self.version {
             Version::Classic => MerkleTree::new_sha512_classic(),
-            Version::Rfc | Version::RfcDraft11 => MerkleTree::new_sha512_ietf(),
+            Version::Rfc | Version::RfcDraft12 => MerkleTree::new_sha512_ietf(),
         }
         .root_from_paths(index as usize, &self.nonce, paths);
 
@@ -428,7 +428,7 @@ fn main() {
     let version = match protocol {
         0 => Version::Classic,
         1 => Version::Rfc,
-        11 => Version::RfcDraft11,
+        11 => Version::RfcDraft12,
         _ => panic!(
             "Invalid protocol '{}'; valid values are 0, 1, or 8",
             protocol
@@ -515,7 +515,7 @@ fn main() {
                 let nsecs = (midpoint - (seconds * 10_u64.pow(6))) * 10_u64.pow(3);
                 (seconds, nsecs as u32)
             }
-            Version::Rfc | Version::RfcDraft11 => (midpoint, 0),
+            Version::Rfc | Version::RfcDraft12 => (midpoint, 0),
         };
 
         let verify_str = if verified { "Yes" } else { "No" };

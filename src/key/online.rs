@@ -83,7 +83,7 @@ impl OnlineKey {
         // RADI is hard coded at 5 seconds (providing a 10-second measurement window overall)
         let radi_time = match ver {
             Version::Classic => 5_000_000, // five seconds in microseconds
-            Version::Rfc | Version::RfcDraft11 => 5, // five seconds
+            Version::Rfc | Version::RfcDraft12 => 5, // five seconds
         };
 
         (&mut radi as &mut [u8])
@@ -92,7 +92,7 @@ impl OnlineKey {
 
         let midp_time = match ver {
             Version::Classic => self.classic_midp(now),
-            Version::Rfc | Version::RfcDraft11 => self.rfc_midp(now),
+            Version::Rfc | Version::RfcDraft12 => self.rfc_midp(now),
         };
 
         (&mut midp as &mut [u8])

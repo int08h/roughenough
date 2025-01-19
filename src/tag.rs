@@ -27,18 +27,16 @@ pub enum Tag {
     //
     // Tags are written here in ascending order
     SIG,
-    SRV,
     VER,
-    DUT1,
+    SRV,
     NONC,
     DELE,
     PATH,
-    DTAI,
     RADI,
     PUBK,
-    LEAP,
     MIDP,
     SREP,
+    VERS,
     MINT,
     ROOT,
     CERT,
@@ -66,10 +64,8 @@ impl Tag {
     const BYTES_SIG: &'static [u8] = b"SIG\x00";
     const BYTES_SRV: &'static [u8] = b"SRV\x00";
     const BYTES_SREP: &'static [u8] = b"SREP";
+    const BYTES_VERS: &'static [u8] = b"VERS";
     const BYTES_VER: &'static [u8] = b"VER\x00";
-    const BYTES_DUT1: &'static [u8] = b"DUT1";
-    const BYTES_DTAI: &'static [u8] = b"DTAI";
-    const BYTES_LEAP: &'static [u8] = b"LEAP";
     const BYTES_ZZZZ: &'static [u8] = b"ZZZZ";
 
     /// Translates a tag into its on-the-wire representation
@@ -90,10 +86,8 @@ impl Tag {
             Tag::SIG => Tag::BYTES_SIG,
             Tag::SRV => Tag::BYTES_SRV,
             Tag::SREP => Tag::BYTES_SREP,
+            Tag::VERS => Tag::BYTES_VERS,
             Tag::VER => Tag::BYTES_VER,
-            Tag::DUT1 => Tag::BYTES_DUT1,
-            Tag::DTAI => Tag::BYTES_DTAI,
-            Tag::LEAP => Tag::BYTES_LEAP,
             Tag::ZZZZ => Tag::BYTES_ZZZZ,
         }
     }
@@ -114,13 +108,13 @@ impl Tag {
             Tag::BYTES_PUBK => Ok(Tag::PUBK),
             Tag::BYTES_RADI => Ok(Tag::RADI),
             Tag::BYTES_ROOT => Ok(Tag::ROOT),
-            Tag::BYTES_SIG => Ok(Tag::SIG),
+
             Tag::BYTES_SRV => Ok(Tag::SRV),
+            Tag::BYTES_SIG => Ok(Tag::SIG),
+
+            Tag::BYTES_VERS => Ok(Tag::VERS),
             Tag::BYTES_SREP => Ok(Tag::SREP),
             Tag::BYTES_VER => Ok(Tag::VER),
-            Tag::BYTES_DUT1 => Ok(Tag::DUT1),
-            Tag::BYTES_DTAI => Ok(Tag::DTAI),
-            Tag::BYTES_LEAP => Ok(Tag::LEAP),
             Tag::BYTES_ZZZZ => Ok(Tag::ZZZZ),
             _ => Err(Error::InvalidTag(Box::from(bytes))),
         }
