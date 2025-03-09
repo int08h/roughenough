@@ -29,7 +29,6 @@ ctrlc = { version = "3.4", features = ["termination"] }
 data-encoding = "2.6"
 ed25519-dalek = "2.1"
 enum-iterator = "2.1"
-humansize = "2"
 log = "0.4"
 mio = "0.6"
 mio-extras = "2.0"
@@ -40,7 +39,6 @@ ring = "0.17"
 simple_logger = "5"
 serde = { version = "1.0", features = ["derive", "std"] }
 yaml-rust = "0.4"
-zeroize = "1.8"
 zstd = {  version = "0.13", features = ["zstdmt"] }
 
 # Used by 'awskms' and 'gcpkms'
