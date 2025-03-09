@@ -39,6 +39,10 @@ const STR_VER_RFC: &str = "Rfc";
 const BYTES_VER_RFC_DRAFT12: &[u8] = &[0x0c, 0x00, 0x00, 0x80];
 const STR_VER_RFC_DRAFT12: &str = "RfcDraft12";
 
+// Ordered (ascending) list of supported versions (VERS tag value)
+pub(crate) const BYTES_SUPPORTED_VERSIONS: &[&[u8]] =
+    &[Version::Classic.wire_bytes(), Version::Rfc.wire_bytes(), Version::RfcDraft12.wire_bytes()];
+
 impl Version {
     /// On-the-wire representation of the version value
     pub const fn wire_bytes(self) -> &'static [u8] {

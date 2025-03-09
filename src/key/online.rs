@@ -21,7 +21,7 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use crate::message::RtMessage;
 use crate::sign::MsgSigner;
 use crate::tag::Tag;
-use crate::version::Version;
+use crate::version::{Version, BYTES_SUPPORTED_VERSIONS};
 use crate::SIGNED_RESPONSE_CONTEXT;
 
 ///
@@ -29,6 +29,7 @@ use crate::SIGNED_RESPONSE_CONTEXT;
 ///
 pub struct OnlineKey {
     signer: MsgSigner,
+    supported_versions: Vec<u8>,
 }
 
 impl Default for OnlineKey {
@@ -41,6 +42,7 @@ impl OnlineKey {
     pub fn new() -> Self {
         OnlineKey {
             signer: MsgSigner::new(),
+            supported_versions: BYTES_SUPPORTED_VERSIONS.concat(),
         }
     }
 
@@ -69,7 +71,7 @@ impl OnlineKey {
         secs + nsecs
     }
 
-    /// RFC protocol, a uint64 count of seconds since the Unix epoch in UTC.
+    /// RFC protocol, an uint64 count of seconds since the Unix epoch in UTC.
     fn rfc_midp(&self, now: SystemTime) -> u64 {
         now.duration_since(UNIX_EPOCH).unwrap().as_secs()
     }
@@ -100,12 +102,19 @@ impl OnlineKey {
             .unwrap();
 
         // Signed response SREP
-        let srep_bytes = {
+        let srep_bytes = if ver == Version::Classic {
             let mut srep_msg = RtMessage::with_capacity(3);
             srep_msg.add_field(Tag::RADI, &radi).unwrap();
             srep_msg.add_field(Tag::MIDP, &midp).unwrap();
             srep_msg.add_field(Tag::ROOT, merkle_root).unwrap();
-
+            srep_msg.encode().unwrap()
+        } else {
+            let mut srep_msg = RtMessage::with_capacity(5);
+            srep_msg.add_field(Tag::VER, ver.wire_bytes()).unwrap();
+            srep_msg.add_field(Tag::RADI, &radi).unwrap();
+            srep_msg.add_field(Tag::MIDP, &midp).unwrap();
+            srep_msg.add_field(Tag::VERS, &self.supported_versions).unwrap();
+            srep_msg.add_field(Tag::ROOT, merkle_root).unwrap();
             srep_msg.encode().unwrap()
         };
 
