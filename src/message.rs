@@ -154,13 +154,15 @@ impl RtMessage {
         // as an offset from the end of the header
         let msg_end = bytes.len() - header_end;
 
+        // Create an iterator for the offset pairs of each tag value
+        let start_offsets = once(&0).chain(offsets.iter());
+        let end_offsets = offsets.iter().chain(once(&msg_end));
+        let offset_pairs = start_offsets.zip(end_offsets);
+
+        // The message being built
         let mut rt_msg = RtMessage::with_capacity(num_tags);
 
-        for (tag, (value_start, value_end)) in tags.into_iter().zip(
-            once(&0)
-                .chain(offsets.iter())
-                .zip(offsets.iter().chain(once(&msg_end))),
-        ) {
+        for (tag, (value_start, value_end)) in tags.into_iter().zip(offset_pairs) {
             let start_idx = header_end + value_start;
             let end_idx = header_end + value_end;
 
