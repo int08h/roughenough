@@ -17,7 +17,7 @@
 //!
 
 use crate::version::Version;
-use crate::version::Version::{Classic, RfcDraft12};
+use crate::version::Version::{Google, RfcDraft13};
 use ring::digest;
 
 use super::{TREE_LEAF_TWEAK, TREE_NODE_TWEAK};
@@ -37,13 +37,13 @@ pub struct MerkleTree {
 impl MerkleTree {
     ///
     /// Create a new empty Merkle Tree based on SHA-512.
-    /// Output is the 32-bytes (256-bits), `SHA-512[0:32]`
+    /// Output is the most-significant 32-bytes (256-bits), `SHA-512[0:32]`
     ///
     pub fn new_sha512_ietf() -> MerkleTree {
         MerkleTree {
             levels: vec![vec![]],
             algorithm: &digest::SHA512,
-            version: RfcDraft12,
+            version: RfcDraft13,
         }
     }
 
@@ -51,11 +51,11 @@ impl MerkleTree {
     /// Create a new empty Merkle Tree based on SHA-512
     /// Output is 64-bytes (512 bits)
     ///
-    pub fn new_sha512_classic() -> MerkleTree {
+    pub fn new_sha512_google() -> MerkleTree {
         MerkleTree {
             levels: vec![vec![]],
             algorithm: &digest::SHA512,
-            version: Classic,
+            version: Google,
         }
     }
 
@@ -75,6 +75,11 @@ impl MerkleTree {
             level += 1;
             index /= 2;
         }
+
+        // for PATH to have a depth of >32 levels, we'd have to be processing
+        // a batch of >2^32 responses
+        assert!(level <= 32, "impossible: PATH depth {} exceeds 32", level);
+
         paths
     }
 
@@ -172,8 +177,8 @@ impl MerkleTree {
     #[inline]
     fn finalize_output(&self, data: Hash) -> Hash {
         match self.version {
-            RfcDraft12 => data[0..32].into(),
-            Classic => data,
+            RfcDraft13 => data[0..32].into(),
+            Google => data,
         }
     }
 }
@@ -185,7 +190,7 @@ mod test {
     fn test_paths_with_num(num: usize) {
         for mut merkle_impl in [
             MerkleTree::new_sha512_ietf(),
-            MerkleTree::new_sha512_classic(),
+            MerkleTree::new_sha512_google(),
         ] {
             for i in 0..num {
                 merkle_impl.push_leaf(&[i as u8]);
@@ -194,11 +199,14 @@ mod test {
             let root = merkle_impl.compute_root();
 
             for i in 0..num {
-                println!("Testing {:?} {:?} {:?}", merkle_impl.algorithm, num, i);
                 let paths: Vec<u8> = merkle_impl.get_paths(i);
                 let computed_root = merkle_impl.root_from_paths(i, &[i as u8], &paths);
 
-                assert_eq!(root, computed_root);
+                assert_eq!(
+                    root, computed_root,
+                    "inequality: {:?} {:?} {:?}",
+                    root, computed_root, i
+                );
             }
         }
     }

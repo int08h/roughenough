@@ -1,15 +1,19 @@
 Review draft 13 vs draft 12
 
-Sorted values in VER tag
-In requests, the version numbers in the VER tag now have to be sorted in
-ascending numerical order.
+--- DONE ---
+DONE, NEEDS TESTING Hash over the entire request packet used in Merkle tree
+As another mitigation against version downgrade attacks, the hash value
+of the entire request packet, including the ROUGHTIM header, is used for
+building the Merkle tree (instead of the NONC value). This means that
+any changes to the request packet will cause the client's verification
+of the response to fail.
 
-Maximum PATH length introduced
+DONE Maximum PATH length introduced
 The length of PATH is not limited to 32. This has no effect in practice
 (unless someone is signing 2^32 responses at once) and serves to
 simplify implementations.
 
-Changed delegation signature context string
+DONE Changed delegation signature context string
 During the Hackathon, we discovered that the two dashes at the end of
 the delegation signature context string had been removed and then added
 again by mistake in a subsequent draft. Since we are already making
@@ -17,15 +21,10 @@ breaking changes in this update, we decided to fix this at the same
 time. The dashes have once again been removed from the delegation
 signature context string.
 
-Hash over the entire request packet used in Merkle tree
-As another mitigation against version downgrade attacks, the hash value
-of the entire request packet, including the ROUGHTIM header, is used for
-building the Merkle tree (instead of the NONC value). This means that
-any changes to the request packet will cause the client's verification
-of the response to fail.
+DONE Sorted values in VER tag
+In requests, the version numbers in the VER tag now have to be sorted in
+ascending numerical order.
 
-
---- DONE ---
 DONE Draft version number changed to 0x8000000c
 We have received requests not to change the draft version numbers unless
 we make changes to the line protocol. However, since we made breaking

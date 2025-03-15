@@ -15,20 +15,24 @@ Requires latest stable Rust to compile. Contributions welcome, see
 
 ## RFC Work-In-Progress
 
-Roughenough implements the Roughtime protocol as specified in [the draft-12 RFC](https://www.ietf.org/archive/id/draft-ietf-ntp-roughtime-12.html).
+**RFC interop testing still needed. This implementation has undergone testing as part
+of its development, but is not yet ready for production use. More testing between
+Roughtime implementations is required.**
+
+Roughenough implements the Roughtime protocol as specified in [the draft-13 RFC](https://www.ietf.org/archive/id/draft-ietf-ntp-roughtime-13.html).
 
 The Roughenough server operates both the "classic" protocol **and** the RFC compliant 
 protocol at the same time on a single serving port (the 8-byte magic frame value added 
 by the RFC is used to distinguish classic vs. RFC requests).
 
 The new `-p/--protocol` flag of `roughenough-client` controls the protocol version to
-use in requests. `0` = classic protocol (no `VER` tag), `1` = anticipated RFC protocol 
-(`VER` tag with value `0x00000001`), and `8` is the RFC Draft12 protocol (`VER` tag with
-value `0x0b00000c`). The default is `0` the "classic" protocol, until the RFC is finalized.
+use in requests. `0` = "classic" Google protocol (no `VER` tag), and `13` is the RFC 
+Draft13 protocol (`VER` tag with value `0x0b00000c`). The default is `0` the "classic" 
+protocol, until the RFC is finalized.
 
 ```
 # send RFC protocol Roughtime requests
-$ roughenough-client -p 1 roughtime.int08h.com 2002
+$ roughenough-client -p 13 roughtime.int08h.com 2002
 ```
 
 ## Links
@@ -228,7 +232,7 @@ created by Adam Langley and Robert Obryk.
 * Eric Swanson (github.com/lachesis)
 
 ## Copyright and License
-Roughenough is copyright (c) 2017-2024 int08h LLC. All rights reserved. 
+Roughenough is copyright (c) 2017-2025 int08h LLC. All rights reserved. 
 
 int08h LLC licenses Roughenough (the "Software") to you under the Apache License, version 2.0 
 (the "License"); you may not use this Software except in compliance with the License. You may obtain 

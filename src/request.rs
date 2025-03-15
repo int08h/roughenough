@@ -33,30 +33,29 @@ pub fn nonce_from_request(
         return Err(Error::RequestTooLarge);
     }
 
-    if is_classic_request(buf) {
-        nonce_from_classic_request(&buf[..num_bytes])
-    } else {
+    if is_rfc_request(buf) {
         nonce_from_rfc_request(&buf[..num_bytes], expected_srv)
+    } else {
+        nonce_from_classic_request(&buf[..num_bytes])
     }
 }
 
-/// Inspect the message in `buf`, if it doesn't start with RFC framing, we guess
-/// it is a classic request
-fn is_classic_request(buf: &[u8]) -> bool {
-    &buf[0..8] != REQUEST_FRAMING_BYTES
+/// Inspect the message in `buf`, if it starts with RFC framing, we guess it is an RFC request
+fn is_rfc_request(buf: &[u8]) -> bool {
+    &buf[0..8] == REQUEST_FRAMING_BYTES
 }
 
 fn nonce_from_classic_request(buf: &[u8]) -> Result<(Vec<u8>, Version), Error> {
     let msg = RtMessage::from_bytes(buf)?;
     match msg.get_field(Tag::NONC) {
-        Some(nonce) => Ok((nonce.to_vec(), Version::Classic)),
+        Some(nonce) => Ok((nonce.to_vec(), Version::Google)),
         None => Err(Error::InvalidRequest),
     }
 }
 
 // This could be any VER that we support. Extract VER from request and return it.
 fn nonce_from_rfc_request(buf: &[u8], expected_srv: &[u8]) -> Result<(Vec<u8>, Version), Error> {
-    // first 8 bytes were RFC_REQUEST_FRAME_BYTES, [0..8]
+    // skip first [0..8] bytes which were RFC_REQUEST_FRAME_BYTES
     let mut cur = Cursor::new(&buf[8..12]);
     let reported_len = cur.read_u32::<LittleEndian>()?;
     let actual_len = (buf.len() - 12) as u32;
@@ -85,14 +84,18 @@ fn nonce_from_rfc_request(buf: &[u8], expected_srv: &[u8]) -> Result<(Vec<u8>, V
 }
 
 fn get_supported_version(msg: &RtMessage) -> Option<Version> {
-    const SUPPORTED_VERSIONS: &[Version] = &[Version::RfcDraft12];
+    const SUPPORTED_VERSIONS: &[Version] = &[Version::RfcDraft13];
+
+    // To prevent resource exhaustion, this implementation limits the number of VER values it will
+    // process to ITERATION_LIMIT.
+    const ITERATION_LIMIT: usize = 4;
 
     if let Some(tag_bytes) = msg.get_field(Tag::VER) {
         // Iterate the list of supplied versions, looking for the first match
-        for found_ver_bytes in tag_bytes.chunks(4) {
-            for ver in SUPPORTED_VERSIONS {
-                if ver.wire_bytes() == found_ver_bytes {
-                    return Some(*ver);
+        for found_ver_bytes in tag_bytes.chunks(4).take(ITERATION_LIMIT) {
+            for supported_ver in SUPPORTED_VERSIONS {
+                if supported_ver.wire_bytes() == found_ver_bytes {
+                    return Some(*supported_ver);
                 }
             }
         }

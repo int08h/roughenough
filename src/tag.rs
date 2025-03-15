@@ -88,6 +88,9 @@ impl Tag {
     /// Return the `Tag` corresponding to the on-the-wire representation in `bytes` or an
     /// `Error::InvalidTag` if `bytes` do not correspond to a valid tag.
     pub const fn from_wire(bytes: &[u8]) -> Result<Self, Error> {
+        // Wish we could do something like
+        //     Tag::SIG.data().wire => Ok(Tag::SIG),
+        // to eliminate the duplication
         match bytes {
             b"SIG\x00" => Ok(Tag::SIG),
             b"VER\x00" => Ok(Tag::VER),

@@ -1,6 +1,6 @@
 [package]
 name = "roughenough"
-version = "1.3.0-draft12"
+version = "1.3.0-draft13"
 repository = "https://github.com/int08h/roughenough"
 authors = ["Stuart Stock <stuart@int08h.com>", "Aaron Hill <aa1ronham@gmail.com>"]
 license = "Apache-2.0"

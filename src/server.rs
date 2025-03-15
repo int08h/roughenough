@@ -129,8 +129,8 @@ impl Server {
             LongTermKey::new(&seed)
         };
 
-        let responder_ietf = Responder::new(Version::RfcDraft12, config, &mut long_term_key);
-        let responder_classic = Responder::new(Version::Classic, config, &mut long_term_key);
+        let responder_ietf = Responder::new(Version::RfcDraft13, config, &mut long_term_key);
+        let responder_classic = Responder::new(Version::Google, config, &mut long_term_key);
 
         let batch_size = config.batch_size();
         let thread_name = thread::current().name().unwrap().to_string();
@@ -209,12 +209,13 @@ impl Server {
                 Ok((num_bytes, src_addr)) => {
                     match request::nonce_from_request(&self.buf, num_bytes, &self.srv_value) {
                         // TODO(stuart) cleanup when RFC is ratified
-                        Ok((nonce, Version::RfcDraft12)) => {
-                            self.responder_ietf.add_request(nonce, src_addr);
+                        Ok((nonce, Version::RfcDraft13)) => {
+                            let request_bytes = &self.buf[..num_bytes];
+                            self.responder_ietf.add_ietf_request(request_bytes, nonce, src_addr);
                             self.stats_recorder.add_ietf_request(&src_addr.ip());
                         }
-                        Ok((nonce, Version::Classic)) => {
-                            self.responder_classic.add_request(nonce, src_addr);
+                        Ok((nonce, Version::Google)) => {
+                            self.responder_classic.add_classic_request(nonce, src_addr);
                             self.stats_recorder.add_classic_request(&src_addr.ip());
                         }
                         Err(e) => {
@@ -271,7 +272,9 @@ impl Server {
     fn send_client_stats(&mut self) {
         let start = Instant::now();
 
-        let clients: Vec<ClientStats> = self.stats_recorder.iter().map(|(_, s)| *s).collect();
+        let clients: Vec<ClientStats> = self.stats_recorder
+            .iter()
+            .map(|(_, s)| *s).collect();
 
         let client_count = clients.len();
         if client_count > 0 {
@@ -283,7 +286,7 @@ impl Server {
         self.stats_pub_timer.set_timeout(delay, ());
 
         let elapsed = start.elapsed();
-        info!(
+        debug!(
             "{} enqueued {} client stats in {:.3} seconds",
             self.thread_name(),
             client_count,

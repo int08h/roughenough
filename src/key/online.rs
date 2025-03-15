@@ -28,7 +28,7 @@ use crate::version::Version;
 ///
 pub struct OnlineKey {
     signer: MsgSigner,
-    supported_versions: Vec<u8>,
+    vers_wire_bytes: Vec<u8>,
 }
 
 impl Default for OnlineKey {
@@ -41,7 +41,7 @@ impl OnlineKey {
     pub fn new() -> Self {
         OnlineKey {
             signer: MsgSigner::new(),
-            supported_versions: Version::supported_versions_wire(),
+            vers_wire_bytes: Version::supported_versions_wire(),
         }
     }
 
@@ -88,8 +88,8 @@ impl OnlineKey {
 
         // RADI is hard coded at 5 seconds (providing a 10-second measurement window overall)
         let radi_time = match version {
-            Version::Classic => 5_000_000, // five seconds in microseconds
-            Version::RfcDraft12 => 5,      // five seconds
+            Version::Google => 5_000_000, // five seconds in microseconds
+            Version::RfcDraft13 => 5,      // five seconds
         };
 
         (&mut radi as &mut [u8])
@@ -97,8 +97,8 @@ impl OnlineKey {
             .unwrap();
 
         let midp_time = match version {
-            Version::Classic => self.classic_midp(now),
-            Version::RfcDraft12 => self.rfc_midp(now),
+            Version::Google => self.classic_midp(now),
+            Version::RfcDraft13 => self.rfc_midp(now),
         };
 
         (&mut midp as &mut [u8])
@@ -106,7 +106,7 @@ impl OnlineKey {
             .unwrap();
 
         // Signed response SREP
-        let srep_bytes = if version == Version::Classic {
+        let srep_bytes = if version == Version::Google {
             let mut srep_msg = RtMessage::with_capacity(3);
             srep_msg.add_field(Tag::RADI, &radi).unwrap();
             srep_msg.add_field(Tag::MIDP, &midp).unwrap();
@@ -118,7 +118,7 @@ impl OnlineKey {
             srep_msg.add_field(Tag::RADI, &radi).unwrap();
             srep_msg.add_field(Tag::MIDP, &midp).unwrap();
             srep_msg
-                .add_field(Tag::VERS, &self.supported_versions)
+                .add_field(Tag::VERS, &self.vers_wire_bytes)
                 .unwrap();
             srep_msg.add_field(Tag::ROOT, merkle_root).unwrap();
             srep_msg.encode().unwrap()

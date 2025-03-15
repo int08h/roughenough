@@ -57,8 +57,8 @@ impl Responder {
         let grease = Grease::new(config.fault_percentage());
         let thread_id = thread::current().name().unwrap().to_string();
 
-        let merkle = if version == Version::Classic {
-            MerkleTree::new_sha512_classic()
+        let merkle = if version == Version::Google {
+            MerkleTree::new_sha512_google()
         } else {
             MerkleTree::new_sha512_ietf()
         };
@@ -86,9 +86,19 @@ impl Responder {
         self.requests.is_empty()
     }
 
-    /// Add a request that needs to be responded to
-    pub fn add_request(&mut self, nonce: Vec<u8>, src_addr: SocketAddr) {
+    /// Add a classic request (hashing the NONC) that needs to be responded to
+    pub fn add_classic_request(&mut self, nonce: Vec<u8>, src_addr: SocketAddr) {
         self.merkle.push_leaf(&nonce);
+        self.requests.push((nonce, src_addr));
+    }
+
+    /// Add an IETF request (hashing the entire request, including framing) that needs
+    /// to be responded to.
+    ///
+    /// The nonce (NONC) value is passed in for consistency, so that the loop in
+    /// `send_responses()` remains the same for different protocol versions.
+    pub fn add_ietf_request(&mut self, data: &[u8], nonce: Vec<u8>, src_addr: SocketAddr) {
+        self.merkle.push_leaf(data);
         self.requests.push((nonce, src_addr));
     }
 
@@ -117,8 +127,8 @@ impl Responder {
             };
 
             let resp_bytes = match self.version {
-                Version::Classic => resp_msg.encode().unwrap(),
-                Version::RfcDraft12 => resp_msg.encode_framed().unwrap(),
+                Version::Google => resp_msg.encode().unwrap(),
+                Version::RfcDraft13 => resp_msg.encode_framed().unwrap(),
             };
 
             let mut bytes_sent: usize = 0;
@@ -141,8 +151,8 @@ impl Responder {
 
             if successful_send {
                 match self.version {
-                    Version::Classic => stats.add_classic_response(&src_addr.ip(), bytes_sent),
-                    Version::RfcDraft12 => stats.add_rfc_response(&src_addr.ip(), bytes_sent),
+                    Version::Google => stats.add_classic_response(&src_addr.ip(), bytes_sent),
+                    Version::RfcDraft13 => stats.add_rfc_response(&src_addr.ip(), bytes_sent),
                 }
             } else {
                 stats.add_failed_send_attempt(&src_addr.ip());

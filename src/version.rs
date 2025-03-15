@@ -18,10 +18,10 @@ use std::fmt::{Display, Formatter};
 #[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Clone, Copy)]
 pub enum Version {
     /// Original Google version from https://roughtime.googlesource.com/roughtime/+/HEAD/PROTOCOL.md
-    Classic,
+    Google,
 
-    /// IETF draft version 12 (placeholder for final IETF standardized version)
-    RfcDraft12,
+    /// IETF draft version 13 (placeholder for final IETF standardized version)
+    RfcDraft13,
 }
 
 struct VersionData {
@@ -34,15 +34,15 @@ struct VersionData {
 impl Version {
     const fn data(&self) -> VersionData {
         match self {
-            Version::Classic => VersionData {
+            Version::Google => VersionData {
                 wire: &[0x00, 0x00, 0x00, 0x00],
-                display: "Classic",
+                display: "Google",
                 dele_prefix: b"RoughTime v1 delegation signature--\x00",
                 srep_prefix: b"RoughTime v1 response signature\x00",
             },
-            Version::RfcDraft12 => VersionData {
+            Version::RfcDraft13 => VersionData {
                 wire: &[0x0c, 0x00, 0x00, 0x80],
-                display: "RfcDraft12",
+                display: "RfcDraft13",
                 dele_prefix: b"RoughTime v1 delegation signature\x00",
                 srep_prefix: b"RoughTime v1 response signature\x00",
             },
@@ -52,8 +52,8 @@ impl Version {
     /// Ordered (ascending) on-the-wire bytes of supported versions (`VERS` tag value)
     pub fn supported_versions_wire() -> Vec<u8> {
         [
-            Version::Classic.wire_bytes(),
-            Version::RfcDraft12.wire_bytes(),
+            Version::Google.wire_bytes(),
+            Version::RfcDraft13.wire_bytes(),
         ]
         .concat()
     }
