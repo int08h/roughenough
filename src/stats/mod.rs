@@ -92,7 +92,7 @@ impl ClientStats {
 /// Implementations of this trait record client activity
 ///
 pub trait ServerStats {
-    fn add_rfc_request(&mut self, addr: &IpAddr);
+    fn add_ietf_request(&mut self, addr: &IpAddr);
 
     fn add_classic_request(&mut self, addr: &IpAddr);
 
@@ -171,7 +171,7 @@ mod test {
         stats.add_classic_request(&ip1);
         stats.add_classic_request(&ip2);
         stats.add_classic_request(&ip3);
-        stats.add_rfc_request(&ip3);
+        stats.add_ietf_request(&ip3);
         assert_eq!(stats.total_valid_requests(), 4);
         assert_eq!(stats.num_classic_requests(), 3);
         assert_eq!(stats.num_rfc_requests(), 1);

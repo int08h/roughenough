@@ -62,7 +62,7 @@ impl AggregatedStats {
 }
 
 impl ServerStats for AggregatedStats {
-    fn add_rfc_request(&mut self, _: &IpAddr) {
+    fn add_ietf_request(&mut self, _: &IpAddr) {
         self.rfc_requests += 1
     }
 

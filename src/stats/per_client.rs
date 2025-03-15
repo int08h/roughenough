@@ -75,7 +75,7 @@ impl PerClientStats {
 }
 
 impl ServerStats for PerClientStats {
-    fn add_rfc_request(&mut self, addr: &IpAddr) {
+    fn add_ietf_request(&mut self, addr: &IpAddr) {
         if self.too_many_entries() {
             return;
         }
