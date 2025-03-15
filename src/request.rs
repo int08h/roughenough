@@ -85,7 +85,7 @@ fn nonce_from_rfc_request(buf: &[u8], expected_srv: &[u8]) -> Result<(Vec<u8>, V
 }
 
 fn get_supported_version(msg: &RtMessage) -> Option<Version> {
-    const SUPPORTED_VERSIONS: &[Version] = &[Version::RfcDraft12, Version::Rfc];
+    const SUPPORTED_VERSIONS: &[Version] = &[Version::RfcDraft12];
 
     if let Some(tag_bytes) = msg.get_field(Tag::VER) {
         // Iterate the list of supplied versions, looking for the first match

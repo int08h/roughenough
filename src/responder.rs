@@ -48,7 +48,10 @@ pub struct Responder {
 impl Responder {
     pub fn new(version: Version, config: &dyn ServerConfig, ltk: &mut LongTermKey) -> Responder {
         let online_key = OnlineKey::new();
-        let cert_bytes = ltk.make_cert(&online_key).encode().expect("make_cert");
+        let cert_bytes = ltk
+            .make_cert(&version, &online_key)
+            .encode()
+            .expect("make_cert");
         let long_term_public_key = HEX.encode(&ltk.public_key());
         let requests = Vec::with_capacity(config.batch_size() as usize);
         let grease = Grease::new(config.fault_percentage());
@@ -115,7 +118,7 @@ impl Responder {
 
             let resp_bytes = match self.version {
                 Version::Classic => resp_msg.encode().unwrap(),
-                Version::Rfc | Version::RfcDraft12 => resp_msg.encode_framed().unwrap(),
+                Version::RfcDraft12 => resp_msg.encode_framed().unwrap(),
             };
 
             let mut bytes_sent: usize = 0;
@@ -139,9 +142,7 @@ impl Responder {
             if successful_send {
                 match self.version {
                     Version::Classic => stats.add_classic_response(&src_addr.ip(), bytes_sent),
-                    Version::Rfc | Version::RfcDraft12 => {
-                        stats.add_rfc_response(&src_addr.ip(), bytes_sent)
-                    }
+                    Version::RfcDraft12 => stats.add_rfc_response(&src_addr.ip(), bytes_sent),
                 }
             } else {
                 stats.add_failed_send_attempt(&src_addr.ip());

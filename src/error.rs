@@ -22,7 +22,7 @@ pub enum Error {
     TagNotStrictlyIncreasing(Tag),
 
     /// The associated byte sequence does not correspond to a valid Roughtime tag.
-    InvalidTag(Box<[u8]>),
+    InvalidTag,
 
     /// Invalid number of tags specified
     InvalidNumTags(u32),

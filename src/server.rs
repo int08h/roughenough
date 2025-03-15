@@ -59,8 +59,7 @@ pub struct Server {
     health_listener: Option<TcpListener>,
     poll_duration: Option<Duration>,
     poll: Poll,
-    responder_rfc: Responder,
-    responder_draft: Responder,
+    responder_ietf: Responder,
     responder_classic: Responder,
     buf: [u8; 65_536],
     thread_name: String,
@@ -130,8 +129,7 @@ impl Server {
             LongTermKey::new(&seed)
         };
 
-        let responder_rfc = Responder::new(Version::Rfc, config, &mut long_term_key);
-        let responder_draft = Responder::new(Version::RfcDraft12, config, &mut long_term_key);
+        let responder_ietf = Responder::new(Version::RfcDraft12, config, &mut long_term_key);
         let responder_classic = Responder::new(Version::Classic, config, &mut long_term_key);
 
         let batch_size = config.batch_size();
@@ -145,8 +143,7 @@ impl Server {
             health_listener,
             poll_duration,
             poll,
-            responder_rfc,
-            responder_draft,
+            responder_ietf,
             responder_classic,
             buf: [0u8; 65_536],
             thread_name,
@@ -163,7 +160,7 @@ impl Server {
 
     /// Returns a reference to the server's long-term public key
     pub fn get_public_key(&self) -> &str {
-        self.responder_rfc.get_public_key()
+        self.responder_ietf.get_public_key()
     }
 
     #[cfg(feature = "fuzzing")]
@@ -185,18 +182,13 @@ impl Server {
         for msg in events.iter() {
             match msg.token() {
                 EVT_MESSAGE => loop {
-                    self.responder_rfc.reset();
-                    self.responder_draft.reset();
+                    self.responder_ietf.reset();
                     self.responder_classic.reset();
 
                     let socket_now_empty = self.collect_requests();
 
-                    self.responder_rfc
-                        .send_responses(&mut self.socket, &mut self.stats_recorder);
-                    self.responder_draft
-                        .send_responses(&mut self.socket, &mut self.stats_recorder);
-                    self.responder_classic
-                        .send_responses(&mut self.socket, &mut self.stats_recorder);
+                    self.responder_ietf.send_responses(&mut self.socket, &mut self.stats_recorder);
+                    self.responder_classic.send_responses(&mut self.socket, &mut self.stats_recorder);
 
                     if socket_now_empty {
                         break;
@@ -216,15 +208,10 @@ impl Server {
             match self.socket.recv_from(&mut self.buf) {
                 Ok((num_bytes, src_addr)) => {
                     match request::nonce_from_request(&self.buf, num_bytes, &self.srv_value) {
-                        Ok((nonce, Version::Rfc)) => {
-                            self.responder_rfc.add_request(nonce, src_addr);
-                            self.stats_recorder.add_rfc_request(&src_addr.ip());
-                        }
-                        // TODO(stuart) remove when RFC is ratified
+                        // TODO(stuart) cleanup when RFC is ratified
                         Ok((nonce, Version::RfcDraft12)) => {
-                            self.responder_draft.add_request(nonce, src_addr);
-                            // Mismatch of draft responder vs rfc stats is intentional
-                            self.stats_recorder.add_rfc_request(&src_addr.ip());
+                            self.responder_ietf.add_request(nonce, src_addr);
+                            self.stats_recorder.add_ietf_request(&src_addr.ip());
                         }
                         Ok((nonce, Version::Classic)) => {
                             self.responder_classic.add_request(nonce, src_addr);

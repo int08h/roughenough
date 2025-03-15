@@ -20,51 +20,69 @@ pub enum Version {
     /// Original Google version from https://roughtime.googlesource.com/roughtime/+/HEAD/PROTOCOL.md
     Classic,
 
-    /// Placeholder for final IETF standardized version
-    Rfc,
-
-    /// IETF draft version 12
+    /// IETF draft version 12 (placeholder for final IETF standardized version)
     RfcDraft12,
 }
 
-// Google classic (unused)
-const BYTES_VER_CLASSIC: &[u8] = &[0x00, 0x00, 0x00, 0x00];
-const STR_VER_CLASSIC: &str = "Classic";
-
-// RFC version 1
-const BYTES_VER_RFC: &[u8] = &[0x01, 0x00, 0x00, 0x00];
-const STR_VER_RFC: &str = "Rfc";
-
-// RFC draft 12 (keep updated as draft evolves)
-const BYTES_VER_RFC_DRAFT12: &[u8] = &[0x0c, 0x00, 0x00, 0x80];
-const STR_VER_RFC_DRAFT12: &str = "RfcDraft12";
-
-// Ordered (ascending) list of supported versions (VERS tag value)
-pub(crate) const BYTES_SUPPORTED_VERSIONS: &[&[u8]] =
-    &[Version::Classic.wire_bytes(), Version::Rfc.wire_bytes(), Version::RfcDraft12.wire_bytes()];
+struct VersionData {
+    wire: &'static [u8],
+    display: &'static str,
+    dele_prefix: &'static [u8],
+    srep_prefix: &'static [u8],
+}
 
 impl Version {
-    /// On-the-wire representation of the version value
-    pub const fn wire_bytes(self) -> &'static [u8] {
+    const fn data(&self) -> VersionData {
         match self {
-            Version::Classic => BYTES_VER_CLASSIC,
-            Version::Rfc => BYTES_VER_RFC,
-            Version::RfcDraft12 => BYTES_VER_RFC_DRAFT12,
+            Version::Classic => VersionData {
+                wire: &[0x00, 0x00, 0x00, 0x00],
+                display: "Classic",
+                dele_prefix: b"RoughTime v1 delegation signature--\x00",
+                srep_prefix: b"RoughTime v1 response signature\x00",
+            },
+            Version::RfcDraft12 => VersionData {
+                wire: &[0x0c, 0x00, 0x00, 0x80],
+                display: "RfcDraft12",
+                dele_prefix: b"RoughTime v1 delegation signature\x00",
+                srep_prefix: b"RoughTime v1 response signature\x00",
+            },
         }
     }
 
+    /// Ordered (ascending) on-the-wire bytes of supported versions (`VERS` tag value)
+    pub fn supported_versions_wire() -> Vec<u8> {
+        [
+            Version::Classic.wire_bytes(),
+            Version::RfcDraft12.wire_bytes(),
+        ]
+        .concat()
+    }
+
+    /// On-the-wire representation of the `Version`
+    pub const fn wire_bytes(&self) -> &'static [u8] {
+        self.data().wire
+    }
+
     /// A short (non-canonical) string representation of the `Version`
-    pub const fn to_string(&self) -> &'static str {
-        match self {
-            Version::Classic => STR_VER_CLASSIC,
-            Version::Rfc => STR_VER_RFC,
-            Version::RfcDraft12 => STR_VER_RFC_DRAFT12,
-        }
+    pub const fn as_string(&self) -> &'static str {
+        self.data().display
+    }
+
+    /// Domain separator prefixed to the server's `DELE` value before generating or
+    /// verifying the signature
+    pub const fn dele_prefix(&self) -> &'static [u8] {
+        self.data().dele_prefix
+    }
+
+    /// Domain separator prefixed to the server's `SREP` value before generating or
+    /// verifying the signature
+    pub const fn sign_prefix(&self) -> &'static [u8] {
+        self.data().srep_prefix
     }
 }
 
 impl Display for Version {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_string())
+        write!(f, "{}", self.as_string())
     }
 }

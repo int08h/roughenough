@@ -21,8 +21,7 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use crate::message::RtMessage;
 use crate::sign::MsgSigner;
 use crate::tag::Tag;
-use crate::version::{Version, BYTES_SUPPORTED_VERSIONS};
-use crate::SIGNED_RESPONSE_CONTEXT;
+use crate::version::Version;
 
 ///
 /// Represents the delegated Roughtime ephemeral online key.
@@ -42,7 +41,7 @@ impl OnlineKey {
     pub fn new() -> Self {
         OnlineKey {
             signer: MsgSigner::new(),
-            supported_versions: BYTES_SUPPORTED_VERSIONS.concat(),
+            supported_versions: Version::supported_versions_wire(),
         }
     }
 
@@ -78,23 +77,28 @@ impl OnlineKey {
 
     /// Create an SREP response containing the provided time and Merkle root,
     /// signed by this online key.
-    pub fn make_srep(&mut self, ver: Version, now: SystemTime, merkle_root: &[u8]) -> RtMessage {
+    pub fn make_srep(
+        &mut self,
+        version: Version,
+        now: SystemTime,
+        merkle_root: &[u8],
+    ) -> RtMessage {
         let mut radi = [0; 4];
         let mut midp = [0; 8];
 
         // RADI is hard coded at 5 seconds (providing a 10-second measurement window overall)
-        let radi_time = match ver {
+        let radi_time = match version {
             Version::Classic => 5_000_000, // five seconds in microseconds
-            Version::Rfc | Version::RfcDraft12 => 5, // five seconds
+            Version::RfcDraft12 => 5,      // five seconds
         };
 
         (&mut radi as &mut [u8])
             .write_u32::<LittleEndian>(radi_time)
             .unwrap();
 
-        let midp_time = match ver {
+        let midp_time = match version {
             Version::Classic => self.classic_midp(now),
-            Version::Rfc | Version::RfcDraft12 => self.rfc_midp(now),
+            Version::RfcDraft12 => self.rfc_midp(now),
         };
 
         (&mut midp as &mut [u8])
@@ -102,7 +106,7 @@ impl OnlineKey {
             .unwrap();
 
         // Signed response SREP
-        let srep_bytes = if ver == Version::Classic {
+        let srep_bytes = if version == Version::Classic {
             let mut srep_msg = RtMessage::with_capacity(3);
             srep_msg.add_field(Tag::RADI, &radi).unwrap();
             srep_msg.add_field(Tag::MIDP, &midp).unwrap();
@@ -110,17 +114,19 @@ impl OnlineKey {
             srep_msg.encode().unwrap()
         } else {
             let mut srep_msg = RtMessage::with_capacity(5);
-            srep_msg.add_field(Tag::VER, ver.wire_bytes()).unwrap();
+            srep_msg.add_field(Tag::VER, version.wire_bytes()).unwrap();
             srep_msg.add_field(Tag::RADI, &radi).unwrap();
             srep_msg.add_field(Tag::MIDP, &midp).unwrap();
-            srep_msg.add_field(Tag::VERS, &self.supported_versions).unwrap();
+            srep_msg
+                .add_field(Tag::VERS, &self.supported_versions)
+                .unwrap();
             srep_msg.add_field(Tag::ROOT, merkle_root).unwrap();
             srep_msg.encode().unwrap()
         };
 
         // signature on SREP
         let srep_signature = {
-            self.signer.update(SIGNED_RESPONSE_CONTEXT.as_bytes());
+            self.signer.update(version.sign_prefix());
             self.signer.update(&srep_bytes);
             self.signer.sign()
         };

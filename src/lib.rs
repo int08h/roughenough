@@ -108,12 +108,6 @@ pub const SEED_LENGTH: u32 = 32;
 /// Size (in bytes) of an Ed25519 signature
 pub const SIGNATURE_LENGTH: u32 = 64;
 
-/// Prefixed to the server's certificate before generating or verifying certificate's signature
-pub const CERTIFICATE_CONTEXT: &str = "RoughTime v1 delegation signature--\x00";
-
-/// Prefixed to the server's response before generating or verifying the server's signature
-pub const SIGNED_RESPONSE_CONTEXT: &str = "RoughTime v1 response signature\x00";
-
 /// Value prepended to leaves prior to hashing
 pub const TREE_LEAF_TWEAK: &[u8] = &[0x00];
 

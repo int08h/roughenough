@@ -20,7 +20,7 @@ use crate::key::OnlineKey;
 use crate::message::RtMessage;
 use crate::sign::MsgSigner;
 use crate::tag::Tag;
-use crate::CERTIFICATE_CONTEXT;
+use crate::version::Version;
 use ring::digest;
 use ring::digest::SHA512;
 use std::fmt;
@@ -51,10 +51,10 @@ impl LongTermKey {
 
     /// Create a CERT message with a DELE containing the provided online key
     /// and a SIG of the DELE value signed by the long-term key
-    pub fn make_cert(&mut self, online_key: &OnlineKey) -> RtMessage {
+    pub fn make_cert(&mut self, version: &Version, online_key: &OnlineKey) -> RtMessage {
         let dele_bytes = online_key.make_dele().encode().unwrap();
 
-        self.signer.update(CERTIFICATE_CONTEXT.as_bytes());
+        self.signer.update(version.dele_prefix());
         self.signer.update(&dele_bytes);
 
         let dele_signature = self.signer.sign();

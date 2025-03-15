@@ -17,7 +17,7 @@
 //!
 
 use crate::version::Version;
-use crate::version::Version::{Classic, Rfc, RfcDraft12};
+use crate::version::Version::{Classic, RfcDraft12};
 use ring::digest;
 
 use super::{TREE_LEAF_TWEAK, TREE_NODE_TWEAK};
@@ -43,7 +43,7 @@ impl MerkleTree {
         MerkleTree {
             levels: vec![vec![]],
             algorithm: &digest::SHA512,
-            version: Version::Rfc,
+            version: RfcDraft12,
         }
     }
 
@@ -55,7 +55,7 @@ impl MerkleTree {
         MerkleTree {
             levels: vec![vec![]],
             algorithm: &digest::SHA512,
-            version: Version::Classic,
+            version: Classic,
         }
     }
 
@@ -172,7 +172,7 @@ impl MerkleTree {
     #[inline]
     fn finalize_output(&self, data: Hash) -> Hash {
         match self.version {
-            Rfc | RfcDraft12 => data[0..32].into(),
+            RfcDraft12 => data[0..32].into(),
             Classic => data,
         }
     }

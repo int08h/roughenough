@@ -57,7 +57,7 @@ impl Tag {
     pub(crate) const HASH_PREFIX_SRV: &'static [u8] = &[0xff];
 
     /// Returns metadata for this tag.
-    fn data(&self) -> TagData {
+    const fn data(&self) -> TagData {
         match self {
             Tag::SIG => TagData { wire: b"SIG\x00", display: "SIG" },
             Tag::VER => TagData { wire: b"VER\x00", display: "VER" },
@@ -81,13 +81,13 @@ impl Tag {
     }
 
     /// Returns the on-the-wire representation of this tag.
-    pub fn wire_value(&self) -> &'static [u8] {
+    pub const fn wire_value(&self) -> &'static [u8] {
         self.data().wire
     }
 
     /// Return the `Tag` corresponding to the on-the-wire representation in `bytes` or an
     /// `Error::InvalidTag` if `bytes` do not correspond to a valid tag.
-    pub fn from_wire(bytes: &[u8]) -> Result<Self, Error> {
+    pub const fn from_wire(bytes: &[u8]) -> Result<Self, Error> {
         match bytes {
             b"SIG\x00" => Ok(Tag::SIG),
             b"VER\x00" => Ok(Tag::VER),
@@ -107,18 +107,21 @@ impl Tag {
             b"INDX" => Ok(Tag::INDX),
             b"ZZZZ" => Ok(Tag::ZZZZ),
             b"PAD\xff" => Ok(Tag::PAD),
-            _ => Err(Error::InvalidTag(Box::from(bytes))),
+            _ => Err(Error::InvalidTag),
         }
     }
 
     /// Returns true if this tag's value is itself an `RtMessage`.
-    pub fn is_nested(&self) -> bool {
-        matches!(self, Tag::CERT | Tag::DELE | Tag::SREP)
+    pub const fn is_nested(&self) -> bool {
+        match self {
+            Tag::CERT | Tag::DELE | Tag::SREP => true,
+            _ => false,
+        }
     }
 
     /// A short (non-canonical) string representation of the tag
-    fn as_string(&self) -> String {
-        self.data().display.to_string()
+    pub const fn as_string(&self) -> &'static str {
+        self.data().display
     }
 }
 
