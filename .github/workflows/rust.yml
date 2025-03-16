@@ -17,13 +17,6 @@ jobs:
         feature: ["default", "gcpkms", "awskms"]
         toolchain: ["stable", "beta"]
     steps:
-    - uses: actions/cache@v2
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - uses: actions/checkout@v2
     - name: Install Rust ${{ matrix.toolchain }} 
       uses: actions-rs/toolchain@v1
