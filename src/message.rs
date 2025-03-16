@@ -154,13 +154,15 @@ impl RtMessage {
         // as an offset from the end of the header
         let msg_end = bytes.len() - header_end;
 
+        // Create an iterator for the offset pairs of each tag value
+        let start_offsets = once(&0).chain(offsets.iter());
+        let end_offsets = offsets.iter().chain(once(&msg_end));
+        let offset_pairs = start_offsets.zip(end_offsets);
+
+        // The message being built
         let mut rt_msg = RtMessage::with_capacity(num_tags);
 
-        for (tag, (value_start, value_end)) in tags.into_iter().zip(
-            once(&0)
-                .chain(offsets.iter())
-                .zip(offsets.iter().chain(once(&msg_end))),
-        ) {
+        for (tag, (value_start, value_end)) in tags.into_iter().zip(offset_pairs) {
             let start_idx = header_end + value_start;
             let end_idx = header_end + value_end;
 
@@ -231,7 +233,7 @@ impl RtMessage {
 
     /// Converts the message into a `HashMap` mapping each tag to its value
     pub fn into_hash_map(self) -> HashMap<Tag, Vec<u8>> {
-        self.tags.into_iter().zip(self.values.into_iter()).collect()
+        self.tags.into_iter().zip(self.values).collect()
     }
 
     /// Encode this message into an on-the-wire representation prefixed with RFC framing.
@@ -330,7 +332,7 @@ impl RtMessage {
         for (tag, value) in self.tags.iter().zip(self.values.iter()) {
             result.push_str(&indent2);
             result.push_str(&tag.to_string());
-            result.push_str("(");
+            result.push('(');
             result.push_str(&value.len().to_string());
             result.push_str(") = ");
 
@@ -339,7 +341,7 @@ impl RtMessage {
                 result.push_str(&nested_msg.to_string(indent_level + 1))
             } else {
                 result.push_str(&HEX.encode(value));
-                result.push_str("\n");
+                result.push('\n');
             }
         }
 
@@ -532,8 +534,7 @@ mod test {
     fn from_bytes_offset_past_end_of_message() {
         let mut msg = RtMessage::with_capacity(2);
         msg.add_field(Tag::NONC, "1111".as_bytes()).unwrap();
-        msg.add_field(Tag::PAD, "aaaaaaaaa".as_bytes())
-            .unwrap();
+        msg.add_field(Tag::PAD, "aaaaaaaaa".as_bytes()).unwrap();
 
         let mut bytes = msg.encode().unwrap();
         // set the PAD value offset to beyond end of the message

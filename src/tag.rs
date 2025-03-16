@@ -18,27 +18,24 @@ use std::fmt::{Display, Formatter};
 use crate::error::Error;
 
 /// An unsigned 32-bit value (key) that maps to a byte-string (value).
+///
+/// Tags are ordered by their little-endian encoding of the ASCII tag value.
+/// For example, 'SIG\x00' is 0x00474953 and 'NONC' is 0x434e4f4e.
 #[allow(non_camel_case_types)]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Clone, Copy, Sequence)]
 pub enum Tag {
-    // Enforcement of the "tags in strictly increasing order" rule is done using the
-    // little-endian encoding of the ASCII tag value; e.g. 'SIG\x00' is 0x00474953 and
-    // 'NONC' is 0x434e4f4e.
-    //
-    // Tags are written here in ascending order
+    // Tags are listed in ascending order based on their wire representation
     SIG,
     VER,
     SRV,
-    DUT1,
     NONC,
     DELE,
     PATH,
-    DTAI,
     RADI,
     PUBK,
-    LEAP,
     MIDP,
     SREP,
+    VERS,
     MINT,
     ROOT,
     CERT,
@@ -48,104 +45,92 @@ pub enum Tag {
     PAD,
 }
 
+/// Metadata for a tag: wire format and display string.
+struct TagData {
+    /// The on-the-wire representation of the tag.
+    wire: &'static [u8],
+    /// The string representation of the tag for display purposes.
+    display: &'static str,
+}
+
 impl Tag {
-    pub (crate) const HASH_PREFIX_SRV: &'static [u8] = &[0xff];
+    pub(crate) const HASH_PREFIX_SRV: &'static [u8] = &[0xff];
 
-    const BYTES_CERT: &'static [u8] = b"CERT";
-    const BYTES_DELE: &'static [u8] = b"DELE";
-    const BYTES_INDX: &'static [u8] = b"INDX";
-    const BYTES_MAXT: &'static [u8] = b"MAXT";
-    const BYTES_MIDP: &'static [u8] = b"MIDP";
-    const BYTES_MINT: &'static [u8] = b"MINT";
-    const BYTES_NONC: &'static [u8] = b"NONC";
-    const BYTES_PAD: &'static [u8] = b"PAD\xff";
-    const BYTES_PATH: &'static [u8] = b"PATH";
-    const BYTES_PUBK: &'static [u8] = b"PUBK";
-    const BYTES_RADI: &'static [u8] = b"RADI";
-    const BYTES_ROOT: &'static [u8] = b"ROOT";
-    const BYTES_SIG: &'static [u8] = b"SIG\x00";
-    const BYTES_SRV: &'static [u8] = b"SRV\x00";
-    const BYTES_SREP: &'static [u8] = b"SREP";
-    const BYTES_VER: &'static [u8] = b"VER\x00";
-    const BYTES_DUT1: &'static [u8] = b"DUT1";
-    const BYTES_DTAI: &'static [u8] = b"DTAI";
-    const BYTES_LEAP: &'static [u8] = b"LEAP";
-    const BYTES_ZZZZ: &'static [u8] = b"ZZZZ";
-
-    /// Translates a tag into its on-the-wire representation
-    pub fn wire_value(self) -> &'static [u8] {
+    /// Returns metadata for this tag.
+    const fn data(&self) -> TagData {
         match self {
-            Tag::CERT => Tag::BYTES_CERT,
-            Tag::DELE => Tag::BYTES_DELE,
-            Tag::INDX => Tag::BYTES_INDX,
-            Tag::MAXT => Tag::BYTES_MAXT,
-            Tag::MIDP => Tag::BYTES_MIDP,
-            Tag::MINT => Tag::BYTES_MINT,
-            Tag::NONC => Tag::BYTES_NONC,
-            Tag::PAD => Tag::BYTES_PAD,
-            Tag::PATH => Tag::BYTES_PATH,
-            Tag::PUBK => Tag::BYTES_PUBK,
-            Tag::RADI => Tag::BYTES_RADI,
-            Tag::ROOT => Tag::BYTES_ROOT,
-            Tag::SIG => Tag::BYTES_SIG,
-            Tag::SRV => Tag::BYTES_SRV,
-            Tag::SREP => Tag::BYTES_SREP,
-            Tag::VER => Tag::BYTES_VER,
-            Tag::DUT1 => Tag::BYTES_DUT1,
-            Tag::DTAI => Tag::BYTES_DTAI,
-            Tag::LEAP => Tag::BYTES_LEAP,
-            Tag::ZZZZ => Tag::BYTES_ZZZZ,
+            Tag::SIG => TagData { wire: b"SIG\x00", display: "SIG" },
+            Tag::VER => TagData { wire: b"VER\x00", display: "VER" },
+            Tag::SRV => TagData { wire: b"SRV\x00", display: "SRV" },
+            Tag::NONC => TagData { wire: b"NONC", display: "NONC" },
+            Tag::DELE => TagData { wire: b"DELE", display: "DELE" },
+            Tag::PATH => TagData { wire: b"PATH", display: "PATH" },
+            Tag::RADI => TagData { wire: b"RADI", display: "RADI" },
+            Tag::PUBK => TagData { wire: b"PUBK", display: "PUBK" },
+            Tag::MIDP => TagData { wire: b"MIDP", display: "MIDP" },
+            Tag::SREP => TagData { wire: b"SREP", display: "SREP" },
+            Tag::VERS => TagData { wire: b"VERS", display: "VERS" },
+            Tag::MINT => TagData { wire: b"MINT", display: "MINT" },
+            Tag::ROOT => TagData { wire: b"ROOT", display: "ROOT" },
+            Tag::CERT => TagData { wire: b"CERT", display: "CERT" },
+            Tag::MAXT => TagData { wire: b"MAXT", display: "MAXT" },
+            Tag::INDX => TagData { wire: b"INDX", display: "INDX" },
+            Tag::ZZZZ => TagData { wire: b"ZZZZ", display: "ZZZZ" },
+            Tag::PAD => TagData { wire: b"PAD\xff", display: "PAD" },
         }
+    }
+
+    /// Returns the on-the-wire representation of this tag.
+    pub const fn wire_value(&self) -> &'static [u8] {
+        self.data().wire
     }
 
     /// Return the `Tag` corresponding to the on-the-wire representation in `bytes` or an
     /// `Error::InvalidTag` if `bytes` do not correspond to a valid tag.
-    pub fn from_wire(bytes: &[u8]) -> Result<Self, Error> {
+    pub const fn from_wire(bytes: &[u8]) -> Result<Self, Error> {
+        // Wish we could do something like
+        //     Tag::SIG.data().wire => Ok(Tag::SIG),
+        // to eliminate the duplication
         match bytes {
-            Tag::BYTES_CERT => Ok(Tag::CERT),
-            Tag::BYTES_DELE => Ok(Tag::DELE),
-            Tag::BYTES_INDX => Ok(Tag::INDX),
-            Tag::BYTES_MAXT => Ok(Tag::MAXT),
-            Tag::BYTES_MIDP => Ok(Tag::MIDP),
-            Tag::BYTES_MINT => Ok(Tag::MINT),
-            Tag::BYTES_NONC => Ok(Tag::NONC),
-            Tag::BYTES_PAD => Ok(Tag::PAD),
-            Tag::BYTES_PATH => Ok(Tag::PATH),
-            Tag::BYTES_PUBK => Ok(Tag::PUBK),
-            Tag::BYTES_RADI => Ok(Tag::RADI),
-            Tag::BYTES_ROOT => Ok(Tag::ROOT),
-            Tag::BYTES_SIG => Ok(Tag::SIG),
-            Tag::BYTES_SRV => Ok(Tag::SRV),
-            Tag::BYTES_SREP => Ok(Tag::SREP),
-            Tag::BYTES_VER => Ok(Tag::VER),
-            Tag::BYTES_DUT1 => Ok(Tag::DUT1),
-            Tag::BYTES_DTAI => Ok(Tag::DTAI),
-            Tag::BYTES_LEAP => Ok(Tag::LEAP),
-            Tag::BYTES_ZZZZ => Ok(Tag::ZZZZ),
-            _ => Err(Error::InvalidTag(Box::from(bytes))),
+            b"SIG\x00" => Ok(Tag::SIG),
+            b"VER\x00" => Ok(Tag::VER),
+            b"SRV\x00" => Ok(Tag::SRV),
+            b"NONC" => Ok(Tag::NONC),
+            b"DELE" => Ok(Tag::DELE),
+            b"PATH" => Ok(Tag::PATH),
+            b"RADI" => Ok(Tag::RADI),
+            b"PUBK" => Ok(Tag::PUBK),
+            b"MIDP" => Ok(Tag::MIDP),
+            b"SREP" => Ok(Tag::SREP),
+            b"VERS" => Ok(Tag::VERS),
+            b"MINT" => Ok(Tag::MINT),
+            b"ROOT" => Ok(Tag::ROOT),
+            b"CERT" => Ok(Tag::CERT),
+            b"MAXT" => Ok(Tag::MAXT),
+            b"INDX" => Ok(Tag::INDX),
+            b"ZZZZ" => Ok(Tag::ZZZZ),
+            b"PAD\xff" => Ok(Tag::PAD),
+            _ => Err(Error::InvalidTag),
         }
     }
 
-    /// Tags for which values are themselves an `RtMessage`
-    pub fn is_nested(&self) -> bool {
-        *self == Tag::CERT || *self == Tag::DELE || *self == Tag::SREP
-    }
-
-    /// A short (non canonical) string representation of the tag
-    fn to_string(&self) -> String {
+    /// Returns true if this tag's value is itself an `RtMessage`.
+    pub const fn is_nested(&self) -> bool {
         match self {
-            Tag::PAD => String::from("PAD"),
-            Tag::SIG => String::from("SIG"),
-            Tag::SRV => String::from("SRV"),
-            Tag::VER => String::from("VER"),
-            _ => String::from_utf8(self.wire_value().to_vec()).unwrap(),
+            Tag::CERT | Tag::DELE | Tag::SREP => true,
+            _ => false,
         }
+    }
+
+    /// A short (non-canonical) string representation of the tag
+    pub const fn as_string(&self) -> &'static str {
+        self.data().display
     }
 }
 
 impl Display for Tag {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_string())
+        write!(f, "{}", self.as_string())
     }
 }
 
@@ -157,11 +142,23 @@ mod test {
     #[test]
     fn tags_in_increasing_order() {
         let values = enum_iterator::all::<Tag>().collect::<Vec<_>>();
-        for (idx, _) in values.iter().enumerate() {
-            if idx == 0 {
-                continue;
-            }
-            assert!(values[idx - 1] < values[idx]);
+
+        // Start from index 1 and compare with the previous element
+        for i in 1..values.len() {
+            assert!(
+                values[i-1] < values[i],
+                "Tags not in ascending order: {:?} >= {:?}", values[i-1], values[i]
+            );
+        }
+    }
+
+    #[test]
+    fn test_wire_value_and_from_wire() {
+        // Test that for each tag, from_wire(wire_value()) is identity
+        for tag in enum_iterator::all::<Tag>() {
+            let wire = tag.wire_value();
+            let roundtrip = Tag::from_wire(wire).unwrap();
+            assert_eq!(tag, roundtrip);
         }
     }
 }

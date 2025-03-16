@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::stats::ClientStatEntry;
+use crate::stats::ClientStats;
 use crate::stats::ServerStats;
 use crate::Error;
 use std::collections::hash_map::Iter;
@@ -34,7 +34,7 @@ pub struct AggregatedStats {
     bytes_sent: usize,
     send_failed_attempts: u64,
     send_retry_attempts: u64,
-    empty_map: HashMap<IpAddr, ClientStatEntry>,
+    empty_map: HashMap<IpAddr, ClientStats>,
 }
 
 impl Default for AggregatedStats {
@@ -62,7 +62,7 @@ impl AggregatedStats {
 }
 
 impl ServerStats for AggregatedStats {
-    fn add_rfc_request(&mut self, _: &IpAddr) {
+    fn add_ietf_request(&mut self, _: &IpAddr) {
         self.rfc_requests += 1
     }
 
@@ -144,11 +144,11 @@ impl ServerStats for AggregatedStats {
         0
     }
 
-    fn stats_for_client(&self, _addr: &IpAddr) -> Option<&ClientStatEntry> {
+    fn stats_for_client(&self, _addr: &IpAddr) -> Option<&ClientStats> {
         None
     }
 
-    fn iter(&self) -> Iter<IpAddr, ClientStatEntry> {
+    fn iter(&self) -> Iter<IpAddr, ClientStats> {
         self.empty_map.iter()
     }
 

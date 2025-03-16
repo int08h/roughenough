@@ -35,10 +35,7 @@ use roughenough::key::LongTermKey;
 use roughenough::merkle::MerkleTree;
 use roughenough::sign::MsgVerifier;
 use roughenough::version::Version;
-use roughenough::{
-    roughenough_version, Error, RtMessage, Tag, CERTIFICATE_CONTEXT, REQUEST_FRAMING_BYTES,
-    SIGNED_RESPONSE_CONTEXT,
-};
+use roughenough::{roughenough_version, Error, RtMessage, Tag, REQUEST_FRAMING_BYTES};
 
 const HEX: Encoding = HEXLOWER_PERMISSIVE;
 
@@ -47,12 +44,12 @@ type Nonce = Vec<u8>;
 fn create_nonce(ver: Version) -> Nonce {
     let rng = rand::SystemRandom::new();
     match ver {
-        Version::Classic => {
+        Version::Google => {
             let mut nonce = [0u8; 64];
             rng.fill(&mut nonce).unwrap();
             nonce.to_vec()
         }
-        Version::Rfc | Version::RfcDraft11 => {
+        Version::RfcDraft13 => {
             let mut nonce = [0u8; 32];
             rng.fill(&mut nonce).unwrap();
             nonce.to_vec()
@@ -60,16 +57,18 @@ fn create_nonce(ver: Version) -> Nonce {
     }
 }
 
-fn make_request(ver: Version, nonce: &Nonce, text_dump: bool, pub_key: &Option<Vec<u8>>) -> Vec<u8> {
-    let mut msg = RtMessage::with_capacity(3);
+fn make_request(
+    ver: Version,
+    nonce: &Nonce,
+    text_dump: bool,
+    pub_key: &Option<Vec<u8>>,
+) -> Vec<u8> {
+    let mut msg = RtMessage::with_capacity(4);
 
-    let srv_value = match pub_key {
-        None => None,
-        Some(ref pk) => Some(LongTermKey::calc_srv_value(&pk)),
-    };
+    let srv_value = pub_key.as_ref().map(|pk| LongTermKey::calc_srv_value(pk));
 
     match ver {
-        Version::Classic => {
+        Version::Google => {
             msg.add_field(Tag::NONC, nonce).unwrap();
             msg.add_field(Tag::PAD, &[]).unwrap();
 
@@ -86,12 +85,12 @@ fn make_request(ver: Version, nonce: &Nonce, text_dump: bool, pub_key: &Option<V
 
             msg.encode().unwrap()
         }
-        Version::Rfc | Version::RfcDraft11 => {
+        Version::RfcDraft13 => {
+            msg.add_field(Tag::VER, ver.wire_bytes()).unwrap();
             if srv_value.is_some() {
                 let val = srv_value.as_ref().unwrap();
                 msg.add_field(Tag::SRV, val).unwrap();
             }
-            msg.add_field(Tag::VER, ver.wire_bytes()).unwrap();
             msg.add_field(Tag::NONC, nonce).unwrap();
             msg.add_field(Tag::ZZZZ, &[]).unwrap();
 
@@ -100,11 +99,11 @@ fn make_request(ver: Version, nonce: &Nonce, text_dump: bool, pub_key: &Option<V
 
             msg.clear();
 
+            msg.add_field(Tag::VER, ver.wire_bytes()).unwrap();
             if srv_value.is_some() {
                 let val = srv_value.as_ref().unwrap();
                 msg.add_field(Tag::SRV, val).unwrap();
             }
-            msg.add_field(Tag::VER, ver.wire_bytes()).unwrap();
             msg.add_field(Tag::NONC, nonce).unwrap();
             msg.add_field(Tag::ZZZZ, &padding).unwrap();
 
@@ -119,9 +118,9 @@ fn make_request(ver: Version, nonce: &Nonce, text_dump: bool, pub_key: &Option<V
 
 fn receive_response(ver: Version, buf: &[u8], buf_len: usize) -> RtMessage {
     match ver {
-        Version::Classic => RtMessage::from_bytes(&buf[0..buf_len]).unwrap(),
-        Version::Rfc | Version::RfcDraft11 => {
-            verify_framing(&buf).unwrap();
+        Version::Google => RtMessage::from_bytes(&buf[0..buf_len]).unwrap(),
+        Version::RfcDraft13 => {
+            verify_framing(buf).unwrap();
             RtMessage::from_bytes(&buf[12..buf_len]).unwrap()
         }
     }
@@ -160,7 +159,7 @@ fn stress_test_forever(ver: Version, addr: &SocketAddr) -> ! {
     } else {
         "0.0.0.0:0"
     })
-        .expect("Couldn't open UDP socket");
+    .expect("Couldn't open UDP socket");
     let request = make_request(ver, &nonce, false, &None);
     loop {
         socket.send_to(&request, addr).unwrap();
@@ -241,27 +240,29 @@ impl ResponseHandler {
     }
 
     fn validate_dele(&self) {
-        let mut full_cert = Vec::from(CERTIFICATE_CONTEXT.as_bytes());
-        full_cert.extend(&self.cert[&Tag::DELE]);
+        let pubk = self.pub_key.as_ref().unwrap();
+        let sig_value = &self.cert[&Tag::SIG];
+        let mut cert_data = Vec::from(self.version.dele_prefix());
+        cert_data.extend(&self.cert[&Tag::DELE]);
 
-        assert!(
-            self.validate_sig(
-                self.pub_key.as_ref().unwrap(),
-                &self.cert[&Tag::SIG],
-                &full_cert,
-            ),
-            "Invalid signature on DELE tag, response may not be authentic"
-        );
+        if self.validate_sig(pubk, sig_value, &cert_data) {
+            println!("Valid signature on DELE tag");
+        } else {
+            println!("INVALID signature on DELE tag, response may not be authentic");
+        }
     }
 
     fn validate_srep(&self) {
-        let mut full_srep = Vec::from(SIGNED_RESPONSE_CONTEXT.as_bytes());
-        full_srep.extend(&self.msg[&Tag::SREP]);
+        let pubk = &self.dele[&Tag::PUBK];
+        let sig_value = &self.msg[&Tag::SIG];
+        let mut srep_data = Vec::from(self.version.sign_prefix());
+        srep_data.extend(&self.msg[&Tag::SREP]);
 
-        assert!(
-            self.validate_sig(&self.dele[&Tag::PUBK], &self.msg[&Tag::SIG], &full_srep),
-            "Invalid signature on SREP tag, response may not be authentic"
-        );
+        if self.validate_sig(pubk, sig_value, &srep_data) {
+            println!("Valid signature on SREP tag");
+        } else {
+            println!("INVALID signature on SREP tag, response may not be authentic");
+        }
     }
 
     fn validate_merkle(&self) {
@@ -275,8 +276,8 @@ impl ResponseHandler {
         let paths = &self.msg[&Tag::PATH];
 
         let hash = match self.version {
-            Version::Classic => MerkleTree::new_sha512_classic(),
-            Version::Rfc | Version::RfcDraft11 => MerkleTree::new_sha512_ietf(),
+            Version::Google => MerkleTree::new_sha512_google(),
+            Version::RfcDraft13 => MerkleTree::new_sha512_ietf(),
         }
         .root_from_paths(index as usize, &self.nonce, paths);
 
@@ -383,7 +384,7 @@ fn main() {
             .short("p")
             .long("protocol")
             .takes_value(true)
-            .help("Roughtime protocol version to use (0 = classic, 1 = rfc, 11 = draft11)")
+            .help("Roughtime protocol version to use (0 = google, 13 = draft13)")
             .default_value("0")
         )
         .arg(Arg::with_name("timeout")
@@ -424,11 +425,10 @@ fn main() {
     }
 
     let version = match protocol {
-        0 => Version::Classic,
-        1 => Version::Rfc,
-        11 => Version::RfcDraft11,
+        0 => Version::Google,
+        13 => Version::RfcDraft13,
         _ => panic!(
-            "Invalid protocol '{}'; valid values are 0, 1, or 11",
+            "Invalid protocol '{}'; valid values are 0 or 13",
             protocol
         ),
     };
@@ -452,7 +452,7 @@ fn main() {
         } else {
             "0.0.0.0:0"
         })
-            .expect("Couldn't open UDP socket");
+        .expect("Couldn't open UDP socket");
         let request = make_request(version, &nonce, text_dump, &pub_key);
 
         if let Some(f) = file_for_requests.as_mut() {
@@ -508,12 +508,12 @@ fn main() {
             .unwrap();
 
         let (seconds, nsecs) = match version {
-            Version::Classic => {
+            Version::Google => {
                 let seconds = midpoint / 10_u64.pow(6);
                 let nsecs = (midpoint - (seconds * 10_u64.pow(6))) * 10_u64.pow(3);
                 (seconds, nsecs as u32)
             }
-            Version::Rfc | Version::RfcDraft11 => (midpoint, 0),
+            Version::RfcDraft13 => (midpoint, 0),
         };
 
         let verify_str = if verified { "Yes" } else { "No" };

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 
@@ -88,6 +89,10 @@ impl ServerConfig for MemoryConfig {
 
     fn client_stats_enabled(&self) -> bool {
         self.client_stats
+    }
+
+    fn persistence_directory(&self) -> Option<PathBuf> {
+        None
     }
 
     fn fault_percentage(&self) -> u8 {

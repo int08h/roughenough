@@ -79,7 +79,7 @@ pub mod stats;
 pub mod version;
 
 /// Version of Roughenough
-pub const VERSION: &str = "1.3.0-draft11";
+pub const VERSION: &str = "1.3.0-draft13";
 
 /// Roughenough version string enriched with any compile-time optional features
 pub fn roughenough_version() -> String {
@@ -107,12 +107,6 @@ pub const SEED_LENGTH: u32 = 32;
 
 /// Size (in bytes) of an Ed25519 signature
 pub const SIGNATURE_LENGTH: u32 = 64;
-
-/// Prefixed to the server's certificate before generating or verifying certificate's signature
-pub const CERTIFICATE_CONTEXT: &str = "RoughTime v1 delegation signature--\x00";
-
-/// Prefixed to the server's response before generating or verifying the server's signature
-pub const SIGNED_RESPONSE_CONTEXT: &str = "RoughTime v1 response signature\x00";
 
 /// Value prepended to leaves prior to hashing
 pub const TREE_LEAF_TWEAK: &[u8] = &[0x00];

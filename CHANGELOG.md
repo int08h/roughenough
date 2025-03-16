@@ -1,3 +1,26 @@
+## Version 1.3.0-draft13
+* **Interop testing still needed**. This implementation has undergone initial testing, but
+  is not yet ready for production use.
+* Roughenough tries to strictly implement the Roughtime protocol as described in 
+  [the draft-13 RFC](https://www.ietf.org/archive/id/draft-ietf-ntp-roughtime-13.html). Unlike prior
+  version of Roughenough, now there are no (intentional) deviations from the RFC. Roughenough strives
+  to be a full compliant implementation. Deviations from that ideal are probally bugs.
+* The Roughenough server operates both the "classic" Google protocol __and__ the RFC 
+  compliant protocol at the same time on the same serving port. The 8-byte magic frame value added
+  by the RFC is used to distinguish classic vs. rfc requests.
+* The version value for IETF RFC draft13 (the VER tag) is `0x0800000c`
+* The new `-p/--protocol` flag of `roughenough-client` controls the protocol version to
+  use in requests (`0` = classic protocol, `13` = RFC draft13 protocol). The default is `0` the
+  "classic" protocol, until the RFC is finalized.
+* Summarized changes over prior RFC drafts: 
+  * Hash over the entire request packet in Merkle tree
+  * Check depth of PATH is <32 
+  * Remove trailing "--" from delegation signature context string
+  * Sorted values in `VER` tag
+  * Version number changed to `0x8000000c`
+  * `VER` tag moved inside `SREP`
+  * Added `VERS` tag
+
 ## Version 1.2.0-draft-5
 * Roughenough (mostly) implements the Roughtime protocol as specified in [the draft-5 RFC](https://www.ietf.org/archive/id/draft-ietf-ntp-roughtime-05.html).
   

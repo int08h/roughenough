@@ -24,7 +24,7 @@ use rand::distributions::Bernoulli;
 use rand::rngs::SmallRng;
 use rand::seq::index::sample as index_sample;
 use rand::seq::SliceRandom;
-use rand::{FromEntropy, Rng};
+use rand::{FromEntropy, Rng, RngCore};
 
 use crate::grease::Pathologies::*;
 use crate::tag::Tag;
@@ -117,15 +117,13 @@ impl Grease {
     ///
     /// Replace valid SIG signature with random garbage
     ///
-    fn corrupt_response_signature(&self, src_msg: &RtMessage) -> RtMessage {
+    fn corrupt_response_signature(&mut self, src_msg: &RtMessage) -> RtMessage {
         if src_msg.get_field(Tag::SIG).is_none() {
             return src_msg.to_owned();
         }
 
-        let mut prng = SmallRng::from_entropy();
         let mut random_sig: [u8; SIGNATURE_LENGTH as usize] = [0u8; SIGNATURE_LENGTH as usize];
-
-        prng.fill(&mut random_sig);
+        self.prng.fill_bytes(&mut random_sig);
 
         let mut new_msg = RtMessage::with_capacity(src_msg.num_fields());
         new_msg.add_field(Tag::SIG, &random_sig).unwrap();
@@ -232,7 +230,7 @@ mod test {
         msg.add_field(Tag::CERT, &[b'2']).unwrap();
         msg.add_field(Tag::INDX, &[b'3']).unwrap();
 
-        let grease = Grease::new(1);
+        let mut grease = Grease::new(1);
         let changed = grease.corrupt_response_signature(&msg);
 
         println!(

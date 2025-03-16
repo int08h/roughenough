@@ -18,22 +18,22 @@
 
 use std::io::ErrorKind;
 use std::io::Write;
-use std::net::{IpAddr, Shutdown, SocketAddr};
+use std::net::{Shutdown, SocketAddr};
+use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
-
-use humansize::{format_size, BINARY};
-use mio::net::{TcpListener, UdpSocket};
-use mio::{Events, Poll, PollOpt, Ready, Token};
-use mio_extras::timer::Timer;
+use std::time::{Duration, Instant};
 
 use crate::config::ServerConfig;
 use crate::key::LongTermKey;
 use crate::kms;
 use crate::request;
 use crate::responder::Responder;
-use crate::stats::{AggregatedStats, ClientStatEntry, PerClientStats, ServerStats};
+use crate::stats::{AggregatedStats, ClientStats, PerClientStats, ServerStats, StatsQueue};
 use crate::version::Version;
+use mio::net::{TcpListener, UdpSocket};
+use mio::{Events, Poll, PollOpt, Ready, Token};
+use mio_extras::timer::Timer;
+use rand::{thread_rng, RngCore};
 
 // mio event registrations
 const EVT_MESSAGE: Token = Token(0);
@@ -58,20 +58,20 @@ pub struct Server {
     socket: UdpSocket,
     health_listener: Option<TcpListener>,
     poll_duration: Option<Duration>,
-    status_interval: Duration,
-    timer: Timer<()>,
     poll: Poll,
-    responder_rfc: Responder,
-    responder_draft: Responder,
+    responder_ietf: Responder,
     responder_classic: Responder,
     buf: [u8; 65_536],
     thread_name: String,
     srv_value: Vec<u8>,
 
-    stats: Box<dyn ServerStats>,
+    stats_pub_freq: Duration,
+    stats_pub_timer: Timer<()>,
+    stats_recorder: Box<dyn ServerStats>,
+    stats_queue: Arc<StatsQueue>,
 
     // Used to send requests to ourselves in fuzzing mode
-    #[cfg(fuzzing)]
+    #[cfg(feature = "fuzzing")]
     fake_client_socket: UdpSocket,
 }
 
@@ -80,9 +80,11 @@ impl Server {
     /// Create a new server instance from the provided
     /// [`ServerConfig`](../config/trait.ServerConfig.html) trait object instance.
     ///
-    pub fn new(config: &dyn ServerConfig, socket: UdpSocket) -> Server {
+    pub fn new(config: &dyn ServerConfig, socket: UdpSocket, queue: Arc<StatsQueue>) -> Server {
+        let stats_freq = config.status_interval() / 10;
+        let delay = Self::compute_delay(stats_freq);
         let mut timer: Timer<()> = Timer::default();
-        timer.set_timeout(config.status_interval(), ());
+        timer.set_timeout(delay, ());
 
         let poll = Poll::new().unwrap();
         poll.register(&socket, EVT_MESSAGE, Ready::readable(), PollOpt::edge())
@@ -127,12 +129,10 @@ impl Server {
             LongTermKey::new(&seed)
         };
 
-        let responder_rfc = Responder::new(Version::Rfc, config, &mut long_term_key);
-        let responder_draft = Responder::new(Version::RfcDraft11, config, &mut long_term_key);
-        let responder_classic = Responder::new(Version::Classic, config, &mut long_term_key);
+        let responder_ietf = Responder::new(Version::RfcDraft13, config, &mut long_term_key);
+        let responder_classic = Responder::new(Version::Google, config, &mut long_term_key);
 
         let batch_size = config.batch_size();
-        let status_interval = config.status_interval();
         let thread_name = thread::current().name().unwrap().to_string();
         let poll_duration = Some(Duration::from_millis(100));
         let srv_value = long_term_key.srv_value().to_vec();
@@ -142,28 +142,28 @@ impl Server {
             socket,
             health_listener,
             poll_duration,
-            status_interval,
-            timer,
             poll,
-            responder_rfc,
-            responder_draft,
+            responder_ietf,
             responder_classic,
             buf: [0u8; 65_536],
             thread_name,
             srv_value,
-            stats,
+            stats_pub_freq: stats_freq,
+            stats_pub_timer: timer,
+            stats_recorder: stats,
+            stats_queue: queue,
 
-            #[cfg(fuzzing)]
+            #[cfg(feature = "fuzzing")]
             fake_client_socket: UdpSocket::bind(&"127.0.0.1:0".parse().unwrap()).unwrap(),
         }
     }
 
     /// Returns a reference to the server's long-term public key
     pub fn get_public_key(&self) -> &str {
-        &self.responder_rfc.get_public_key()
+        self.responder_ietf.get_public_key()
     }
 
-    #[cfg(fuzzing)]
+    #[cfg(feature = "fuzzing")]
     pub fn send_to_self(&mut self, data: &[u8]) {
         let res = self
             .fake_client_socket
@@ -182,25 +182,20 @@ impl Server {
         for msg in events.iter() {
             match msg.token() {
                 EVT_MESSAGE => loop {
-                    self.responder_rfc.reset();
-                    self.responder_draft.reset();
+                    self.responder_ietf.reset();
                     self.responder_classic.reset();
 
                     let socket_now_empty = self.collect_requests();
 
-                    self.responder_rfc
-                        .send_responses(&mut self.socket, &mut self.stats);
-                    self.responder_draft
-                        .send_responses(&mut self.socket, &mut self.stats);
-                    self.responder_classic
-                        .send_responses(&mut self.socket, &mut self.stats);
+                    self.responder_ietf.send_responses(&mut self.socket, &mut self.stats_recorder);
+                    self.responder_classic.send_responses(&mut self.socket, &mut self.stats_recorder);
 
                     if socket_now_empty {
                         break;
                     }
                 },
                 EVT_HEALTH_CHECK => self.handle_health_check(),
-                EVT_STATUS_UPDATE => self.handle_status_update(),
+                EVT_STATUS_UPDATE => self.send_client_stats(),
                 _ => unreachable!(),
             }
         }
@@ -213,22 +208,18 @@ impl Server {
             match self.socket.recv_from(&mut self.buf) {
                 Ok((num_bytes, src_addr)) => {
                     match request::nonce_from_request(&self.buf, num_bytes, &self.srv_value) {
-                        Ok((nonce, Version::Rfc)) => {
-                            self.responder_rfc.add_request(nonce, src_addr);
-                            self.stats.add_rfc_request(&src_addr.ip());
+                        // TODO(stuart) cleanup when RFC is ratified
+                        Ok((nonce, Version::RfcDraft13)) => {
+                            let request_bytes = &self.buf[..num_bytes];
+                            self.responder_ietf.add_ietf_request(request_bytes, nonce, src_addr);
+                            self.stats_recorder.add_ietf_request(&src_addr.ip());
                         }
-                        // TODO(stuart) remove when RFC is ratified
-                        Ok((nonce, Version::RfcDraft11)) => {
-                            self.responder_draft.add_request(nonce, src_addr);
-                            // Mismatch of draft responder vs rfc stats is intentional
-                            self.stats.add_rfc_request(&src_addr.ip());
-                        }
-                        Ok((nonce, Version::Classic)) => {
-                            self.responder_classic.add_request(nonce, src_addr);
-                            self.stats.add_classic_request(&src_addr.ip());
+                        Ok((nonce, Version::Google)) => {
+                            self.responder_classic.add_classic_request(nonce, src_addr);
+                            self.stats_recorder.add_classic_request(&src_addr.ip());
                         }
                         Err(e) => {
-                            self.stats.add_invalid_request(&src_addr.ip(), &e);
+                            self.stats_recorder.add_invalid_request(&src_addr.ip(), &e);
 
                             debug!(
                                 "Invalid request: '{:?}' ({} bytes) from {} (#{} in batch)",
@@ -257,9 +248,9 @@ impl Server {
         match listener.accept() {
             Ok((ref mut stream, src_addr)) => {
                 info!("health check from {}", src_addr);
-                self.stats.add_health_check(&src_addr.ip());
+                self.stats_recorder.add_health_check(&src_addr.ip());
 
-                match stream.write(HTTP_RESPONSE.as_bytes()) {
+                match stream.write_all(HTTP_RESPONSE.as_bytes()) {
                     Ok(_) => (),
                     Err(e) => warn!("error writing health check {}", e),
                 };
@@ -278,51 +269,86 @@ impl Server {
         }
     }
 
-    fn handle_status_update(&mut self) {
-        let mut vec: Vec<(&IpAddr, &ClientStatEntry)> = self.stats.iter().collect();
-        // sort in descending order
-        vec.sort_by(|lhs, rhs| {
-            let lhs_total = lhs.1.classic_requests + lhs.1.rfc_requests;
-            let rhs_total = rhs.1.classic_requests + rhs.1.rfc_requests;
-            rhs_total.cmp(&lhs_total)
-        });
+    fn send_client_stats(&mut self) {
+        let start = Instant::now();
 
-        for (addr, counts) in vec {
-            info!(
-                "{:16}: {} classic req, {} rfc req; {} invalid requests; {} classic resp, {} rfc resp ({} sent); {} failed sends, {} retried sends",
-                format!("{}", addr),
-                counts.classic_requests,
-                counts.rfc_requests,
-                counts.invalid_requests,
-                counts.classic_responses_sent,
-                counts.rfc_responses_sent,
-                format_size(counts.bytes_sent, BINARY),
-                counts.failed_send_attempts,
-                counts.retried_send_attempts
-            );
+        let clients: Vec<ClientStats> = self.stats_recorder
+            .iter()
+            .map(|(_, s)| *s).collect();
+
+        let client_count = clients.len();
+        if client_count > 0 {
+            self.stats_queue.force_push(clients);
+            self.stats_recorder.clear();
         }
 
-        info!(
-            "{} Totals: {} unique clients; {} total req ({} classic req, {} rfc req); {} invalid requests; {} total resp ({} classic resp, {} rfc resp); {} sent; {} failed sends, {} retried sends",
-            self.thread_name(),
-            self.stats.total_unique_clients(),
-            self.stats.total_valid_requests(),
-            self.stats.num_classic_requests(),
-            self.stats.num_rfc_requests(),
-            self.stats.total_invalid_requests(),
-            self.stats.total_responses_sent(),
-            self.stats.num_classic_responses_sent(),
-            self.stats.num_rfc_responses_sent(),
-            format_size(self.stats.total_bytes_sent(), BINARY),
-            self.stats.total_failed_send_attempts(),
-            self.stats.total_retried_send_attempts()
-        );
+        let delay = Self::compute_delay(self.stats_pub_freq);
+        self.stats_pub_timer.set_timeout(delay, ());
 
-        self.stats.clear();
-        self.timer.set_timeout(self.status_interval, ());
+        let elapsed = start.elapsed();
+        debug!(
+            "{} enqueued {} client stats in {:.3} seconds",
+            self.thread_name(),
+            client_count,
+            elapsed.as_secs_f32()
+        );
     }
 
     pub fn thread_name(&self) -> &str {
         &self.thread_name
+    }
+
+    fn compute_delay(base: Duration) -> Duration {
+        if base.as_secs() < 1 {
+            return base;
+        }
+
+        let mut jitter: u8 = 0;
+        while jitter == 0 {
+            jitter = (thread_rng().next_u32() & 0xff) as u8;
+        }
+
+        if jitter & 1 == 1 {
+            base - Duration::from_millis(jitter as u64)
+        } else {
+            base + Duration::from_millis(jitter as u64)
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::server::Server;
+    use std::time::Duration;
+
+    #[test]
+    fn no_jitter_when_duration_lt_1sec() {
+        assert_eq!(
+            Server::compute_delay(Duration::from_millis(999)),
+            Duration::from_millis(999)
+        );
+        assert_eq!(
+            Server::compute_delay(Duration::from_millis(500)),
+            Duration::from_millis(500)
+        );
+    }
+
+    #[test]
+    fn jitter_is_added() {
+        for i in 2..20 {
+            let base = Duration::from_secs(i);
+            let computed = Server::compute_delay(base);
+
+            // jitter is always added, we never see the same value back
+            assert_ne!(computed, base);
+
+            // difference is always within 256 milliseconds
+            let limit = Duration::from_millis(256);
+            if base > computed {
+                assert!(base - computed < limit);
+            } else {
+                assert!(computed - base < limit);
+            }
+        }
     }
 }

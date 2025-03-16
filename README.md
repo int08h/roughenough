@@ -15,20 +15,24 @@ Requires latest stable Rust to compile. Contributions welcome, see
 
 ## RFC Work-In-Progress
 
-Roughenough implements the Roughtime protocol as specified in [the draft-11 RFC](https://www.ietf.org/archive/id/draft-ietf-ntp-roughtime-11.html).
+**RFC interop testing still needed. This implementation has undergone testing as part
+of its development, but is not yet ready for production use. More testing between
+Roughtime implementations is required.**
+
+Roughenough implements the Roughtime protocol as specified in [the draft-13 RFC](https://www.ietf.org/archive/id/draft-ietf-ntp-roughtime-13.html).
 
 The Roughenough server operates both the "classic" protocol **and** the RFC compliant 
 protocol at the same time on a single serving port (the 8-byte magic frame value added 
 by the RFC is used to distinguish classic vs. RFC requests).
 
 The new `-p/--protocol` flag of `roughenough-client` controls the protocol version to
-use in requests. `0` = classic protocol (no `VER` tag), `1` = anticipated RFC protocol 
-(`VER` tag with value `0x00000001`), and `11` is the RFC Draft11 protocol (`VER` tag with
-value `0x0b000008`). The default is `0` the "classic" protocol, until the RFC is finalized.
+use in requests. `0` = "classic" Google protocol (no `VER` tag), and `13` is the RFC 
+Draft13 protocol (`VER` tag with value `0x0b00000c`). The default is `0` the "classic" 
+protocol, until the RFC is finalized.
 
 ```
 # send RFC protocol Roughtime requests
-$ roughenough-client -p 1 roughtime.int08h.com 2002
+$ roughenough-client -p 13 roughtime.int08h.com 2002
 ```
 
 ## Links
@@ -112,16 +116,16 @@ There are two (mutually exclusive) ways to configure the Roughenough server:
 
 The server accepts the following configuration parameters:
 
-YAML Key | Environment Variable | Necessity | Description
---- | --- | --- | ---
-`interface` | `ROUGHENOUGH_INTERFACE` | Required | IP address or interface name for listening to client requests
-`port` | `ROUGHENOUGH_PORT` | Required | UDP port to listen for requests
-`seed` | `ROUGHENOUGH_SEED` | Required | A 32-byte hexadecimal value used to generate the server's long-term key pair. **This is a secret value and must be un-guessable**, treat it with care. (If compiled with KMS support, length will vary; see [Optional Features](#optional-features))
-`batch_size` | `ROUGHENOUGH_BATCH_SIZE` | Optional | The maximum number of requests to process in one batch. All nonces in a batch are used to build a Merkle tree, the root of which is signed. Default is `64` requests per batch.
-`status_interval` | `ROUGHENOUGH_STATUS_INTERVAL` | Optional | Number of _seconds_ between each logged status update. Default is `600` seconds (10 minutes).
-`health_check_port` | `ROUGHENOUGH_HEALTH_CHECK_PORT` | Optional | If present, enable an HTTP health check responder on the provided port. **Use with caution**, see [Optional Features](#optional-features).
-`kms_protection` | `ROUGHENOUGH_KMS_PROTECTION` | Optional | If compiled with KMS support, the ID of the KMS key used to protect the long-term identity. See [Optional Features](#optional-features).
-`fault_percentage` | `ROUGHENOUGH_FAULT_PERCENTAGE` | Optional | Likelihood (as a percentage) that the server will intentionally return an invalid client response. An integer range from `0` (disabled, all responses valid) to `50` (50% of responses will be invalid). Default is `0` (disabled).
+| YAML Key            | Environment Variable            | Necessity | Description                                                                                                                                                                                                                                          |
+|---------------------|---------------------------------|-----------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `interface`         | `ROUGHENOUGH_INTERFACE`         | Required  | IP address or interface name for listening to client requests                                                                                                                                                                                        |
+| `port`              | `ROUGHENOUGH_PORT`              | Required  | UDP port to listen for requests                                                                                                                                                                                                                      |
+| `seed`              | `ROUGHENOUGH_SEED`              | Required  | A 32-byte hexadecimal value used to generate the server's long-term key pair. **This is a secret value and must be un-guessable**, treat it with care. (If compiled with KMS support, length will vary; see [Optional Features](#optional-features)) |
+| `batch_size`        | `ROUGHENOUGH_BATCH_SIZE`        | Optional  | The maximum number of requests to process in one batch. All nonces in a batch are used to build a Merkle tree, the root of which is signed. Default is `64` requests per batch.                                                                      |
+| `status_interval`   | `ROUGHENOUGH_STATUS_INTERVAL`   | Optional  | Number of _seconds_ between each logged status update. Default is `600` seconds (10 minutes).                                                                                                                                                        |
+| `health_check_port` | `ROUGHENOUGH_HEALTH_CHECK_PORT` | Optional  | If present, enable an HTTP health check responder on the provided port. **Use with caution**, see [Optional Features](#optional-features).                                                                                                           |
+| `kms_protection`    | `ROUGHENOUGH_KMS_PROTECTION`    | Optional  | If compiled with KMS support, the ID of the KMS key used to protect the long-term identity. See [Optional Features](#optional-features).                                                                                                             |
+| `fault_percentage`  | `ROUGHENOUGH_FAULT_PERCENTAGE`  | Optional  | Likelihood (as a percentage) that the server will intentionally return an invalid client response. An integer range from `0` (disabled, all responses valid) to `50` (50% of responses will be invalid). Default is `0` (disabled).                  |
 
 #### YAML Configuration 
 
@@ -229,7 +233,7 @@ created by Adam Langley and Robert Obryk.
 * Marcus Dansarie (github.com/dansarie)
 
 ## Copyright and License
-Roughenough is copyright (c) 2017-2024 int08h LLC. All rights reserved. 
+Roughenough is copyright (c) 2017-2025 int08h LLC. All rights reserved. 
 
 int08h LLC licenses Roughenough (the "Software") to you under the Apache License, version 2.0 
 (the "License"); you may not use this Software except in compliance with the License. You may obtain 

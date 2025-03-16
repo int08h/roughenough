@@ -19,7 +19,7 @@ fn create_signed_srep_tags(c: &mut Criterion) {
 
     group.throughput(Elements(1));
     group.bench_function("create signed SREP tag", |b| {
-        b.iter(|| black_box(key.make_srep(Version::Rfc, now, &data)))
+        b.iter(|| black_box(key.make_srep(Version::RfcDraft13, now, &data)))
     });
     group.finish();
 }
@@ -62,7 +62,7 @@ fn create_new_merkle_tree(c: &mut Criterion) {
         group.throughput(Elements(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
             b.iter(|| {
-                let mut tree = MerkleTree::new_sha512_classic();
+                let mut tree = MerkleTree::new_sha512_google();
                 for _ in 0..size {
                     tree.push_leaf(DATA);
                 }
@@ -77,7 +77,7 @@ fn reuse_merkle_tree(c: &mut Criterion) {
     let mut group = c.benchmark_group("reuse Merkle tree");
     group.sampling_mode(SamplingMode::Flat);
 
-    let mut tree = MerkleTree::new_sha512_classic();
+    let mut tree = MerkleTree::new_sha512_google();
 
     for size in SIZES.iter() {
         group.throughput(Elements(*size as u64));

@@ -20,9 +20,9 @@ use std::fmt;
 use std::fmt::Formatter;
 
 use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
-use ed25519_dalek::{SigningKey, Signature, Verifier, Signer, VerifyingKey, SecretKey};
-use ring::rand::SecureRandom;
+use ed25519_dalek::{SecretKey, Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use ring::rand;
+use ring::rand::SecureRandom;
 
 const HEX: Encoding = HEXLOWER_PERMISSIVE;
 
@@ -50,10 +50,7 @@ impl MsgVerifier {
 
     pub fn verify(&self, provided_sig: &[u8]) -> bool {
         let sig = Signature::from_slice(provided_sig).expect("valid signature");
-        match self.pubkey.verify(&self.buf, &sig) {
-            Ok(_) => true,
-            _ => false,
-        }
+        self.pubkey.verify(&self.buf, &sig).is_ok()
     }
 }
 

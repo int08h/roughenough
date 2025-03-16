@@ -48,14 +48,17 @@ pub struct Responder {
 impl Responder {
     pub fn new(version: Version, config: &dyn ServerConfig, ltk: &mut LongTermKey) -> Responder {
         let online_key = OnlineKey::new();
-        let cert_bytes = ltk.make_cert(&online_key).encode().expect("make_cert");
+        let cert_bytes = ltk
+            .make_cert(&version, &online_key)
+            .encode()
+            .expect("make_cert");
         let long_term_public_key = HEX.encode(&ltk.public_key());
         let requests = Vec::with_capacity(config.batch_size() as usize);
         let grease = Grease::new(config.fault_percentage());
         let thread_id = thread::current().name().unwrap().to_string();
 
-        let merkle = if version == Version::Classic {
-            MerkleTree::new_sha512_classic()
+        let merkle = if version == Version::Google {
+            MerkleTree::new_sha512_google()
         } else {
             MerkleTree::new_sha512_ietf()
         };
@@ -83,9 +86,19 @@ impl Responder {
         self.requests.is_empty()
     }
 
-    /// Add a request that needs to be responded to
-    pub fn add_request(&mut self, nonce: Vec<u8>, src_addr: SocketAddr) {
+    /// Add a classic request (hashing the NONC) that needs to be responded to
+    pub fn add_classic_request(&mut self, nonce: Vec<u8>, src_addr: SocketAddr) {
         self.merkle.push_leaf(&nonce);
+        self.requests.push((nonce, src_addr));
+    }
+
+    /// Add an IETF request (hashing the entire request, including framing) that needs
+    /// to be responded to.
+    ///
+    /// The nonce (NONC) value is passed in for consistency, so that the loop in
+    /// `send_responses()` remains the same for different protocol versions.
+    pub fn add_ietf_request(&mut self, data: &[u8], nonce: Vec<u8>, src_addr: SocketAddr) {
+        self.merkle.push_leaf(data);
         self.requests.push((nonce, src_addr));
     }
 
@@ -102,7 +115,7 @@ impl Responder {
             .online_key
             .make_srep(self.version, SystemTime::now(), &merkle_root);
 
-        for (idx, &(ref nonce, ref src_addr)) in self.requests.iter().enumerate() {
+        for (idx, (nonce, src_addr)) in self.requests.iter().enumerate() {
             let paths = self.merkle.get_paths(idx);
             let resp_msg = {
                 let r = self.make_response(&srep, &self.cert_bytes, &paths, idx as u32, nonce);
@@ -114,14 +127,14 @@ impl Responder {
             };
 
             let resp_bytes = match self.version {
-                Version::Classic => resp_msg.encode().unwrap(),
-                Version::Rfc | Version::RfcDraft11 => resp_msg.encode_framed().unwrap(),
+                Version::Google => resp_msg.encode().unwrap(),
+                Version::RfcDraft13 => resp_msg.encode_framed().unwrap(),
             };
 
             let mut bytes_sent: usize = 0;
             let mut successful_send: bool = true;
 
-            match socket.send_to(&resp_bytes, &src_addr) {
+            match socket.send_to(&resp_bytes, src_addr) {
                 Ok(num_bytes) => bytes_sent = num_bytes,
                 Err(_) => successful_send = false,
             }
@@ -138,10 +151,8 @@ impl Responder {
 
             if successful_send {
                 match self.version {
-                    Version::Classic => stats.add_classic_response(&src_addr.ip(), bytes_sent),
-                    Version::Rfc | Version::RfcDraft11 => {
-                        stats.add_rfc_response(&src_addr.ip(), bytes_sent)
-                    }
+                    Version::Google => stats.add_classic_response(&src_addr.ip(), bytes_sent),
+                    Version::RfcDraft13 => stats.add_rfc_response(&src_addr.ip(), bytes_sent),
                 }
             } else {
                 stats.add_failed_send_attempt(&src_addr.ip());
@@ -167,14 +178,6 @@ impl Responder {
 
         let mut response = RtMessage::with_capacity(6);
         response.add_field(Tag::SIG, sig_bytes).unwrap();
-
-        if self.version != Version::Classic {
-            response
-                .add_field(Tag::VER, self.version.wire_bytes())
-                .unwrap();
-        }
-
-        response.add_field(Tag::NONC, nonce).unwrap();
         response.add_field(Tag::PATH, path).unwrap();
         response.add_field(Tag::SREP, srep_bytes).unwrap();
         response.add_field(Tag::CERT, cert_bytes).unwrap();

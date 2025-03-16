@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std;
-
 use crate::kms::KmsError;
 use crate::tag::Tag;
 
@@ -24,7 +22,7 @@ pub enum Error {
     TagNotStrictlyIncreasing(Tag),
 
     /// The associated byte sequence does not correspond to a valid Roughtime tag.
-    InvalidTag(Box<[u8]>),
+    InvalidTag,
 
     /// Invalid number of tags specified
     InvalidNumTags(u32),

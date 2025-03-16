@@ -22,12 +22,12 @@
 //! such as files or environment variables.
 //!
 
-use std::net::SocketAddr;
-use std::time::Duration;
-
 use crate::key::KmsProtection;
 use crate::Error;
 use crate::SEED_LENGTH;
+use std::net::SocketAddr;
+use std::path::PathBuf;
+use std::time::Duration;
 
 pub use self::environment::EnvironmentConfig;
 pub use self::file::FileConfig;
@@ -37,7 +37,7 @@ mod environment;
 mod file;
 mod memory;
 
-/// Maximum number of requests to process in one batch and include the the Merkle tree.
+/// Maximum number of requests to process in one batch and include in the Merkle tree.
 pub const DEFAULT_BATCH_SIZE: u8 = 64;
 
 /// Amount of time between each logged status update.
@@ -59,6 +59,7 @@ pub const DEFAULT_STATUS_INTERVAL: Duration = Duration::from_secs(600);
 /// `health_check_port` | `ROUGHENOUGH_HEALTH_CHECK_PORT` | Optional | If present, enable an HTTP health check responder on the provided port. **Use with caution**.
 /// `kms_protection` | `ROUGHENOUGH_KMS_PROTECTION` | Optional | If compiled with KMS support, the ID of the KMS key used to protect the long-term identity.
 /// `client_stats` | `ROUGHENOUGH_CLIENT_STATS` | Optional | A value of `on` or `yes` will enable tracking of per-client request statistics that will be output each time server status is logged. Default is `off` (disabled).
+/// `persistence_directory` | `ROUGHENOUGH_PERSISTENCE_DIRECTORY` | Optional | A writable directory to store request statistics. Default is disabled.
 /// `fault_percentage` | `ROUGHENOUGH_FAULT_PERCENTAGE` | Optional | Likelihood (as a percentage) that the server will intentionally return an invalid client response. An integer range from `0` (disabled, all responses valid) to `50` (50% of responses will be invalid). Default is `0` (disabled).
 /// `num_workers` | `ROUGHENOUGH_NUM_WORKERS` | Optional | Number of worker threads created to process requests. Defaults to `thread::available_parallelism()`
 ///
@@ -101,6 +102,10 @@ pub trait ServerConfig: Send {
     /// [Optional] A value of `on` or `yes` will enable tracking of per-client request statistics
     /// that will be output each time server status is logged. Default is `off` (disabled).
     fn client_stats_enabled(&self) -> bool;
+
+    /// [Optional] A writable directory to store request statistics. Statistics will be written
+    /// to this directory every `status_interval`. Default is disabled.
+    fn persistence_directory(&self) -> Option<PathBuf>;
 
     /// [Optional] Likelihood (as a percentage) that the server will intentionally return an
     /// invalid client response. An integer range from `0` (disabled, all responses valid) to `50`
@@ -198,6 +203,26 @@ pub fn is_valid_config(cfg: &dyn ServerConfig) -> bool {
     if cfg.num_workers() == 0 {
         error!("num_workers must be > 0");
         is_valid = false;
+    }
+
+    if cfg.client_stats_enabled() {
+        if cfg.persistence_directory().is_some() {
+            let dir = cfg.persistence_directory().unwrap();
+
+            if !dir.is_dir() {
+                error!("persistence_directory {} is not a directory", dir.display());
+                is_valid = false;
+            }
+
+            if dir.metadata().unwrap().permissions().readonly() {
+                error!("persistence_directory {} is not writable", dir.display());
+                is_valid = false;
+            }
+        } else {
+            error!("Per-client tracking is enabled (client_stats=true), but no persistence_directory was set");
+            error!("This will result in high memory usage and is likely a misconfiguration");
+            is_valid = false;
+        }
     }
 
     if is_valid {
