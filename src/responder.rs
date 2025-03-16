@@ -118,7 +118,7 @@ impl Responder {
         for (idx, (nonce, src_addr)) in self.requests.iter().enumerate() {
             let paths = self.merkle.get_paths(idx);
             let resp_msg = {
-                let r = self.make_response(&srep, &self.cert_bytes, &paths, idx as u32);
+                let r = self.make_response(&srep, &self.cert_bytes, &paths, idx as u32, nonce);
                 if self.grease.should_add_error() {
                     self.grease.add_errors(&r)
                 } else {
@@ -166,6 +166,7 @@ impl Responder {
         cert_bytes: &[u8],
         path: &[u8],
         idx: u32,
+        nonce: &Vec<u8>,
     ) -> RtMessage {
         let mut index = [0; 4];
         (&mut index as &mut [u8])

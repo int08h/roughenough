@@ -91,7 +91,7 @@ sudo date -u "$(roughenough-client -z roughtime.int08h.com 2002 -f %Y%m%d%H%M.%S
 
 ### Validating Server Responses 
 
-Use the `-p` flag with the client to validate the server's response with its public key.
+Use the `-k` flag with the client to validate the server's response with its public key.
 
 ```bash
 # The public key of 'roughtime.int08h.com' is stored in a DNS TXT record 
@@ -230,6 +230,7 @@ created by Adam Langley and Robert Obryk.
 * Zicklag (github.com/zicklag)
 * Greg at Unrelenting Tech (github.com/unrelentingtech)
 * Eric Swanson (github.com/lachesis)
+* Marcus Dansarie (github.com/dansarie)
 
 ## Copyright and License
 Roughenough is copyright (c) 2017-2025 int08h LLC. All rights reserved. 
