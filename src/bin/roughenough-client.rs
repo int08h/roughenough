@@ -232,11 +232,11 @@ impl ResponseHandler {
             .read_u32::<LittleEndian>()
             .unwrap();
 
-        if let Some(pub_key) = self.pub_key.as_ref() {
-            self.check_dele_signature(pub_key)?;
-            self.check_srep_signature(pub_key)?;
+        if self.pub_key.is_some() {
+            self.check_dele_signature()?;
         }
 
+        self.check_srep_signature()?;
         self.validate_merkle()?;
         self.validate_midpoint(midpoint)?;
 
@@ -246,7 +246,8 @@ impl ResponseHandler {
         })
     }
 
-    fn check_dele_signature(&self, pub_key: &Vec<u8>) -> Result<(), ValidationError>{
+    fn check_dele_signature(&self) -> Result<(), ValidationError> {
+        let pub_key = self.pub_key.as_ref().unwrap();
         let signature = &self.cert[&Tag::SIG];
         let mut cert_data = Vec::from(self.version.dele_prefix());
         cert_data.extend(&self.cert[&Tag::DELE]);
@@ -258,7 +259,8 @@ impl ResponseHandler {
         Ok(())
     }
 
-    fn check_srep_signature(&self, pub_key: &Vec<u8>) -> Result<(), ValidationError> {
+    fn check_srep_signature(&self) -> Result<(), ValidationError> {
+        let pub_key = &self.dele[&Tag::PUBK];
         let signature = &self.msg[&Tag::SIG];
         let mut srep_data = Vec::from(self.version.sign_prefix());
         srep_data.extend(&self.msg[&Tag::SREP]);
