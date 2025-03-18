@@ -117,8 +117,13 @@ impl Responder {
 
         for (idx, (nonce, src_addr)) in self.requests.iter().enumerate() {
             let paths = self.merkle.get_paths(idx);
+            let maybe_nonce = match self.version {
+                Version::RfcDraft13 => Some(nonce),
+                Version::Google => None,
+            };
+
             let resp_msg = {
-                let r = self.make_response(&srep, &self.cert_bytes, &paths, idx as u32, nonce);
+                let r = self.make_response(&srep, &self.cert_bytes, &paths, idx as u32, maybe_nonce);
                 if self.grease.should_add_error() {
                     self.grease.add_errors(&r)
                 } else {
@@ -166,7 +171,7 @@ impl Responder {
         cert_bytes: &[u8],
         path: &[u8],
         idx: u32,
-        nonce: &Vec<u8>,
+        nonce: Option<&Vec<u8>>,
     ) -> RtMessage {
         let mut index = [0; 4];
         (&mut index as &mut [u8])
@@ -178,6 +183,9 @@ impl Responder {
 
         let mut response = RtMessage::with_capacity(6);
         response.add_field(Tag::SIG, sig_bytes).unwrap();
+        if nonce.is_some() {
+            response.add_field(Tag::NONC, nonce.unwrap()).unwrap();
+        }
         response.add_field(Tag::PATH, path).unwrap();
         response.add_field(Tag::SREP, srep_bytes).unwrap();
         response.add_field(Tag::CERT, cert_bytes).unwrap();
