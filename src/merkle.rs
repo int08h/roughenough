@@ -144,14 +144,13 @@ impl MerkleTree {
     }
 
     pub fn root_from_paths(&self, mut index: usize, data: &[u8], paths: &[u8]) -> Hash {
-        let mut hash = {
-            let mut ctx = digest::Context::new(self.algorithm);
-            ctx.update(TREE_LEAF_TWEAK);
-            ctx.update(data);
-            Hash::from(ctx.finish().as_ref())
-        };
+        assert_eq!(
+            paths.len() % self.algorithm.output_len(), 0,
+            "PATH length {} is not a multiple of the hash output length {}",
+            paths.len(), self.algorithm.output_len()
+        );
 
-        assert_eq!(paths.len() % self.algorithm.output_len(), 0);
+        let mut hash = self.hash_leaf(data);
 
         for path in paths.chunks(self.algorithm.output_len()) {
             let mut ctx = digest::Context::new(self.algorithm);
@@ -185,6 +184,7 @@ impl MerkleTree {
 
 #[cfg(test)]
 mod test {
+    use data_encoding::HEXLOWER;
     use crate::merkle::*;
 
     fn test_paths_with_num(num: usize) {
@@ -196,16 +196,16 @@ mod test {
                 merkle_impl.push_leaf(&[i as u8]);
             }
 
-            let root = merkle_impl.compute_root();
+            let expected_root = merkle_impl.compute_root();
 
             for i in 0..num {
                 let paths: Vec<u8> = merkle_impl.get_paths(i);
                 let computed_root = merkle_impl.root_from_paths(i, &[i as u8], &paths);
 
                 assert_eq!(
-                    root, computed_root,
-                    "inequality: {:?} {:?} {:?}",
-                    root, computed_root, i
+                    expected_root, computed_root,
+                    "inequality: expected {:?} != computed {:?} (index {:?})",
+                    HEXLOWER.encode(&expected_root), HEXLOWER.encode(&computed_root), i
                 );
             }
         }
@@ -214,14 +214,17 @@ mod test {
     #[test]
     fn power_of_two() {
         test_paths_with_num(2);
-        test_paths_with_num(4);
         test_paths_with_num(8);
         test_paths_with_num(16);
+        test_paths_with_num(64);
+        test_paths_with_num(128);
     }
 
     #[test]
     fn not_power_of_two() {
         test_paths_with_num(1);
         test_paths_with_num(20);
+        test_paths_with_num(40);
+        test_paths_with_num(200);
     }
 }
