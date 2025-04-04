@@ -117,9 +117,7 @@ impl OnlineKey {
             srep_msg.add_field(Tag::VER, version.wire_bytes()).unwrap();
             srep_msg.add_field(Tag::RADI, &radi).unwrap();
             srep_msg.add_field(Tag::MIDP, &midp).unwrap();
-            srep_msg
-                .add_field(Tag::VERS, &self.vers_wire_bytes)
-                .unwrap();
+            srep_msg.add_field(Tag::VERS, &self.vers_wire_bytes).unwrap();
             srep_msg.add_field(Tag::ROOT, merkle_root).unwrap();
             srep_msg.encode().unwrap()
         };

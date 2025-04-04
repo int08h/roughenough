@@ -16,13 +16,11 @@ use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 
-use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
+use data_encoding::HEXLOWER_PERMISSIVE;
 
 use crate::config::ServerConfig;
 use crate::config::{DEFAULT_BATCH_SIZE, DEFAULT_STATUS_INTERVAL};
 use crate::key::KmsProtection;
-
-const HEX: Encoding = HEXLOWER_PERMISSIVE;
 
 /// A purely in-memory Roughenough config for testing purposes.
 ///
@@ -46,7 +44,7 @@ impl MemoryConfig {
         MemoryConfig {
             port,
             interface: "127.0.0.1".to_string(),
-            seed: HEX.decode(seed).unwrap(),
+            seed: HEXLOWER_PERMISSIVE.decode(seed).unwrap(),
             batch_size: DEFAULT_BATCH_SIZE,
             status_interval: DEFAULT_STATUS_INTERVAL,
             kms_protection: KmsProtection::Plaintext,
