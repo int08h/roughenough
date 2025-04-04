@@ -275,11 +275,8 @@ impl ResponseHandler {
             .unwrap();
         let paths = &self.msg[&Tag::PATH];
 
-        let hash = match self.version {
-            Version::Google => MerkleTree::new_sha512_google(),
-            Version::RfcDraft13 => MerkleTree::new_sha512_ietf(),
-        }
-        .root_from_paths(index as usize, &self.nonce, paths);
+        let hash = MerkleTree::new(self.version)
+            .root_from_paths(index as usize, &self.nonce, paths);
 
         assert_eq!(
             hash,

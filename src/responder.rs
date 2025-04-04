@@ -56,12 +56,7 @@ impl Responder {
         let requests = Vec::with_capacity(config.batch_size() as usize);
         let grease = Grease::new(config.fault_percentage());
         let thread_id = thread::current().name().unwrap().to_string();
-
-        let merkle = if version == Version::Google {
-            MerkleTree::new_sha512_google()
-        } else {
-            MerkleTree::new_sha512_ietf()
-        };
+        let merkle = MerkleTree::new(version);
 
         Responder {
             version,

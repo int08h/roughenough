@@ -36,10 +36,24 @@ pub struct MerkleTree {
 
 impl MerkleTree {
     ///
+    /// Create a new empty Merkle Tree based on SHA-512. The size of the final output
+    /// is controlled by the `version` argument:
+    ///
+    /// * IETF => Output is the most-significant 32-bytes (256-bits), `SHA-512[0:32]`
+    /// * Google => Output is 64-bytes (512 bits)
+    ///
+    pub fn new(version: Version) -> MerkleTree {
+        match version {
+            Google => MerkleTree::new_sha512_google(),
+            RfcDraft13 => MerkleTree::new_sha512_ietf(),
+        }
+    }
+
+    ///
     /// Create a new empty Merkle Tree based on SHA-512.
     /// Output is the most-significant 32-bytes (256-bits), `SHA-512[0:32]`
     ///
-    pub fn new_sha512_ietf() -> MerkleTree {
+    fn new_sha512_ietf() -> MerkleTree {
         MerkleTree {
             levels: vec![vec![]],
             algorithm: &digest::SHA512,
@@ -51,7 +65,7 @@ impl MerkleTree {
     /// Create a new empty Merkle Tree based on SHA-512
     /// Output is 64-bytes (512 bits)
     ///
-    pub fn new_sha512_google() -> MerkleTree {
+    fn new_sha512_google() -> MerkleTree {
         MerkleTree {
             levels: vec![vec![]],
             algorithm: &digest::SHA512,
@@ -127,6 +141,10 @@ impl MerkleTree {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.levels[0].is_empty()
+    }
+
     fn hash_leaf(&self, leaf: &[u8]) -> Data {
         self.hash(&[TREE_LEAF_TWEAK, leaf])
     }
@@ -144,12 +162,7 @@ impl MerkleTree {
     }
 
     pub fn root_from_paths(&self, mut index: usize, data: &[u8], paths: &[u8]) -> Hash {
-        let mut hash = {
-            let mut ctx = digest::Context::new(self.algorithm);
-            ctx.update(TREE_LEAF_TWEAK);
-            ctx.update(data);
-            Hash::from(ctx.finish().as_ref())
-        };
+        let mut hash = self.hash_leaf(data);
 
         assert_eq!(paths.len() % self.algorithm.output_len(), 0);
 
@@ -187,20 +200,26 @@ impl MerkleTree {
 mod test {
     use crate::merkle::*;
 
+    // Helper function to run tests with both implementations (Google and IETF)
+    fn for_both_versions<F>(mut test_fn: F)
+    where
+        F: FnMut(MerkleTree),
+    {
+        test_fn(MerkleTree::new_sha512_ietf());
+        test_fn(MerkleTree::new_sha512_google());
+    }
+
     fn test_paths_with_num(num: usize) {
-        for mut merkle_impl in [
-            MerkleTree::new_sha512_ietf(),
-            MerkleTree::new_sha512_google(),
-        ] {
+        for_both_versions(|mut tree| {
             for i in 0..num {
-                merkle_impl.push_leaf(&[i as u8]);
+                tree.push_leaf(&[i as u8]);
             }
 
-            let root = merkle_impl.compute_root();
+            let root = tree.compute_root();
 
             for i in 0..num {
-                let paths: Vec<u8> = merkle_impl.get_paths(i);
-                let computed_root = merkle_impl.root_from_paths(i, &[i as u8], &paths);
+                let paths: Vec<u8> = tree.get_paths(i);
+                let computed_root = tree.root_from_paths(i, &[i as u8], &paths);
 
                 assert_eq!(
                     root, computed_root,
@@ -208,7 +227,7 @@ mod test {
                     root, computed_root, i
                 );
             }
-        }
+        });
     }
 
     #[test]

@@ -124,7 +124,9 @@ impl Reporter {
             }
         };
 
-        let zstd_writer = zstd::Encoder::new(outfile, 9).unwrap().auto_finish();
+        let zstd_writer = zstd::Encoder::new(outfile, 9)
+            .unwrap()
+            .auto_finish();
 
         let mut csv_writer = csv::WriterBuilder::new()
             .has_headers(true)

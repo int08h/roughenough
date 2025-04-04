@@ -10,6 +10,7 @@ use roughenough::key::OnlineKey;
 use roughenough::merkle::MerkleTree;
 use roughenough::version::Version;
 use roughenough::{RtMessage, Tag};
+use roughenough::version::Version::Google;
 
 fn create_signed_srep_tags(c: &mut Criterion) {
     let mut group = c.benchmark_group("signing");
@@ -62,7 +63,7 @@ fn create_new_merkle_tree(c: &mut Criterion) {
         group.throughput(Elements(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
             b.iter(|| {
-                let mut tree = MerkleTree::new_sha512_google();
+                let mut tree = MerkleTree::new(Google);
                 for _ in 0..size {
                     tree.push_leaf(DATA);
                 }
@@ -77,7 +78,7 @@ fn reuse_merkle_tree(c: &mut Criterion) {
     let mut group = c.benchmark_group("reuse Merkle tree");
     group.sampling_mode(SamplingMode::Flat);
 
-    let mut tree = MerkleTree::new_sha512_google();
+    let mut tree = MerkleTree::new(Google);
 
     for size in SIZES.iter() {
         group.throughput(Elements(*size as u64));

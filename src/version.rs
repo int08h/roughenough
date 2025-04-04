@@ -86,3 +86,34 @@ impl Display for Version {
         write!(f, "{}", self.as_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Version;
+
+    #[test]
+    fn test_supported_versions_wire() {
+        // Expected order of concatenated wire bytes
+        let expected = [
+            0x00, 0x00, 0x00, 0x00, // Version::Google
+            0x0c, 0x00, 0x00, 0x80, // Version::RfcDraft13
+        ];
+        assert_eq!(Version::supported_versions_wire(), expected);
+    }
+
+    #[test]
+    fn test_dele_prefix() {
+        // Version::Google delegation prefix
+        assert_eq!(
+            Version::Google.dele_prefix(),
+            b"RoughTime v1 delegation signature--\x00"
+        );
+
+        // Version::RfcDraft13 delegation prefix
+        assert_eq!(
+            Version::RfcDraft13.dele_prefix(),
+            b"RoughTime v1 delegation signature\x00"
+        );
+    }
+
+}
