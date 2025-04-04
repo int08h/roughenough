@@ -142,3 +142,52 @@ impl fmt::Display for OnlineKey {
         write!(f, "{}", self.signer)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::version::Version::Google;
+    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+    use Version::RfcDraft13;
+
+    #[test]
+    fn make_dele_creates_valid_message() {
+        let olk = OnlineKey::new();
+        let dele = olk.make_dele();
+
+        assert_eq!(dele.num_fields(), 3, "DELE should have 3 fields");
+        assert!(dele.get_field(Tag::PUBK).is_some(), "DELE should have a PUBK field");
+        assert!(dele.get_field(Tag::MINT).is_some(), "DELE should have a MINT field");
+        assert!(dele.get_field(Tag::MAXT).is_some(), "DELE should have a MAXT field");
+
+        assert!(dele.encode().is_ok(), "DELE should be encodable (Google)");
+        assert!(dele.encode_framed().is_ok(), "DELE should be encodable (IETF)");
+    }
+
+    #[test]
+    fn test_make_srep_signature() {
+        // Given the public ed25519 key
+        let mut olk = OnlineKey::new();
+        let pubkey_bytes: [u8; 32] = olk.signer.public_key_bytes().try_into().unwrap();
+        let verifying_key = VerifyingKey::from_bytes(&pubkey_bytes).unwrap();
+        let now = SystemTime::now();
+        let mock_merkle_root = [0u8; 32];
+
+        for version in [Google, RfcDraft13] {
+            // When an SREP is created
+            let msg = olk.make_srep(version, now, &mock_merkle_root);
+            let sig = msg.get_field(Tag::SIG).unwrap();
+            let srep = msg.get_field(Tag::SREP).unwrap();
+            let signature = Signature::from_bytes(sig.try_into().unwrap());
+
+            let mut to_verify = Vec::from(version.sign_prefix());
+            to_verify.extend_from_slice(&srep);
+
+            // Then the SIG over the SREP should be valid
+            match verifying_key.verify(&to_verify, &signature) {
+                Ok(_) => {}
+                Err(e) => assert!(false, "Signature {:?} failed: {:?}", version, e),
+            }
+        }
+    }
+}

@@ -243,4 +243,133 @@ mod test {
         test_paths_with_num(1);
         test_paths_with_num(20);
     }
+
+    #[test]
+    #[should_panic(expected = "Must have at least one leaf to hash!")]
+    fn test_empty_tree_google_panics() {
+        let mut tree = MerkleTree::new_sha512_google();
+        tree.compute_root(); // panics
+    }
+
+    #[test]
+    #[should_panic(expected = "Must have at least one leaf to hash!")]
+    fn test_empty_tree_ietf_panics() {
+        let mut tree = MerkleTree::new_sha512_ietf();
+        tree.compute_root(); // panics
+    }
+
+    #[test]
+    fn test_single_leaf() {
+        for_both_versions(|mut tree| {
+            let test_data = vec![1, 2, 3, 4];
+            tree.push_leaf(&test_data);
+            let root = tree.compute_root();
+
+            // The root should be the hash of the leaf
+            let mut expected = tree.hash_leaf(&test_data);
+            expected = tree.finalize_output(expected);
+            assert_eq!(
+                root, expected,
+                "Root of single-leaf tree should be the leaf hash"
+            );
+        })
+    }
+
+    #[test]
+    fn test_different_leaf_order() {
+        for_both_versions(|mut tree| {
+            tree.push_leaf(&[1, 2, 3]);
+            tree.push_leaf(&[4, 5, 6]);
+            let root1 = tree.compute_root();
+
+            tree.reset();
+            tree.push_leaf(&[4, 5, 6]);
+            tree.push_leaf(&[1, 2, 3]);
+
+            let root2 = tree.compute_root();
+
+            assert_ne!(
+                root1, root2,
+                "Trees with different leaf order should have different roots"
+            );
+
+        })
+    }
+
+    #[test]
+    fn test_tree_reset() {
+        for_both_versions(|mut tree| {
+            tree.push_leaf(&[1, 2, 3]);
+            tree.push_leaf(&[4, 5, 6]);
+
+            let root = tree.compute_root();
+            assert!(!root.is_empty(), "Root of tree has data");
+
+            tree.reset();
+
+            // After reset, the tree should be empty
+            assert!(tree.is_empty(), "Root of reset tree should be empty");
+        })
+    }
+
+    #[test]
+    fn test_path_verification() {
+        for_both_versions(|mut tree| {
+            let leaves = vec![
+                vec![1, 2, 3, 4],
+                vec![5, 6, 7, 8],
+                vec![9, 10, 11, 12],
+                vec![13, 14, 15, 16],
+            ];
+
+            for leaf in &leaves {
+                tree.push_leaf(leaf);
+            }
+
+            // Compute the root
+            let expected_root = tree.compute_root();
+
+            // For each leaf, get its path and verify it
+            for (idx, leaf) in leaves.iter().enumerate() {
+                let paths = tree.get_paths(idx);
+                let verified_root = tree.root_from_paths(idx, leaf, &paths);
+
+                assert_eq!(
+                    verified_root, expected_root,
+                    "Root derived from paths for leaf {} should match the tree root",
+                    idx
+                );
+            }
+        })
+    }
+
+    #[test]
+    fn test_many_leaves() {
+        for_both_versions(|mut tree| {
+            // Add 1000 leaves
+            for i in 0..1000 {
+                tree.push_leaf(&[i as u8, (i >> 8) as u8, (i >> 16) as u8, (i >> 24) as u8]);
+            }
+
+            // This should not panic
+            let root = tree.compute_root();
+            assert!(
+                !root.is_empty(),
+                "Root of tree with many leaves should not be empty"
+            );
+        })
+    }
+
+    #[test]
+    fn test_add_leaves_after_computing_root() {
+        for_both_versions(|mut tree| {
+            tree.push_leaf(&[1, 2, 3]);
+            let root1 = tree.compute_root();
+
+            tree.push_leaf(&[4, 5, 6]);
+            let root2 = tree.compute_root();
+
+            assert_ne!(root1, root2, "Root should change after adding new leaves");
+        })
+    }
 }
