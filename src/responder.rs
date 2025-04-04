@@ -173,6 +173,7 @@ impl Responder {
 
         let mut response = RtMessage::with_capacity(6);
         response.add_field(Tag::SIG, sig_bytes).unwrap();
+        response.add_field(Tag::NONC, nonce).unwrap();
         response.add_field(Tag::PATH, path).unwrap();
         response.add_field(Tag::SREP, srep_bytes).unwrap();
         response.add_field(Tag::CERT, cert_bytes).unwrap();
