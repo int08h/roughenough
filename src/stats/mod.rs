@@ -30,6 +30,8 @@ use std::net::IpAddr;
 mod aggregated;
 mod per_client;
 mod reporter;
+mod estimation;
+mod popcount;
 
 pub type StatsQueue = ArrayQueue<Vec<ClientStats>>;
 
