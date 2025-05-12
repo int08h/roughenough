@@ -28,7 +28,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use chrono::offset::Utc;
 use chrono::{Local, TimeZone};
 use clap::{App, Arg};
-use data_encoding::{Encoding, BASE64, HEXLOWER_PERMISSIVE};
+use data_encoding::{BASE64, HEXLOWER, HEXLOWER_PERMISSIVE};
 use ring::rand;
 use ring::rand::SecureRandom;
 use roughenough::key::LongTermKey;
@@ -37,9 +37,20 @@ use roughenough::sign::MsgVerifier;
 use roughenough::version::Version;
 use roughenough::{roughenough_version, Error, RtMessage, Tag, REQUEST_FRAMING_BYTES};
 
-const HEX: Encoding = HEXLOWER_PERMISSIVE;
-
 type Nonce = Vec<u8>;
+
+/// Reasons a response's time may be invalid
+#[derive(Debug, PartialEq)]
+pub enum ValidationError {
+    /// The returned midpoint time was invalid for the provided reason
+    InvalidMidpoint(String),
+    /// Signature was bad for the reason provided
+    BadSignature(String),
+    /// Merkle proof was invalid for the reason provided
+    FailedProof(String),
+    /// The server's response was invalid for the reason provided
+    InvalidResponse(String),
+}
 
 fn create_nonce(ver: Version) -> Nonce {
     let rng = rand::SystemRandom::new();
@@ -86,23 +97,24 @@ fn make_request(
             msg.encode().unwrap()
         }
         Version::RfcDraft13 => {
+            // 8 bytes 'ROUGHTIM' plus u32 packet length = 12 bytes
+            const RFC_FRAMING_OVERHEAD: usize = 8 + 4;
+
             msg.add_field(Tag::VER, ver.wire_bytes()).unwrap();
-            if srv_value.is_some() {
-                let val = srv_value.as_ref().unwrap();
-                msg.add_field(Tag::SRV, val).unwrap();
+            if let Some(srv_value) = srv_value.as_ref() {
+                msg.add_field(Tag::SRV, srv_value).unwrap();
             }
             msg.add_field(Tag::NONC, nonce).unwrap();
             msg.add_field(Tag::ZZZZ, &[]).unwrap();
 
-            let padding_needed = msg.calculate_padding_length();
+            let padding_needed = msg.calculate_padding_length() - RFC_FRAMING_OVERHEAD;
             let padding: Vec<u8> = (0..padding_needed).map(|_| 0).collect();
 
             msg.clear();
 
             msg.add_field(Tag::VER, ver.wire_bytes()).unwrap();
-            if srv_value.is_some() {
-                let val = srv_value.as_ref().unwrap();
-                msg.add_field(Tag::SRV, val).unwrap();
+            if let Some(srv_value) = srv_value.as_ref() {
+                msg.add_field(Tag::SRV, srv_value).unwrap();
             }
             msg.add_field(Tag::NONC, nonce).unwrap();
             msg.add_field(Tag::ZZZZ, &padding).unwrap();
@@ -172,12 +184,11 @@ struct ResponseHandler {
     srep: HashMap<Tag, Vec<u8>>,
     cert: HashMap<Tag, Vec<u8>>,
     dele: HashMap<Tag, Vec<u8>>,
-    nonce: Nonce,
+    data: Vec<u8>,
     version: Version,
 }
 
 struct ParsedResponse {
-    verified: bool,
     midpoint: u64,
     radius: u32,
 }
@@ -187,7 +198,7 @@ impl ResponseHandler {
         version: Version,
         pub_key: Option<Vec<u8>>,
         response: RtMessage,
-        nonce: Nonce,
+        data: Vec<u8>,
     ) -> ResponseHandler {
         let msg = response.into_hash_map();
         let srep = RtMessage::from_bytes(&msg[&Tag::SREP])
@@ -206,12 +217,12 @@ impl ResponseHandler {
             srep,
             cert,
             dele,
-            nonce,
+            data,
             version,
         }
     }
 
-    pub fn extract_time(&self) -> ParsedResponse {
+    pub fn extract_valid_time(&self) -> Result<ParsedResponse, ValidationError> {
         let midpoint = self.srep[&Tag::MIDP]
             .as_slice()
             .read_u64::<LittleEndian>()
@@ -221,51 +232,47 @@ impl ResponseHandler {
             .read_u32::<LittleEndian>()
             .unwrap();
 
-        self.validate_merkle();
-        self.validate_midpoint(midpoint);
+        if self.pub_key.is_some() {
+            self.check_dele_signature()?;
+        }
 
-        let verified = if self.pub_key.is_some() {
-            self.validate_dele();
-            self.validate_srep();
-            true
-        } else {
-            false
-        };
+        self.check_srep_signature()?;
+        self.validate_merkle()?;
+        self.validate_midpoint(midpoint)?;
 
-        ParsedResponse {
-            verified,
+        Ok(ParsedResponse {
             midpoint,
             radius,
-        }
+        })
     }
 
-    fn validate_dele(&self) {
-        let pubk = self.pub_key.as_ref().unwrap();
-        let sig_value = &self.cert[&Tag::SIG];
+    fn check_dele_signature(&self) -> Result<(), ValidationError> {
+        let pub_key = self.pub_key.as_ref().unwrap();
+        let signature = &self.cert[&Tag::SIG];
         let mut cert_data = Vec::from(self.version.dele_prefix());
         cert_data.extend(&self.cert[&Tag::DELE]);
 
-        if self.validate_sig(pubk, sig_value, &cert_data) {
-            println!("Valid signature on DELE tag");
-        } else {
-            println!("INVALID signature on DELE tag, response may not be authentic");
+        if !self.validate_sig(pub_key, signature, &cert_data) {
+            let msg = "Invalid signature on DELE tag".to_string();
+            return Err(ValidationError::BadSignature(msg))
         }
+        Ok(())
     }
 
-    fn validate_srep(&self) {
-        let pubk = &self.dele[&Tag::PUBK];
-        let sig_value = &self.msg[&Tag::SIG];
+    fn check_srep_signature(&self) -> Result<(), ValidationError> {
+        let pub_key = &self.dele[&Tag::PUBK];
+        let signature = &self.msg[&Tag::SIG];
         let mut srep_data = Vec::from(self.version.sign_prefix());
         srep_data.extend(&self.msg[&Tag::SREP]);
 
-        if self.validate_sig(pubk, sig_value, &srep_data) {
-            println!("Valid signature on SREP tag");
-        } else {
-            println!("INVALID signature on SREP tag, response may not be authentic");
+        if !self.validate_sig(pub_key, signature, &srep_data) {
+            let msg = "Invalid signature on SREP tag".to_string();
+            return Err(ValidationError::BadSignature(msg))
         }
+        Ok(())
     }
 
-    fn validate_merkle(&self) {
+    fn validate_merkle(&self) -> Result<(), ValidationError> {
         let srep = RtMessage::from_bytes(&self.msg[&Tag::SREP])
             .unwrap()
             .into_hash_map();
@@ -275,17 +282,22 @@ impl ResponseHandler {
             .unwrap();
         let paths = &self.msg[&Tag::PATH];
 
-        let hash = MerkleTree::new(self.version)
-            .root_from_paths(index as usize, &self.nonce, paths);
+        let merkle_tree = MerkleTree::new(self.version);
 
-        assert_eq!(
-            hash,
-            srep[&Tag::ROOT],
-            "Nonce is not present in the response's merkle tree"
-        );
+        let hash = merkle_tree.root_from_paths(index as usize, &self.data, paths);
+
+        if hash != srep[&Tag::ROOT] {
+            let msg = format!(
+                "Nonce is not present in the response's merkle tree: computed {} != ROOT {}",
+                HEXLOWER.encode(&hash), HEXLOWER.encode(&srep[&Tag::ROOT])
+            );
+            return Err(ValidationError::FailedProof(msg))
+        }
+
+        Ok(())
     }
 
-    fn validate_midpoint(&self, midpoint: u64) {
+    fn validate_midpoint(&self, midpoint: u64) -> Result<(), ValidationError> {
         let mint = self.dele[&Tag::MINT]
             .as_slice()
             .read_u64::<LittleEndian>()
@@ -295,20 +307,21 @@ impl ResponseHandler {
             .read_u64::<LittleEndian>()
             .unwrap();
 
-        assert!(
-            midpoint >= mint,
-            "Response midpoint {} lies *before* delegation span ({}, {})",
-            midpoint,
-            mint,
-            maxt
-        );
-        assert!(
-            midpoint <= maxt,
-            "Response midpoint {} lies *after* delegation span ({}, {})",
-            midpoint,
-            mint,
-            maxt
-        );
+        if midpoint < mint {
+            let msg = format!(
+                "Response midpoint {} lies *before* delegation span ({}, {})",
+                midpoint, mint, maxt
+            );
+            return Err(ValidationError::InvalidMidpoint(msg))
+        }
+        if midpoint > maxt {
+            let msg = format!(
+                "Response midpoint {} lies *after* delegation span ({}, {})",
+                midpoint, mint, maxt
+            );
+            return Err(ValidationError::InvalidMidpoint(msg))
+        }
+        Ok(())
     }
 
     fn validate_sig(&self, public_key: &[u8], sig: &[u8], data: &[u8]) -> bool {
@@ -408,7 +421,7 @@ fn main() {
     let time_format = matches.value_of("time-format").unwrap();
     let stress = matches.is_present("stress");
     let pub_key = matches.value_of("public-key").map(|pkey| {
-        HEX.decode(pkey.as_ref())
+        HEXLOWER_PERMISSIVE.decode(pkey.as_ref())
             .or_else(|_| BASE64.decode(pkey.as_ref()))
             .expect("Error parsing public key!")
     });
@@ -463,7 +476,7 @@ fn main() {
         socket.send_to(request, addr).unwrap();
     }
 
-    for (nonce, _, socket) in requests {
+    for (nonce, request, socket) in requests {
         let duration = time::Duration::from_secs(timeout_secs);
         socket
             .set_read_timeout(Some(duration))
@@ -491,12 +504,15 @@ fn main() {
             eprintln!("Response = {}", resp);
         }
 
-        let ParsedResponse {
-            verified,
-            midpoint,
-            radius,
-        } = ResponseHandler::new(version, pub_key.clone(), resp.clone(), nonce.clone())
-            .extract_time();
+        let response_handler = match version {
+            Version::Google => ResponseHandler::new(version, pub_key.clone(), resp.clone(), nonce),
+            Version::RfcDraft13 => ResponseHandler::new(version, pub_key.clone(), resp.clone(), request)
+        };
+
+        let (midpoint, radius) = match response_handler.extract_valid_time() {
+            Ok(ParsedResponse{ midpoint, radius }) => (midpoint, radius),
+            Err(e) => panic!("Error in response: {:?}", e),
+        };
 
         let map = resp.into_hash_map();
         let index = map[&Tag::INDX]
@@ -513,7 +529,7 @@ fn main() {
             Version::RfcDraft13 => (midpoint, 0),
         };
 
-        let verify_str = if verified { "Yes" } else { "No" };
+        let verify_str = if pub_key.is_some() { "Yes" } else { "No" };
 
         let out = if use_utc {
             let ts = Utc.timestamp_opt(seconds as i64, nsecs).unwrap();
@@ -533,7 +549,7 @@ fn main() {
         if json {
             println!(
                 r#"{{ "midpoint": {:?}, "radius": {:?}, "verified": {}, "merkle_index": {} }}"#,
-                out, radius, verified, index
+                out, radius, verify_str, index
             );
         } else {
             println!("{}", out);
