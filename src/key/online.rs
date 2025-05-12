@@ -89,7 +89,7 @@ impl OnlineKey {
         // RADI is hard coded at 5 seconds (providing a 10-second measurement window overall)
         let radi_time = match version {
             Version::Google => 5_000_000, // five seconds in microseconds
-            Version::RfcDraft13 => 5,      // five seconds
+            Version::RfcDraft14 => 5,      // five seconds
         };
 
         (&mut radi as &mut [u8])
@@ -98,7 +98,7 @@ impl OnlineKey {
 
         let midp_time = match version {
             Version::Google => self.classic_midp(now),
-            Version::RfcDraft13 => self.rfc_midp(now),
+            Version::RfcDraft14 => self.rfc_midp(now),
         };
 
         (&mut midp as &mut [u8])
@@ -148,7 +148,7 @@ mod tests {
     use super::*;
     use crate::version::Version::Google;
     use ed25519_dalek::{Signature, Verifier, VerifyingKey};
-    use Version::RfcDraft13;
+    use Version::RfcDraft14;
 
     #[test]
     fn make_dele_creates_valid_message() {
@@ -173,7 +173,7 @@ mod tests {
         let now = SystemTime::now();
         let mock_merkle_root = [0u8; 32];
 
-        for version in [Google, RfcDraft13] {
+        for version in [Google, RfcDraft14] {
             // When an SREP is created
             let msg = olk.make_srep(version, now, &mock_merkle_root);
             let sig = msg.get_field(Tag::SIG).unwrap();

@@ -30,7 +30,7 @@ use crate::key::{LongTermKey, OnlineKey};
 use crate::merkle::MerkleTree;
 use crate::stats::ServerStats;
 use crate::version::Version;
-use crate::{RtMessage, Tag};
+use crate::{RtMessage, Tag, RESPONSE_TYPE_VALUE};
 
 const HEX: Encoding = HEXLOWER_PERMISSIVE;
 
@@ -123,7 +123,7 @@ impl Responder {
 
             let resp_bytes = match self.version {
                 Version::Google => resp_msg.encode().unwrap(),
-                Version::RfcDraft13 => resp_msg.encode_framed().unwrap(),
+                Version::RfcDraft14 => resp_msg.encode_framed().unwrap(),
             };
 
             let mut bytes_sent: usize = 0;
@@ -147,7 +147,7 @@ impl Responder {
             if successful_send {
                 match self.version {
                     Version::Google => stats.add_classic_response(&src_addr.ip(), bytes_sent),
-                    Version::RfcDraft13 => stats.add_rfc_response(&src_addr.ip(), bytes_sent),
+                    Version::RfcDraft14 => stats.add_rfc_response(&src_addr.ip(), bytes_sent),
                 }
             } else {
                 stats.add_failed_send_attempt(&src_addr.ip());
@@ -171,9 +171,12 @@ impl Responder {
         let sig_bytes = srep.get_field(Tag::SIG).unwrap();
         let srep_bytes = srep.get_field(Tag::SREP).unwrap();
 
-        let mut response = RtMessage::with_capacity(6);
+        let mut response = RtMessage::with_capacity(7);
         response.add_field(Tag::SIG, sig_bytes).unwrap();
         response.add_field(Tag::NONC, nonce).unwrap();
+        if self.version == Version::RfcDraft14 {
+            response.add_field(Tag::TYPE, RESPONSE_TYPE_VALUE).unwrap();
+        }
         response.add_field(Tag::PATH, path).unwrap();
         response.add_field(Tag::SREP, srep_bytes).unwrap();
         response.add_field(Tag::CERT, cert_bytes).unwrap();

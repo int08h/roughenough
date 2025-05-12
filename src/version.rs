@@ -20,8 +20,8 @@ pub enum Version {
     /// Original Google version from https://roughtime.googlesource.com/roughtime/+/HEAD/PROTOCOL.md
     Google,
 
-    /// IETF draft version 13 (placeholder for final IETF standardized version)
-    RfcDraft13,
+    /// IETF draft version 14 (placeholder for final IETF standardized version)
+    RfcDraft14,
 }
 
 struct VersionData {
@@ -40,9 +40,9 @@ impl Version {
                 dele_prefix: b"RoughTime v1 delegation signature--\x00",
                 srep_prefix: b"RoughTime v1 response signature\x00",
             },
-            Version::RfcDraft13 => VersionData {
+            Version::RfcDraft14 => VersionData {
                 wire: &[0x0c, 0x00, 0x00, 0x80],
-                display: "RfcDraft13",
+                display: "RfcDraft14",
                 dele_prefix: b"RoughTime v1 delegation signature\x00",
                 srep_prefix: b"RoughTime v1 response signature\x00",
             },
@@ -53,7 +53,7 @@ impl Version {
     pub fn supported_versions_wire() -> Vec<u8> {
         [
             Version::Google.wire_bytes(),
-            Version::RfcDraft13.wire_bytes(),
+            Version::RfcDraft14.wire_bytes(),
         ]
         .concat()
     }
@@ -96,7 +96,7 @@ mod tests {
         // Expected order of concatenated wire bytes
         let expected = [
             0x00, 0x00, 0x00, 0x00, // Version::Google
-            0x0c, 0x00, 0x00, 0x80, // Version::RfcDraft13
+            0x0c, 0x00, 0x00, 0x80, // Version::RfcDraft14
         ];
         assert_eq!(Version::supported_versions_wire(), expected);
     }
@@ -109,9 +109,9 @@ mod tests {
             b"RoughTime v1 delegation signature--\x00"
         );
 
-        // Version::RfcDraft13 delegation prefix
+        // Version::RfcDraft14 delegation prefix
         assert_eq!(
-            Version::RfcDraft13.dele_prefix(),
+            Version::RfcDraft14.dele_prefix(),
             b"RoughTime v1 delegation signature\x00"
         );
     }

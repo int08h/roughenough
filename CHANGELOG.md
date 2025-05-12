@@ -1,3 +1,6 @@
+## Version 1.3.0-draft14
+* Add the `TYPE` tag to requests and responses. Update client and server to check correct values.
+
 ## Version 1.3.0-draft13
 * **Interop testing still needed**. This implementation has undergone initial testing, but
   is not yet ready for production use.

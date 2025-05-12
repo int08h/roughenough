@@ -19,7 +19,7 @@ use std::io::Cursor;
 use byteorder::{LittleEndian, ReadBytesExt};
 
 use crate::version::Version;
-use crate::{Error, RtMessage, Tag, MAX_REQUEST_LENGTH, MIN_REQUEST_LENGTH, REQUEST_FRAMING_BYTES};
+use crate::{Error, RtMessage, Tag, MAX_REQUEST_LENGTH, MIN_REQUEST_LENGTH, REQUEST_FRAMING_BYTES, REQUEST_TYPE_VALUE};
 
 /// Guess which protocol the request is using and extract the client's nonce from the request
 pub fn nonce_from_request(
@@ -65,6 +65,14 @@ fn nonce_from_rfc_request(buf: &[u8], expected_srv: &[u8]) -> Result<(Vec<u8>, V
     }
 
     let msg = RtMessage::from_bytes(&buf[12..])?;
+    
+    if let Some(request_type) = msg.get_field(Tag::TYPE) {
+        if request_type != REQUEST_TYPE_VALUE {
+            return Err(Error::IncorrectTypeTag);
+        }   
+    } else {
+        return Err(Error::MissingTypeTag);
+    }
 
     let version = get_supported_version(&msg);
     if version.is_none() {
@@ -84,7 +92,7 @@ fn nonce_from_rfc_request(buf: &[u8], expected_srv: &[u8]) -> Result<(Vec<u8>, V
 }
 
 fn get_supported_version(msg: &RtMessage) -> Option<Version> {
-    const SUPPORTED_VERSIONS: &[Version] = &[Version::RfcDraft13];
+    const SUPPORTED_VERSIONS: &[Version] = &[Version::RfcDraft14];
 
     // To prevent resource exhaustion, this implementation limits the number of VER values it will
     // process to ITERATION_LIMIT.

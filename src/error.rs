@@ -42,7 +42,7 @@ pub enum Error {
     /// Offset was not 32-bit aligned
     InvalidAlignment(u32),
 
-    /// Offset is outside of valid message range
+    /// Offset is outside the valid message range
     InvalidOffsetValue(u32),
 
     /// Could not convert bytes to message because bytes were too short
@@ -68,6 +68,12 @@ pub enum Error {
 
     /// The request's SRV value and this server's SRV value do not match
     SrvMismatch,
+    
+    /// The request is missing the TYPE tag
+    MissingTypeTag,
+    
+    /// The TYPE tag value is incorrect (request vs response confusion)
+    IncorrectTypeTag,
 }
 
 impl From<std::io::Error> for Error {

@@ -129,7 +129,7 @@ impl Server {
             LongTermKey::new(&seed)
         };
 
-        let responder_ietf = Responder::new(Version::RfcDraft13, config, &mut long_term_key);
+        let responder_ietf = Responder::new(Version::RfcDraft14, config, &mut long_term_key);
         let responder_classic = Responder::new(Version::Google, config, &mut long_term_key);
 
         let batch_size = config.batch_size();
@@ -209,7 +209,7 @@ impl Server {
                 Ok((num_bytes, src_addr)) => {
                     match request::nonce_from_request(&self.buf, num_bytes, &self.srv_value) {
                         // TODO(stuart) cleanup when RFC is ratified
-                        Ok((nonce, Version::RfcDraft13)) => {
+                        Ok((nonce, Version::RfcDraft14)) => {
                             let request_bytes = &self.buf[..num_bytes];
                             self.responder_ietf.add_ietf_request(request_bytes, nonce, src_addr);
                             self.stats_recorder.add_ietf_request(&src_addr.ip());

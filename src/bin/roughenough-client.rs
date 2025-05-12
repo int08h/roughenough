@@ -35,7 +35,7 @@ use roughenough::key::LongTermKey;
 use roughenough::merkle::MerkleTree;
 use roughenough::sign::MsgVerifier;
 use roughenough::version::Version;
-use roughenough::{roughenough_version, Error, RtMessage, Tag, REQUEST_FRAMING_BYTES};
+use roughenough::{roughenough_version, Error, RtMessage, Tag, REQUEST_FRAMING_BYTES, REQUEST_TYPE_VALUE, RESPONSE_TYPE_VALUE};
 
 type Nonce = Vec<u8>;
 
@@ -60,7 +60,7 @@ fn create_nonce(ver: Version) -> Nonce {
             rng.fill(&mut nonce).unwrap();
             nonce.to_vec()
         }
-        Version::RfcDraft13 => {
+        Version::RfcDraft14 => {
             let mut nonce = [0u8; 32];
             rng.fill(&mut nonce).unwrap();
             nonce.to_vec()
@@ -96,7 +96,7 @@ fn make_request(
 
             msg.encode().unwrap()
         }
-        Version::RfcDraft13 => {
+        Version::RfcDraft14 => {
             // 8 bytes 'ROUGHTIM' plus u32 packet length = 12 bytes
             const RFC_FRAMING_OVERHEAD: usize = 8 + 4;
 
@@ -105,6 +105,7 @@ fn make_request(
                 msg.add_field(Tag::SRV, srv_value).unwrap();
             }
             msg.add_field(Tag::NONC, nonce).unwrap();
+            msg.add_field(Tag::TYPE, REQUEST_TYPE_VALUE).unwrap();
             msg.add_field(Tag::ZZZZ, &[]).unwrap();
 
             let padding_needed = msg.calculate_padding_length() - RFC_FRAMING_OVERHEAD;
@@ -117,6 +118,7 @@ fn make_request(
                 msg.add_field(Tag::SRV, srv_value).unwrap();
             }
             msg.add_field(Tag::NONC, nonce).unwrap();
+            msg.add_field(Tag::TYPE, REQUEST_TYPE_VALUE).unwrap();
             msg.add_field(Tag::ZZZZ, &padding).unwrap();
 
             if text_dump {
@@ -131,7 +133,7 @@ fn make_request(
 fn receive_response(ver: Version, buf: &[u8], buf_len: usize) -> RtMessage {
     match ver {
         Version::Google => RtMessage::from_bytes(&buf[0..buf_len]).unwrap(),
-        Version::RfcDraft13 => {
+        Version::RfcDraft14 => {
             verify_framing(buf).unwrap();
             RtMessage::from_bytes(&buf[12..buf_len]).unwrap()
         }
@@ -223,6 +225,17 @@ impl ResponseHandler {
     }
 
     pub fn extract_valid_time(&self) -> Result<ParsedResponse, ValidationError> {
+        if self.version == Version::RfcDraft14 {
+            self.check_type_tag()?;
+        }
+        
+        if self.pub_key.is_some() {
+            self.check_dele_signature()?;
+        }
+
+        self.check_srep_signature()?;
+        self.validate_merkle()?;
+        
         let midpoint = self.srep[&Tag::MIDP]
             .as_slice()
             .read_u64::<LittleEndian>()
@@ -231,13 +244,7 @@ impl ResponseHandler {
             .as_slice()
             .read_u32::<LittleEndian>()
             .unwrap();
-
-        if self.pub_key.is_some() {
-            self.check_dele_signature()?;
-        }
-
-        self.check_srep_signature()?;
-        self.validate_merkle()?;
+        
         self.validate_midpoint(midpoint)?;
 
         Ok(ParsedResponse {
@@ -246,6 +253,19 @@ impl ResponseHandler {
         })
     }
 
+    fn check_type_tag(&self) -> Result<(), ValidationError> {
+        if let Some(type_value) = self.msg.get(&Tag::TYPE) {
+            if type_value != RESPONSE_TYPE_VALUE {
+                let msg = format!("TYPE tag value ({}) is incorrect", HEXLOWER.encode(type_value));
+                return Err(ValidationError::InvalidResponse(msg));
+            }
+            Ok(())
+        } else {
+            let msg = "Response is missing the TYPE tag".to_string();
+            Err(ValidationError::InvalidResponse(msg))
+        }
+    }
+    
     fn check_dele_signature(&self) -> Result<(), ValidationError> {
         let pub_key = self.pub_key.as_ref().unwrap();
         let signature = &self.cert[&Tag::SIG];
@@ -329,6 +349,7 @@ impl ResponseHandler {
         verifier.update(data);
         verifier.verify(sig)
     }
+
 }
 
 fn main() {
@@ -394,7 +415,7 @@ fn main() {
             .short("p")
             .long("protocol")
             .takes_value(true)
-            .help("Roughtime protocol version to use (0 = google, 13 = draft13)")
+            .help("Roughtime protocol version to use (0 = google, 14 = draft14)")
             .default_value("0")
         )
         .arg(Arg::with_name("timeout")
@@ -436,9 +457,9 @@ fn main() {
 
     let version = match protocol {
         0 => Version::Google,
-        13 => Version::RfcDraft13,
+        14 => Version::RfcDraft14,
         _ => panic!(
-            "Invalid protocol '{}'; valid values are 0 or 13",
+            "Invalid protocol '{}'; valid values are 0 or 14",
             protocol
         ),
     };
@@ -506,7 +527,7 @@ fn main() {
 
         let response_handler = match version {
             Version::Google => ResponseHandler::new(version, pub_key.clone(), resp.clone(), nonce),
-            Version::RfcDraft13 => ResponseHandler::new(version, pub_key.clone(), resp.clone(), request)
+            Version::RfcDraft14 => ResponseHandler::new(version, pub_key.clone(), resp.clone(), request)
         };
 
         let (midpoint, radius) = match response_handler.extract_valid_time() {
@@ -526,7 +547,7 @@ fn main() {
                 let nsecs = (midpoint - (seconds * 10_u64.pow(6))) * 10_u64.pow(3);
                 (seconds, nsecs as u32)
             }
-            Version::RfcDraft13 => (midpoint, 0),
+            Version::RfcDraft14 => (midpoint, 0),
         };
 
         let verify_str = if pub_key.is_some() { "Yes" } else { "No" };

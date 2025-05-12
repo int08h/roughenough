@@ -20,7 +20,7 @@ fn create_signed_srep_tags(c: &mut Criterion) {
 
     group.throughput(Elements(1));
     group.bench_function("create signed SREP tag", |b| {
-        b.iter(|| black_box(key.make_srep(Version::RfcDraft13, now, &data)))
+        b.iter(|| black_box(key.make_srep(Version::RfcDraft14, now, &data)))
     });
     group.finish();
 }

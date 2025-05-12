@@ -79,7 +79,7 @@ pub mod stats;
 pub mod version;
 
 /// Version of Roughenough
-pub const VERSION: &str = "1.3.0-draft13";
+pub const VERSION: &str = "1.3.0-draft14";
 
 /// Roughenough version string enriched with any compile-time optional features
 pub fn roughenough_version() -> String {
@@ -116,3 +116,9 @@ pub const TREE_NODE_TWEAK: &[u8] = &[0x01];
 
 /// RFC first field magic value
 pub const REQUEST_FRAMING_BYTES: &[u8] = b"ROUGHTIM";
+
+/// The TYPE value for a client request
+pub const REQUEST_TYPE_VALUE: &[u8] = &[0x00, 0x00, 0x00, 0x00];
+
+/// The TYPE value for a server response 
+pub const RESPONSE_TYPE_VALUE: &[u8] = &[0x01, 0x00, 0x00, 0x00];

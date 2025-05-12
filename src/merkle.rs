@@ -17,7 +17,7 @@
 //!
 
 use crate::version::Version;
-use crate::version::Version::{Google, RfcDraft13};
+use crate::version::Version::{Google, RfcDraft14};
 use ring::digest;
 
 use super::{TREE_LEAF_TWEAK, TREE_NODE_TWEAK};
@@ -45,7 +45,7 @@ impl MerkleTree {
     pub fn new(version: Version) -> MerkleTree {
         match version {
             Google => MerkleTree::new_sha512_google(),
-            RfcDraft13 => MerkleTree::new_sha512_ietf(),
+            RfcDraft14 => MerkleTree::new_sha512_ietf(),
         }
     }
 
@@ -57,7 +57,7 @@ impl MerkleTree {
         MerkleTree {
             levels: vec![vec![]],
             algorithm: &digest::SHA512,
-            version: RfcDraft13,
+            version: RfcDraft14,
         }
     }
 
@@ -190,7 +190,7 @@ impl MerkleTree {
     #[inline]
     fn finalize_output(&self, data: Hash) -> Hash {
         match self.version {
-            RfcDraft13 => data[0..32].into(),
+            RfcDraft14 => data[0..32].into(),
             Google => data,
         }
     }
