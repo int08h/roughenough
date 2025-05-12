@@ -85,7 +85,7 @@ impl EntropyEstimator {
         Some(entropy)
     }
 
-    /// Returns sum of all byte frequencies divided by the number of observations.
+    /// Returns the sum of all byte frequencies divided by the number of observations.
     /// Truly random data should return ~127.5.
     ///
     /// Will return `None` if fewer than `MIN_OBSERVATIONS_REQUIRED` bytes have been processed.

@@ -30,12 +30,12 @@ fn choose_popcount() -> PopcountFn {
     }
     let duration_u128 = start_u128.elapsed();
 
-    println!("u64  {:>5.1} ms  {:.1} MiB/sec",
-         duration_u64.as_millis() as f64,
+    println!("u64  {:>5.1} us  {:.1} MiB/sec",
+         duration_u64.as_micros() as f64,
          (ITERATIONS as f64 * 32.0) / duration_u64.as_secs_f64() / 1024.0 / 1024.0
     );
-    println!("u128 {:>5.1} ms  {:.1} MiB/sec",
-         duration_u128.as_millis() as f64,
+    println!("u128 {:>5.1} us  {:.1} MiB/sec",
+         duration_u128.as_micros() as f64,
          (ITERATIONS as f64 * 32.0) / duration_u128.as_secs_f64() / 1024.0 / 1024.0
     );
 
@@ -104,5 +104,22 @@ mod tests {
             0b00000000, 0b00000000, 0b00000000, 0b00000000, // 0
         ];
         assert_eq!(calc_popcount_u64(&data), 4 + 4 + 4 + 8);
+    }
+
+    #[test]
+    fn test_calc_popcount_u128_empty() {
+        let data: Vec<u8> = vec![];
+        assert_eq!(calc_popcount_u128(&data), 0);
+    }
+
+    #[test]
+    fn test_calc_popcount_u128_basic() {
+        let data: Vec<u8> = vec![
+            0b10101010, 0b11110000, 0b00001111, 0b11111111, // 4 + 4 + 4 + 8
+            0b00000000, 0b00000000, 0b00000000, 0b00000000, // 0
+            0b11111111, 0b11111111, 0b11111111, 0b11111110, // 31
+            0b00000000, 0b00000000, 0b00000000, 0b00000000, // 0
+        ];
+        assert_eq!(calc_popcount_u128(&data), 4 + 4 + 4 + 8 + 31);
     }
 }

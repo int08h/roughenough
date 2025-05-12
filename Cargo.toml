@@ -58,10 +58,11 @@ tokio = { version = "1", features = ["full"], optional = true }
 
 [dev-dependencies]
 criterion = "0.5"
+divan = "0.1"
 
 [profile.release]
 lto = "fat"
 
 [[bench]]
-name = "roughenough-bench"
+name = "popcount"
 harness = false
