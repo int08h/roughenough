@@ -56,7 +56,7 @@
 use std;
 
 use data_encoding;
-use ring;
+use aws_lc_rs;
 
 use crate::config::ServerConfig;
 use crate::error;
@@ -85,9 +85,9 @@ impl From<std::io::Error> for KmsError {
     }
 }
 
-impl From<ring::error::Unspecified> for KmsError {
-    fn from(_: ring::error::Unspecified) -> Self {
-        KmsError::OperationFailed("unspecified ring cryptographic failure".to_string())
+impl From<aws_lc_rs::error::Unspecified> for KmsError {
+    fn from(_: aws_lc_rs::error::Unspecified) -> Self {
+        KmsError::OperationFailed("unspecified cryptographic failure".to_string())
     }
 }
 

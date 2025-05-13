@@ -19,10 +19,9 @@
 use std::fmt;
 use std::fmt::Formatter;
 
+use aws_lc_rs::rand::{SecureRandom, SystemRandom};
 use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
 use ed25519_dalek::{SecretKey, Signature, Signer, SigningKey, Verifier, VerifyingKey};
-use ring::rand;
-use ring::rand::SecureRandom;
 
 const HEX: Encoding = HEXLOWER_PERMISSIVE;
 
@@ -68,7 +67,7 @@ impl Default for MsgSigner {
 
 impl MsgSigner {
     pub fn new() -> Self {
-        let rng = rand::SystemRandom::new();
+        let rng = SystemRandom::new();
         let mut seed = [0u8; 32];
         rng.fill(&mut seed).unwrap();
 

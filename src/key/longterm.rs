@@ -21,8 +21,8 @@ use crate::message::RtMessage;
 use crate::sign::MsgSigner;
 use crate::tag::Tag;
 use crate::version::Version;
-use ring::digest;
-use ring::digest::SHA512;
+use aws_lc_rs::digest;
+use aws_lc_rs::digest::SHA512;
 use std::fmt;
 use std::fmt::Formatter;
 

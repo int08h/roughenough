@@ -15,8 +15,8 @@
 use std::io::{Cursor, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use ring::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM};
-use ring::rand::{SecureRandom, SystemRandom};
+use aws_lc_rs::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM};
+use aws_lc_rs::rand::{SecureRandom, SystemRandom};
 
 use crate::kms::{KmsError, KmsProvider, AD, DEK_LEN_BYTES, NONCE_LEN_BYTES, TAG_LEN_BYTES};
 use crate::SEED_LENGTH;
@@ -35,11 +35,6 @@ const MIN_PAYLOAD_SIZE: usize = DEK_LEN_FIELD
     + NONCE_LEN_BYTES
     + SEED_LENGTH as usize
     + TAG_LEN_BYTES;
-
-// Convenience function to create zero-filled Vec of given size
-fn vec_zero_filled(len: usize) -> Vec<u8> {
-    (0..len).map(|_| 0).collect()
-}
 
 /// Envelope encryption of the long-term key seed value.
 ///
@@ -85,7 +80,7 @@ impl EnvelopeEncryption {
         }
 
         // Consume the wrapped DEK
-        let mut encrypted_dek = vec_zero_filled(dek_len);
+        let mut encrypted_dek = (0..dek_len).map(|_| 0).collect::<Vec<u8>>();
         tmp.read_exact(&mut encrypted_dek)?;
 
         // Consume the nonce

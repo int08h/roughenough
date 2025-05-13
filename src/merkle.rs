@@ -18,7 +18,7 @@
 
 use crate::version::Version;
 use crate::version::Version::{Google, RfcDraft14};
-use ring::digest;
+use aws_lc_rs::digest;
 
 use super::{TREE_LEAF_TWEAK, TREE_NODE_TWEAK};
 
