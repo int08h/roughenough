@@ -26,13 +26,13 @@ protocol at the same time on a single serving port (the 8-byte magic frame value
 by the RFC is used to distinguish classic vs. RFC requests).
 
 The new `-p/--protocol` flag of `roughenough-client` controls the protocol version to
-use in requests. `0` = "classic" Google protocol (no `VER` tag), and `13` is the RFC 
-Draft13 protocol (`VER` tag with value `0x0b00000c`). The default is `0` the "classic" 
+use in requests. `0` = "classic" Google protocol (no `VER` tag), and `14` is the RFC 
+Draft14 protocol (`VER` tag with value `0x8000000c`). The default is `0` the "classic" 
 protocol, until the RFC is finalized.
 
 ```
 # send RFC protocol Roughtime requests
-$ roughenough-client -p 13 roughtime.int08h.com 2002
+$ roughenough-client -p 14 roughtime.int08h.com 2002
 ```
 
 ## Links
@@ -47,7 +47,7 @@ $ roughenough-client -p 13 roughtime.int08h.com 2002
 
 ### Minimum Supported Rust Version (MSRV)
 
-Roughenough uses [2021 edition](https://doc.rust-lang.org/edition-guide/rust-2021/index.html) 
+Roughenough uses [2021 ediqtion](https://doc.rust-lang.org/edition-guide/rust-2021/index.html) 
 features and requires Rust 1.72 or newer to build.
 
 ### Building
