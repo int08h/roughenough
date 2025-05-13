@@ -19,7 +19,7 @@ Requires latest stable Rust to compile. Contributions welcome, see
 of its development, but is not yet ready for production use. More testing between
 Roughtime implementations is required.**
 
-Roughenough implements the Roughtime protocol as specified in [the draft-13 RFC](https://www.ietf.org/archive/id/draft-ietf-ntp-roughtime-13.html).
+Roughenough implements the Roughtime protocol as specified in [the draft-14 RFC](https://www.ietf.org/archive/id/draft-ietf-ntp-roughtime-14.html).
 
 The Roughenough server operates both the "classic" protocol **and** the RFC compliant 
 protocol at the same time on a single serving port (the 8-byte magic frame value added 
