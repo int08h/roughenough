@@ -18,10 +18,9 @@
 
 use std::fmt;
 use std::fmt::Formatter;
-
 use aws_lc_rs::rand::{SecureRandom, SystemRandom};
+use aws_lc_rs::signature::{Ed25519KeyPair, KeyPair, UnparsedPublicKey};
 use data_encoding::{Encoding, HEXLOWER_PERMISSIVE};
-use ed25519_dalek::{SecretKey, Signature, Signer, SigningKey, Verifier, VerifyingKey};
 
 const HEX: Encoding = HEXLOWER_PERMISSIVE;
 
@@ -30,15 +29,15 @@ const INITIAL_BUF_SIZE: usize = 1024;
 /// A multi-step (init-update-finish) interface for verifying an Ed25519 signature
 #[derive(Debug)]
 pub struct MsgVerifier {
-    pubkey: VerifyingKey,
+    pubkey: UnparsedPublicKey<[u8; 32]>,
     buf: Vec<u8>,
 }
 
 impl MsgVerifier {
     pub fn new(pubkey: &[u8]) -> Self {
-        let pk: &[u8; 32] = pubkey.try_into().expect("valid pubkey");
+        let pk: [u8; 32] = pubkey.try_into().expect("invalid pubkey");
         MsgVerifier {
-            pubkey: VerifyingKey::from_bytes(pk).unwrap(),
+            pubkey: UnparsedPublicKey::new(&aws_lc_rs::signature::ED25519, pk),
             buf: Vec::with_capacity(INITIAL_BUF_SIZE),
         }
     }
@@ -48,14 +47,13 @@ impl MsgVerifier {
     }
 
     pub fn verify(&self, provided_sig: &[u8]) -> bool {
-        let sig = Signature::from_slice(provided_sig).expect("valid signature");
-        self.pubkey.verify(&self.buf, &sig).is_ok()
+        self.pubkey.verify(&self.buf, &provided_sig).is_ok()
     }
 }
 
 /// A multi-step (init-update-finish) interface for creating an Ed25519 signature
 pub struct MsgSigner {
-    signing_key: SigningKey,
+    keypair: Ed25519KeyPair,
     buf: Vec<u8>,
 }
 
@@ -75,9 +73,9 @@ impl MsgSigner {
     }
 
     pub fn from_seed(seed: &[u8]) -> Self {
-        let secret_key = SecretKey::try_from(seed).expect("invalid seed");
+        let keypair = Ed25519KeyPair::from_seed_unchecked(seed).expect("invalid seed");
         MsgSigner {
-            signing_key: SigningKey::from(secret_key),
+            keypair,
             buf: Vec::with_capacity(INITIAL_BUF_SIZE),
         }
     }
@@ -88,15 +86,19 @@ impl MsgSigner {
     }
 
     pub fn sign(&mut self) -> Vec<u8> {
-        let signature = self.signing_key.sign(&self.buf).to_vec();
+        let signature = self.keypair.sign(&self.buf)
+            .as_ref()
+            .to_vec();
+
         self.buf.clear();
 
         signature
     }
 
     pub fn public_key_bytes(&self) -> Vec<u8> {
-        let binding = self.signing_key.verifying_key();
-        binding.as_bytes().to_vec()
+        self.keypair.public_key()
+            .as_ref()
+            .to_vec()
     }
 }
 
