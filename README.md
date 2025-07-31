@@ -1,11 +1,17 @@
-# Roughenough 
-
 [![crates.io](https://img.shields.io/crates/v/roughenough.svg?style=flat-square)](https://crates.io/crates/roughenough)
 [![Build](https://github.com/int08h/roughenough/actions/workflows/rust.yml/badge.svg?branch=master)](https://github.com/int08h/roughenough/actions/workflows/rust.yml)
 [![Apache License 2](https://img.shields.io/badge/license-ASF2-blue.svg?style=flat-square)](https://www.apache.org/licenses/LICENSE-2.0.txt)
 
-**Roughenough** is an RFC-draft compliant [Roughtime](https://roughtime.googlesource.com/roughtime) secure time 
-synchronization client and server implementation in Rust. 
+## LEGACY BRANCH
+
+**This is the pre-RFC legacy branch implementing the original Google-variant of the Roughtime protocol.**
+
+This branch exists to support serving legacy clients. No new development will occur on this branch. Use
+the up-to-date master branch instead
+
+# Roughenough
+
+**Roughenough** is an [Roughtime](https://roughtime.googlesource.com/roughtime) secure time synchronization client and server implementation in Rust. 
 
 Roughenough's server and client are functionally complete and 
 at feature parity with the reference C++ and Golang implementations. 
@@ -13,26 +19,9 @@ at feature parity with the reference C++ and Golang implementations.
 Requires latest stable Rust to compile. Contributions welcome, see
 [CONTRIBUTING](../master/CONTRIBUTING.md) for instructions and [limitations](#limitations) for areas that could use attention.
 
-## RFC Work-In-Progress
-
-**RFC interop testing still needed. This implementation has undergone testing as part
-of its development, but is not yet ready for production use. More testing between
-Roughtime implementations is required.**
-
-Roughenough implements the Roughtime protocol as specified in [the draft-14 RFC](https://www.ietf.org/archive/id/draft-ietf-ntp-roughtime-14.html).
-
-The Roughenough server operates both the "classic" protocol **and** the RFC compliant 
-protocol at the same time on a single serving port (the 8-byte magic frame value added 
-by the RFC is used to distinguish classic vs. RFC requests).
-
-The new `-p/--protocol` flag of `roughenough-client` controls the protocol version to
-use in requests. `0` = "classic" Google protocol (no `VER` tag), and `14` is the RFC 
-Draft14 protocol (`VER` tag with value `0x8000000c`). The default is `0` the "classic" 
-protocol, until the RFC is finalized.
-
 ```
 # send RFC protocol Roughtime requests
-$ roughenough-client -p 14 roughtime.int08h.com 2002
+$ roughenough-client roughtime.int08h.com 2002
 ```
 
 ## Links

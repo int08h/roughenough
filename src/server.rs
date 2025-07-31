@@ -182,12 +182,10 @@ impl Server {
         for msg in events.iter() {
             match msg.token() {
                 EVT_MESSAGE => loop {
-                    self.responder_ietf.reset();
                     self.responder_classic.reset();
 
                     let socket_now_empty = self.collect_requests();
 
-                    self.responder_ietf.send_responses(&mut self.socket, &mut self.stats_recorder);
                     self.responder_classic.send_responses(&mut self.socket, &mut self.stats_recorder);
 
                     if socket_now_empty {
@@ -208,10 +206,7 @@ impl Server {
             match self.socket.recv_from(&mut self.buf) {
                 Ok((num_bytes, src_addr)) => {
                     match request::nonce_from_request(&self.buf, num_bytes, &self.srv_value) {
-                        // TODO(stuart) cleanup when RFC is ratified
-                        Ok((nonce, Version::RfcDraft14)) => {
-                            let request_bytes = &self.buf[..num_bytes];
-                            self.responder_ietf.add_ietf_request(request_bytes, nonce, src_addr);
+                        Ok((_nonce, Version::RfcDraft14)) => {
                             self.stats_recorder.add_ietf_request(&src_addr.ip());
                         }
                         Ok((nonce, Version::Google)) => {
