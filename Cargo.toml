@@ -19,7 +19,7 @@ server = { path = "crates/server", version = "2.0.0" }
 # External dependencies
 aws-config = "1.8"
 aws-lc-rs = "1.14"
-aws-sdk-kms = "1.89"
+aws-sdk-kms = "1.90"
 aws-sdk-secretsmanager = "1.90"
 chrono = "0.4"
 clap = "4.5"
