@@ -71,7 +71,11 @@ impl MetricsSnapshot {
         // Atomically rename temp file to final name
         fs::rename(&temp_path, &file_path)?;
 
-        debug!("Wrote {} bytes of metrics to {}", json_data.len(), file_path.display());
+        debug!(
+            "Wrote {} bytes of metrics to {}",
+            json_data.len(),
+            file_path.display()
+        );
         Ok(filename)
     }
 }

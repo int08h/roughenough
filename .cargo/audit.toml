@@ -1,0 +1,8 @@
+[advisories]
+ignore = [
+    # Advisory on private key recovery via RSA side-channels. Irrelevant because we don't
+    # use RSA keys at all.
+    "RUSTSEC-2023-0071",
+    # paste crate is unmaintained, it's a 3rd-party dependency via cryptoki.
+    "RUSTSEC-2024-0436",
+]
