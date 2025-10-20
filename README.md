@@ -7,10 +7,6 @@ Roughenough is an implementation of the [IETF Roughtime](https://datatracker.iet
 secure time synchronization protocol. Roughenough provides both server and client components for cryptographically 
 verifiable time synchronization.
 
-Roughtime is a protocol that provides secure time synchronization with protection against server malfeasance through 
-cryptographic proofs. Roughtime responses include cryptographic signatures that enable clients to detect and prove if 
-a server is providing incorrect time information.
-
 ## Features
 
 - **RFC Compliant**: Full implementation of the Roughtime RFC specification
