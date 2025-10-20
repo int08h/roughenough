@@ -198,7 +198,7 @@ impl Client {
     /// Create a client from a hostname and port, with an optional public key. Performs DNS lookup
     /// to resolve `hostname` to an IP address. Uses the first IP address found if `hostname`
     /// resolves to more than one address.
-    pub fn new(hostname: &str, port: u16, pub_key: Option<&str>) -> Result<Self, ClientError> {
+    pub fn new(hostname: &str, port: u16, pub_key: Option<impl AsRef<str>>) -> Result<Self, ClientError> {
         let host_port = format!("{hostname}:{port}");
         let sock_addr = host_port
             .to_socket_addrs()?
@@ -208,7 +208,7 @@ impl Client {
         let mut builder = Self::builder(sock_addr).hostname(hostname);
 
         if let Some(encoded_key) = pub_key {
-            let pub_key = try_decode_key(encoded_key)?;
+            let pub_key = try_decode_key(encoded_key.as_ref())?;
             builder = builder.public_key(pub_key);
         }
 
