@@ -1,0 +1,27 @@
+[package]
+name = "protocol"
+description = "Core Roughtime protocol wire format handling and data structures"
+license = "Apache-2.0 OR MIT"
+edition.workspace = true
+version.workspace = true
+repository = "https://github.com/int08h/roughenough"
+homepage = "https://github.com/int08h/roughenough"
+readme = "../../README.md"
+keywords = ["roughtime", "protocol", "time-sync", "cryptography", "rfc"]
+categories = ["network-programming", "cryptography"]
+
+[lib]
+name = "protocol"
+bench = false
+
+[dependencies]
+thiserror = { workspace = true }
+pastey = { workspace = true }
+
+[dev-dependencies]
+divan = { workspace = true }
+
+[[bench]]
+name = "message_ops"
+harness = false
+test = false

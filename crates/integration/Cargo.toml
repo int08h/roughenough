@@ -1,0 +1,28 @@
+[package]
+name = "integration-test"
+description = "End-to-end integration tests for Roughenough server and client"
+license = "Apache-2.0 OR MIT"
+edition.workspace = true
+version.workspace = true
+repository = "https://github.com/int08h/roughenough"
+homepage = "https://github.com/int08h/roughenough"
+readme = "../../README.md"
+keywords = ["roughtime", "integration", "testing", "e2e"]
+categories = ["development-tools"]
+
+[dependencies]
+client = { workspace = true }
+merkle = { workspace = true }
+protocol = { workspace = true }
+server = { workspace = true, features = ["test-utils"] }
+aws-lc-rs = { workspace = true }
+data-encoding = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+tracing-subscriber = { workspace = true }
+tracing = { workspace = true }
+libc = { workspace = true }
+
+[[bin]]
+name = "load_test"
+path = "src/load_gen.rs"
+

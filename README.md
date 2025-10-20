@@ -1,247 +1,159 @@
-# Roughenough 
+# Roughtime
 
-[![crates.io](https://img.shields.io/crates/v/roughenough.svg?style=flat-square)](https://crates.io/crates/roughenough)
-[![Build](https://github.com/int08h/roughenough/actions/workflows/rust.yml/badge.svg?branch=master)](https://github.com/int08h/roughenough/actions/workflows/rust.yml)
-[![Apache License 2](https://img.shields.io/badge/license-ASF2-blue.svg?style=flat-square)](https://www.apache.org/licenses/LICENSE-2.0.txt)
+[![Build Status](https://github.com/int08h/roughenough/actions/workflows/rust.yml/badge.svg)](https://github.com/int08h/roughenough/actions/workflows/rust.yml)
+[![License](https://img.shields.io/badge/license-Apache%202.0%20OR%20MIT-blue.svg)](LICENSE-APACHE)
 
-**Roughenough** is an RFC-draft compliant [Roughtime](https://roughtime.googlesource.com/roughtime) secure time 
-synchronization client and server implementation in Rust. 
+Roughenough is an implementation of the [IETF Roughtime](https://datatracker.ietf.org/doc/draft-ietf-ntp-roughtime/) 
+secure time synchronization protocol. Roughenough provides both server and client components for cryptographically 
+verifiable time synchronization.
 
-Roughenough's server and client are functionally complete and 
-at feature parity with the reference C++ and Golang implementations. 
+Roughtime is a protocol that provides secure time synchronization with protection against server malfeasance through 
+cryptographic proofs. Roughtime responses include cryptographic signatures that enable clients to detect and prove if 
+a server is providing incorrect time information.
 
-Requires latest stable Rust to compile. Contributions welcome, see
-[CONTRIBUTING](../master/CONTRIBUTING.md) for instructions and [limitations](#limitations) for areas that could use attention.
+## Features
 
-## RFC Work-In-Progress
+- **RFC Compliant**: Full implementation of the Roughtime RFC specification
+- **High Performance Server**: Performance oriented asynchronous UDP server 
+- **Flexible Client**: Command-line client with multiple output formats and server validation
+- **Malfeasance Reporting**: Clients can (optionally) report malfeasance to a remote server for analysis
+- **Key Management**: Multiple backends for secure key and identity protection (KMS, Secret Manager, Linux KRS, 
+  SSH agent, PKCS#11)
 
-**RFC interop testing still needed. This implementation has undergone testing as part
-of its development, but is not yet ready for production use. More testing between
-Roughtime implementations is required.**
+## Quick Start
 
-Roughenough implements the Roughtime protocol as specified in [the draft-14 RFC](https://www.ietf.org/archive/id/draft-ietf-ntp-roughtime-14.html).
+### System Requirements
 
-The Roughenough server operates both the "classic" protocol **and** the RFC compliant 
-protocol at the same time on a single serving port (the 8-byte magic frame value added 
-by the RFC is used to distinguish classic vs. RFC requests).
+- MSRV 1.88, Rust 2024 edition 
+- Linux, MacOS, or other Unix-like operating system
+- Optional: cloud provider credentials for backend key storage
 
-The new `-p/--protocol` flag of `roughenough-client` controls the protocol version to
-use in requests. `0` = "classic" Google protocol (no `VER` tag), and `14` is the RFC 
-Draft14 protocol (`VER` tag with value `0x8000000c`). The default is `0` the "classic" 
-protocol, until the RFC is finalized.
+### Installation
 
-```
-# send RFC protocol Roughtime requests
-$ roughenough-client -p 14 roughtime.int08h.com 2002
-```
-
-## Links
-* [Roughenough Github repo](https://github.com/int08h/roughenough)
-* Original [Roughtime project](https://roughtime.googlesource.com/roughtime)
-* My blog posts giving a [technical deep-dive into Roughtime](https://int08h.com/post/to-catch-a-lying-timeserver/) and
-  exploring details of [on-the-wire Roughtime messages](https://int08h.com/post/roughtime-message-anatomy/).
-* Cloudflare's fantastic [blog post](https://blog.cloudflare.com/roughtime/) and accompanying 
-  [open-source project](https://developers.cloudflare.com/roughtime/).
-
-## Building and Running
-
-### Minimum Supported Rust Version (MSRV)
-
-Roughenough uses [2021 ediqtion](https://doc.rust-lang.org/edition-guide/rust-2021/index.html) 
-features and requires Rust 1.72 or newer to build.
-
-### Building
+Build all components:
 
 ```bash
-# Build roughenough
-$ cargo build --release
+cargo build --release
 ```
 
-The client binary is `target/release/roughenough-client`. After building you can copy the 
-binary and run on its own (no `cargo` needed) if you wish.
+Build with all optional features:
 
 ```bash
-$ cp target/release/roughenough-client /usr/local/bin 
+# Enable all optional features
+cargo build --release --all-features 
 ```
 
-### Using the Client to Query a Roughtime Server 
+### Running the Server
 
 ```bash
-$ target/debug/roughenough-client -v roughtime.cloudflare.com 2002
-Requesting time from: "roughtime.cloudflare.com":2002
-Received time from server: midpoint="May 19 2024 16:18:10 -05:00", radius=1000000, verified=No (merkle_index=0)
-May 19 2024 16:18:10 -05:00
+# Debug build
+cargo run --bin server
+
+# Release build with optimizations
+cargo run --release --bin server
+
+# Run the server binary directly
+target/release/server
 ```
 
-### Setting The System Time on Linux
+The server will start listening for UDP requests on the default port (2002).
 
-You can use the `date` utility on Linux machines to set the system time to the time determined by the Roughenough client:
+### Running the Client
+
+Basic usage:
 
 ```bash
-sudo date --utc --set "$(roughenough-client -z roughtime.int08h.com 2002)"
+# Query a Roughtime server
+cargo run --bin client -- roughtime.int08h.com 2002
+
+# Verify server public key
+cargo run --bin client -- roughtime.int08h.com 2002 -k <base64-or-hex-key>
+
+# Multiple requests
+cargo run --bin client -- roughtime.int08h.com 2002 -n 10
+
+# Verbose output
+cargo run --bin client -- roughtime.int08h.com 2002 -v
+
+# Different time formats
+cargo run --bin client -- roughtime.int08h.com 2002 --epoch  # Unix timestamp
+cargo run --bin client -- roughtime.int08h.com 2002 --zulu   # ISO 8601 UTC
 ```
 
-### Setting The System Time on FreeBSD
-
-You can use the `date` utility on FreeBSD machines to set the system time to the time determined by the Roughenough client:
+Query multiple servers from an RFC compliant JSON list:
 
 ```bash
-sudo date -u "$(roughenough-client -z roughtime.int08h.com 2002 -f %Y%m%d%H%M.%S)"
+cargo run --bin client -- -l servers.json
 ```
 
-### Validating Server Responses 
-
-Use the `-k` flag with the client to validate the server's response with its public key.
+### Running Tests
 
 ```bash
-# The public key of 'roughtime.int08h.com' is stored in a DNS TXT record 
-$ host -t TXT roughtime.int08h.com
-roughtime.int08h.com descriptive text "AW5uAoTSTDfG5NfY1bTh08GUnOqlRb+HVhbJ3ODJvsE="
+# Run all tests
+cargo test
 
-# Validate the server response using its public key
-$ target/release/roughenough-client -v roughtime.int08h.com 2002 -k "AW5uAoTSTDfG5NfY1bTh08GUnOqlRb+HVhbJ3ODJvsE="
-Requesting time from: "roughtime.int08h.com":2002
-Received time from server: midpoint="Oct 26 2018 23:22:20", radius=1000000, verified=Yes (merkle_index=0)
-Oct 26 2018 23:22:20
+# Run tests for specific crate
+cargo test -p protocol
+
+# Run integration tests
+target/debug/integration-test
 ```
 
-The **`verified=Yes`** in the output confirms that the server's response had a valid signature.
+## Project Structure
 
-### Server Configuration
+Roughtime is structured as a Cargo workspace with multiple crates:
 
-There are two (mutually exclusive) ways to configure the Roughenough server: 
-
-1. A YAML file, or
-2. Environment variables
-
-The server accepts the following configuration parameters:
-
-| YAML Key            | Environment Variable            | Necessity | Description                                                                                                                                                                                                                                          |
-|---------------------|---------------------------------|-----------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `interface`         | `ROUGHENOUGH_INTERFACE`         | Required  | IP address or interface name for listening to client requests                                                                                                                                                                                        |
-| `port`              | `ROUGHENOUGH_PORT`              | Required  | UDP port to listen for requests                                                                                                                                                                                                                      |
-| `seed`              | `ROUGHENOUGH_SEED`              | Required  | A 32-byte hexadecimal value used to generate the server's long-term key pair. **This is a secret value and must be un-guessable**, treat it with care. (If compiled with KMS support, length will vary; see [Optional Features](#optional-features)) |
-| `batch_size`        | `ROUGHENOUGH_BATCH_SIZE`        | Optional  | The maximum number of requests to process in one batch. All nonces in a batch are used to build a Merkle tree, the root of which is signed. Default is `64` requests per batch.                                                                      |
-| `status_interval`   | `ROUGHENOUGH_STATUS_INTERVAL`   | Optional  | Number of _seconds_ between each logged status update. Default is `600` seconds (10 minutes).                                                                                                                                                        |
-| `health_check_port` | `ROUGHENOUGH_HEALTH_CHECK_PORT` | Optional  | If present, enable an HTTP health check responder on the provided port. **Use with caution**, see [Optional Features](#optional-features).                                                                                                           |
-| `kms_protection`    | `ROUGHENOUGH_KMS_PROTECTION`    | Optional  | If compiled with KMS support, the ID of the KMS key used to protect the long-term identity. See [Optional Features](#optional-features).                                                                                                             |
-| `fault_percentage`  | `ROUGHENOUGH_FAULT_PERCENTAGE`  | Optional  | Likelihood (as a percentage) that the server will intentionally return an invalid client response. An integer range from `0` (disabled, all responses valid) to `50` (50% of responses will be invalid). Default is `0` (disabled).                  |
-
-#### YAML Configuration 
-
-The table above lists the YAML keys available in the config file. An example:
-
-```yaml
-interface: 127.0.0.1
-port: 8686
-seed: f61075c988feb9cb700a4a6a3291bfbc9cab11b9c9eca8c802468eb38a43d7d3
-```
-
-Provide the config file as the single command-line argument to the Roughenough server binary:
-
-```bash
-$ /path/to/roughenough-server /path/to/config.yaml
-```
-
-#### Environment Configuration
-
-Roughenough can be configured via the `ROUGHENOUGH_*` [environment variables](https://12factor.net/config) 
-listed in the table above. Start the server with a single `ENV` argument to have Roughenough configure itself
-from the environment. Example:
-
-```bash
-$ export ROUGHENOUGH_INTERFACE=127.0.0.1
-$ export ROUGHENOUGH_PORT=8686
-$ export ROUGHENOUGH_SEED=f61075c988feb9cb700a4a6a3291bfbc9cab11b9c9eca8c802468eb38a43d7d3
-$ /path/to/roughenough-server ENV
-```
-
-### Starting the Server
-
-```bash
-# Build roughenough
-$ cargo build --release
-
-# Via a config file
-$ target/release/roughenough-server example.cfg
-2018-07-25 00:05:09 INFO  [server] Roughenough server v1.0.5 starting
-2018-07-25 00:05:09 INFO  [server] Long-term public key: d0756ee69ff5fe96cbcf9273208fec53124b1dd3a24d3910e07c7c54e2473012
-2018-07-25 00:05:09 INFO  [server] Ephemeral public key: 25fd5dc31ceee241aed3e643534e95ed0609e9a20982a45ac0312a5f55e2cc66
-2018-07-25 00:05:09 INFO  [server] Server listening on 127.0.0.1:8686
-
-# Or using environment variables
-$ export ROUGHENOUGH_INTERFACE=127.0.0.1
-$ export ROUGHENOUGH_PORT=8686
-$ export ROUGHENOUGH_SEED=f61075c988feb9cb700a4a6a3291bfbc9cab11b9c9eca8c802468eb38a43d7d3
-$ target/release/roughenough-server ENV
-2018-07-25 00:05:09 INFO  [server] Roughenough server v1.0.5 starting
-2018-07-25 00:05:09 INFO  [server] Long-term public key: d0756ee69ff5fe96cbcf9273208fec53124b1dd3a24d3910e07c7c54e2473012
-2018-07-25 00:05:09 INFO  [server] Ephemeral public key: 25fd5dc31ceee241aed3e643534e95ed0609e9a20982a45ac0312a5f55e2cc66
-2018-07-25 00:05:09 INFO  [server] Server listening on 127.0.0.1:8686
-```
-
-The resulting binary is `target/release/roughenough-server`. After building you can copy the 
-binary and run on its own (no `cargo` needed):
-
-```bash
-$ cp target/release/roughenough-server /usr/local/bin 
-```
-
-### Stopping the Server
-
-Use Ctrl-C or `kill` the process.
-
+- **protocol**: Core wire format handling, request/response types, data structures
+- **merkle**: Merkle tree implementation with Roughtime-specific tweaks
+- **server**: High-performance UDP server with async I/O and batching
+- **client**: Command-line client for querying Roughtime servers
+- **common**: Shared cryptography and encoding utilities
+- **keys**: Key material handling with multiple secure storage backends
+- **reporting-server**: Web server for collecting malfeasance reports
+- **integration**: End-to-end integration tests
+- **fuzz**: Fuzzing harness
 
 ## Optional Features
 
-Roughenough has two opt-in (disabled by default) features that are enabled either 
-A) via a config setting, or B) at compile-time.
+### Client Features
 
-* [HTTP Health Check responder](doc/OPTIONAL-FEATURES.md#http-health-check) 
-  to facilitate detection and replacement of "sick" Roughenough servers.
-* [Key Management System (KMS) support](doc/OPTIONAL-FEATURES.md#key-management-system-kms-support)
-  to protect the long-term server identity using envelope encryption and 
-  AWS or Google KMS.
+- **reporting**: Enable clients to report malfeasance to a remote server
+  ```bash
+  cargo build -p client --features reporting
+  cargo run --bin client -- hostname.com 2002 --report
+  ```
 
-See [OPTIONAL-FEATURES.md](doc/OPTIONAL-FEATURES.md) for details and instructions
-how to enable and use.
+### Keys Crate Features
 
-## Limitations
+See [doc/PROTECTION.md](doc/PROTECTION.md) for detailed information on seed protection strategies.
 
-Roughtime features not implemented by the server:
+#### Runtime Protection (Online Key Backends)
 
-* On-line (while server is running) key rotation. The server must be restarted to generate a new delegated key. 
-* The Roughenough server depends on the host's time source to comply with the smeared leap-second 
-  requirement of the Roughtime protocol. A Roughenough server sourcing time from 
-  [Google's public NTP servers](https://developers.google.com/time/) would produce compliant
-  smeared leap-seconds but time sourced from members of `pool.ntp.org` likely will not.
+- `online-linux-krs` (default): Store seed in Linux Kernel Keyring for runtime protection
+- `online-ssh-agent` Use SSH agent for seed storage and signing operations
+- `online-pkcs11` PKCS#11 hardware security module integration (Yubikey, HSM, etc)
 
-## About the Roughtime Protocol
-[Roughtime](https://roughtime.googlesource.com/roughtime) is a protocol that aims to achieve rough 
-time synchronisation in a secure way that doesn't depend on any particular time server, and in such
-a way that, if a time server does misbehave, clients end up with cryptographic proof of it. It was 
-created by Adam Langley and Robert Obryk.
-  
-## Contributors
-* Stuart Stock (stuart {at} int08h.com)
-* Aaron Hill (aa1ronham {at} gmail.com)
-* Peter Todd (pete {at} petertodd.org)
-* Muncan90 (github.com/muncan90)
-* Zicklag (github.com/zicklag)
-* Greg at Unrelenting Tech (github.com/unrelentingtech)
-* Eric Swanson (github.com/lachesis)
-* Marcus Dansarie (github.com/dansarie)
+#### Long-term Protection (Seed Storage)
 
-## Copyright and License
-Roughenough is copyright (c) 2017-2025 int08h LLC. All rights reserved. 
+- `longterm-aws-kms` AWS Key Management Service for seed encryption
+- `longterm-gcp-kms` Google Cloud KMS for seed encryption
+- `longterm-aws-secret-manager` AWS Secrets Manager for seed storage
+- `longterm-gcp-secret-manager` Google Cloud Secret Manager for seed storage
 
-int08h LLC licenses Roughenough (the "Software") to you under the Apache License, version 2.0 
-(the "License"); you may not use this Software except in compliance with the License. You may obtain 
-a copy of the License from the [LICENSE](../master/LICENSE) file included with the Software or at:
+## Contributing
 
-  http://www.apache.org/licenses/LICENSE-2.0
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-Unless required by applicable law or agreed to in writing, software distributed under the License 
-is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or 
-implied. See the License for the specific language governing permissions and limitations under 
-the License.
+## License
+
+Copyright (c) 2025 the Roughenough Project Contributors.
+
+Roughenough is licensed under either of
+
+* [Apache License, Version 2.0](LICENSE-APACHE) (http://www.apache.org/licenses/LICENSE-2.0)
+* [MIT License](LICENSE-MIT) (http://opensource.org/licenses/MIT)
+
+at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in this project by you, 
+as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.

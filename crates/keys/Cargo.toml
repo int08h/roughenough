@@ -1,0 +1,51 @@
+[package]
+name = "keys"
+description = "Roughenough key material handling with multiple secure storage backends"
+license = "Apache-2.0 OR MIT"
+edition.workspace = true
+version.workspace = true
+repository = "https://github.com/int08h/roughenough"
+homepage = "https://github.com/int08h/roughenough"
+readme = "../../README.md"
+keywords = ["roughtime", "keys", "kms", "cryptography", "security"]
+categories = ["cryptography", "authentication"]
+
+[features]
+default = ["online-linux-krs"]
+online-linux-krs = ["dep:linux-keyutils"]
+online-pkcs11 = ["dep:cryptoki"]
+online-ssh-agent = ["dep:ssh-agent-client-rs", "dep:ssh-key"]
+longterm-aws-kms = ["dep:aws-config", "dep:aws-sdk-kms"]
+longterm-gcp-kms = ["dep:google-cloud-kms-v1", "dep:crc32c"]
+longterm-aws-secret-manager = ["dep:aws-config", "dep:aws-sdk-secretsmanager"]
+longterm-gcp-secret-manager = ["dep:google-cloud-secretmanager-v1", "dep:crc32c"]
+
+[dependencies]
+common = { workspace = true }
+protocol = { workspace = true }
+aws-config = { workspace = true, optional = true }
+aws-lc-rs = { workspace = true }
+aws-sdk-kms = { workspace = true, optional = true }
+aws-sdk-secretsmanager = { workspace = true, optional = true }
+crc32c = { workspace = true, optional = true }
+data-encoding = { workspace = true }
+google-cloud-kms-v1 = { workspace = true, optional = true }
+google-cloud-secretmanager-v1 = { workspace = true, optional = true }
+cryptoki = { workspace = true, optional = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+ssh-agent-client-rs = { workspace = true, optional = true }
+ssh-key = { workspace = true, optional = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+zeroize = { workspace = true, features = ["zeroize_derive"] }
+clap = { workspace = true, features = ["derive"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+linux-keyutils = { workspace = true, optional = true }
+
+[[bin]]
+name = "keys"
+path = "bin/keys.rs"

@@ -1,0 +1,39 @@
+[package]
+name = "server"
+description = "High-performance asynchronous Roughtime server with batching support"
+license = "Apache-2.0 OR MIT"
+edition.workspace = true
+version.workspace = true
+repository = "https://github.com/int08h/roughenough"
+homepage = "https://github.com/int08h/roughenough"
+readme = "../../README.md"
+keywords = ["roughtime", "server", "time-sync", "udp", "async"]
+categories = ["network-programming", "date-and-time"]
+
+[features]
+test-utils = []
+
+[dependencies]
+keys = { workspace = true }
+merkle = { workspace = true }
+protocol = { workspace = true }
+aws-lc-rs = { workspace = true }
+clap = { workspace = true, features = ["derive", "env"] }
+crossbeam-channel = { workspace = true }
+ctrlc = { workspace = true }
+fastrand = { workspace = true }
+mio = { workspace = true, features = ["net", "os-poll"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+socket2 = { workspace = true, features = ["all"] }
+time-format = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+divan = { workspace = true }
+
+[[bench]]
+name = "server_ops"
+path = "benches/server_ops.rs"
+harness = false

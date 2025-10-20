@@ -1,0 +1,52 @@
+{
+  "servers": [
+    {
+      "name": "Cloudflare-Roughtime-2",
+      "version": "IETF-Roughtime",
+      "publicKeyType": "ed25519",
+      "publicKey": "0GD7c3yP8xEc4Zl2zeuN2SlLvDVVocjsPSL8/Rl/7zg=",
+      "addresses": [
+        {
+          "protocol": "udp",
+          "address": "roughtime.cloudflare.com:2003"
+        }
+      ]
+    },
+    {
+      "name": "int08h-Roughtime",
+      "version": "IETF-Roughtime",
+      "publicKeyType": "ed25519",
+      "publicKey": "AW5uAoTSTDfG5NfY1bTh08GUnOqlRb+HVhbJ3ODJvsE=",
+      "addresses": [
+        {
+          "protocol": "udp",
+          "address": "roughtime.int08h.com:2002"
+        }
+      ]
+    },
+    {
+      "name": "roughtime.se",
+      "version": "IETF-Roughtime",
+      "publicKeyType": "ed25519",
+      "publicKey": "S3AzfZJ5CjSdkJ21ZJGbxqdYP/SoE8fXKY0+aicsehI=",
+      "addresses": [
+        {
+          "protocol": "udp",
+          "address": "roughtime.se:2002"
+        }
+      ]
+    },
+    {
+      "name": "time.txryan.com",
+      "version": "IETF-Roughtime",
+      "publicKeyType": "ed25519",
+      "publicKey": "iBVjxg/1j7y1+kQUTBYdTabxCppesU/07D4PMDJk2WA=",
+      "addresses": [
+        {
+          "protocol": "udp",
+          "address": "time.txryan.com:2002"
+        }
+      ]
+    }
+  ]
+}

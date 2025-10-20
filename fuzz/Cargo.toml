@@ -1,0 +1,39 @@
+[package]
+name = "roughenough2-fuzz"
+license = "Apache-2.0 OR MIT"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+protocol = { path = "../crates/protocol" }
+arbitrary = { version = "1.4", features = ["derive"] }
+libfuzzer-sys = "0.4"
+
+# NOTE
+# These targets are included so that IDEs can effectively work with the code. 
+# You can't run fuzzing this way, see intructions in `fuzz/README.md` for how to run fuzzing targets.
+#
+[[bin]]
+name = "fuzz_request_parse"
+path = "fuzz_targets/fuzz_request_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_response_parse"
+path = "fuzz_targets/fuzz_response_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_structured"
+path = "fuzz_targets/fuzz_structured.rs"
+test = false
+doc = false
+bench = false

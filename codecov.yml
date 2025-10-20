@@ -1,0 +1,20 @@
+comment:
+  layout: "condensed_header, diff, flags, components"
+
+component_management:
+  individual_components:
+    - component_id: protocol
+      name: Roughtime Protocol
+      paths:
+        - crates/protocol/src/**
+        - crates/merkle/src/**
+        - crates/common/src/**
+        - crates/keys/src/**
+    - component_id: client
+      name: Client
+      paths:
+        - crates/client/src/**
+    - component_id: server
+      name: Server
+      paths:
+        - crates/server/src/**

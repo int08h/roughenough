@@ -1,72 +1,207 @@
 # Contributing to Roughenough
 
-Do you enjoy working on obscure cryptographically secure time synchronization protocols? 
+Thank you for your interest in contributing to Roughenough! This document provides guidelines and instructions 
+for contributing to the project.
 
-:+1::tada: nice, me too!
+## Getting Started
 
-# Contribute via Pull Requests
+### Development Environment Setup
 
-Please open a pull request (PR) for your changes and include:
+**Prerequisites:**
+- Rust toolchain; Roughenough targets stable Rust
+- Linux, MacOS, or other Unix-like operating system
+- Git
+- Optional: cloud provider credentials for KMS feature development (AWS, GCP)
 
-* An overall description/rationale of the PR
-* Tests for any new or modified functionality
-* Code formatted with `rustfmt` default style settings 
-* License (Apache 2.0) and copyright statements for your code
-* A Developer Certificate of Origin (DCO) sign-off as described below
-* A willingness to iterate and make changes ;)
+**Clone the repository:**
 
-`Roughenough` targets **stable Rust** only. Contributions that don't compile
-on `stable` will be declined. Sorry.
-
-# Developer Certificate of Origin
-
-To provide assurance of the provenance and integrity of contributions 
-Roughenough uses the [Developer Certificate of Origin](https://developercertificate.org/)
-created by the Linux Foundation instead of lengthy Contributor License 
-Agreements (CLAs). 
-
-Please include *verbatim* and *unchanged* the full DCO statement 
-below with your PR:
-
-```
-Developer Certificate of Origin
-Version 1.1
-
-Copyright (C) 2004, 2006 The Linux Foundation and its contributors.
-1 Letterman Drive
-Suite D4700
-San Francisco, CA, 94129
-
-Everyone is permitted to copy and distribute verbatim copies of this
-license document, but changing it is not allowed.
-
-Developer's Certificate of Origin 1.1
-
-By making a contribution to this project, I certify that:
-
-(a) The contribution was created in whole or in part by me and I
-    have the right to submit it under the open source license
-    indicated in the file; or
-
-(b) The contribution is based upon previous work that, to the best
-    of my knowledge, is covered under an appropriate open source
-    license and I have the right under that license to submit that
-    work with modifications, whether created in whole or in part
-    by me, under the same open source license (unless I am
-    permitted to submit under a different license), as indicated
-    in the file; or
-
-(c) The contribution was provided directly to me by some other
-    person who certified (a), (b) or (c) and I have not modified
-    it.
-
-(d) I understand and agree that this project and the contribution
-    are public and that a record of the contribution (including all
-    personal information I submit with it, including my sign-off) is
-    maintained indefinitely and may be redistributed consistent with
-    this project or the open source license(s) involved.
+```bash
+git clone https://github.com/int08h/roughenough.git
+cd roughenough
 ```
 
-# Thanks In Advance for Helping Roughenough!
+**Build the project:**
 
-Stuart @int08h
+```bash
+# Build all workspace crates
+cargo build
+
+# Build with all optional features
+cargo build --all-features
+
+# Build release version
+cargo build --release
+```
+
+**Verify your setup:**
+
+```bash
+# Run all tests
+cargo test
+
+# Run integration test on debug+release builds
+cargo build && cargo build --release && target/debug/integration-test
+
+# Run checks
+cargo check
+cargo clippy
+cargo +nightly fmt --check
+```
+
+## Development Workflow
+
+## Project Structure
+
+- **crates/protocol**: Core wire format, request/response types, TLV encoding
+- **crates/merkle**: Merkle tree with Roughtime-specific tweaks
+- **crates/server**: Asynchronous UDP server with batching
+- **crates/client**: Command-line client and library
+- **crates/common**: Shared cryptography and encoding utilities
+- **crates/keys**: Key material handling with multiple secure backends
+- **crates/reporting-server**: Malfeasance report collection server
+- **crates/integration**: End-to-end integration tests
+- **fuzz**: Fuzzing harness (separate crate, requires nightly)
+- **doc/**: Protocol documentation and implementation guides
+- **tasks/**: Project management and task tracking
+
+### Running Tests
+
+```bash
+# Run all tests
+cargo test
+
+# Run tests for specific crate
+cargo test -p protocol
+cargo test -p merkle
+
+# Run integration tests
+cargo build
+target/debug/integration-test
+
+# Run tests with all features enabled
+cargo test --all-features
+```
+
+### Benchmarking
+
+When making performance-critical changes, always benchmark before and after:
+
+```bash
+# Run all benchmarks
+cargo bench
+
+# Running benchmarks for specific crates
+cargo bench -p merkle
+cargo bench -p server
+```
+
+**Important:** Use benchmarks to validate performance improvements. Be skeptical of assumptions - measure actual 
+performance with representative workloads. Please include benchmark results in your PR.
+
+### Code Coverage
+
+```bash
+# Install cargo-llvm-cov (one time)
+cargo install cargo-llvm-cov
+
+# Generate HTML coverage report
+./coverage.sh
+
+# Generate lcov format for CI
+./coverage.sh --lcov
+
+# Coverage for specific crate
+cargo llvm-cov -p protocol --html
+```
+
+### Fuzzing
+
+Fuzzing requires nightly Rust and is currently experimental:
+
+```bash
+# Switch to fuzzing crate
+cd fuzz
+
+# List available fuzz targets
+cargo +nightly fuzz list
+
+# Run fuzzing
+cargo +nightly fuzz run fuzz_request_parse
+cargo +nightly fuzz run fuzz_response_parse
+cargo +nightly fuzz run fuzz_structured
+
+# Minimize corpus after finding issues
+cargo +nightly fuzz cmin <target>
+
+# Analyze a crash
+cargo +nightly fuzz run <target> <path-to-crash-artifact>
+```
+
+## Coding Standards
+
+### Rust Style Guide
+
+- Follow the official [Rust Style Guide](https://doc.rust-lang.org/nightly/style-guide/)
+- Use `cargo +nightly fmt` to format code (requires nightly toolchain)
+- Run `cargo clippy` and address all warnings
+
+### Unsafe Code Policy
+
+**Roughenough maintains a no-unsafe policy.** Use `#![forbid(unsafe_code)]`.
+
+**Exceptions:**
+- The `server` crate implements `unsafe impl Send/Sync` on its `KeySource` type for manual thread safety
+- The `client` binary (`main.rs`) uses unsafe for system clock manipulation via `libc::clock_settime`
+
+**For new contributions:**
+- Avoid introducing unsafe code
+- If unsafe is necessary, provide the rationale in your PR
+- Restrict unsafe code to the smallest possible scope and include comments explaining why the unsafe code is correct
+
+### Testing
+
+- Write tests for new functionality
+- Maintain or improve code coverage
+- Include both unit tests and integration tests where appropriate
+- Test error cases, not just happy paths
+- Never disable or ignore tests to make tests pass
+
+## Pull Request Process
+
+1. **Create a feature branch** from `master`:
+   ```bash
+   git checkout -b feature/your-feature-name
+   # or
+   git checkout -b fix/issue-number-description
+   ```
+
+2. **Make your changes:**
+   - Write clear, focused commits
+   - Add tests for new functionality
+   - Update documentation as needed
+   - Ensure all tests pass: `cargo test`
+   - Ensure no clippy warnings: `cargo clippy`
+   - Format code: `cargo +nightly fmt`
+
+3. **Push your branch:**
+   ```bash
+   git push origin feature/your-feature-name
+   ```
+
+4. **Create a pull request:**
+   - Use a clear, descriptive title
+   - Describe what changes you made and why
+   - Reference any related issues
+   - Include test results if relevant
+   - Note any breaking changes
+
+5. **Code review:**
+   - Address review feedback promptly
+   - Keep discussions focused and professional
+   - Update your PR based on feedback
+
+6. **Merge:**
+   - PRs require approval before merging
+   - Keep your branch updated with master
+   - Squash commits if requested
+

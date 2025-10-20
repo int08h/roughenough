@@ -1,0 +1,52 @@
+{
+  "servers": [
+    {
+      "name": "localhost-2001",
+      "version": "IETF-Roughtime",
+      "publicKeyType": "ed25519",
+      "publicKey": "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29",
+      "addresses": [
+        {
+          "protocol": "udp",
+          "address": "127.0.0.1:2001"
+        }
+      ]
+    },
+    {
+      "name": "localhost-2002",
+      "version": "IETF-Roughtime",
+      "publicKeyType": "ed25519",
+      "publicKey": "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29",
+      "addresses": [
+        {
+          "protocol": "udp",
+          "address": "127.0.0.1:2002"
+        }
+      ]
+    },
+    {
+      "name": "localhost-2003",
+      "version": "IETF-Roughtime",
+      "publicKeyType": "ed25519",
+      "publicKey": "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29",
+      "addresses": [
+        {
+          "protocol": "udp",
+          "address": "127.0.0.1:2003"
+        }
+      ]
+    },
+    {
+      "name": "localhost-2004",
+      "version": "IETF-Roughtime",
+      "publicKeyType": "ed25519",
+      "publicKey": "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29",
+      "addresses": [
+        {
+          "protocol": "udp",
+          "address": "127.0.0.1:2004"
+        }
+      ]
+    }
+  ]
+}

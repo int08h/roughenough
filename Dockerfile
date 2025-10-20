@@ -1,47 +1,30 @@
-#
-# Example multi-stage docker build for running a Roughenough server
-#
+FROM rust:1.88-slim-bookworm AS builder
 
-# Stage 1: build
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-FROM rust:1.59 AS stage1
+# Create app directory
+WORKDIR /app
 
-ARG ROUGHENOUGH_RELEASE=1.2.0-draft5
-ARG ROUGHENOUGH_FEATURES="default" 
-# Uncomment and replace above if you want KMS support
-#ARG ROUGHENOUGH_FEATURES="awskms"
-#ARG ROUGHENOUGH_FEATURES="gcpkms"
+# Copy all source files
+COPY . .
 
-RUN git clone -b ${ROUGHENOUGH_RELEASE} https://github.com/int08h/roughenough.git \
-    && cd /roughenough \
-    && cargo build --release --features ${ROUGHENOUGH_FEATURES}
+# Build the server in release mode with all features enabled
+RUN cargo build --release --bin server --all-features
 
-# Stage 2: runtime image
+# Runtime stage - using distroless with shell
+FROM gcr.io/distroless/cc-debian12:debug
 
-FROM gcr.io/distroless/cc AS stage2
+# Copy the binary from builder
+COPY --from=builder /app/target/release/server /server
 
-WORKDIR /roughenough
+# Expose the default Roughenough port
+EXPOSE 2003/udp
 
-COPY --from=stage1 /roughenough/target/release/roughenough-server /roughenough
+# Set the entrypoint
+ENTRYPOINT ["/server"]
 
-# Produce backtraces in case of a panic
-ENV RUST_BACKTRACE 1
-
-# Configure Roughenough via environment variables
-ENV ROUGHENOUGH_PORT 2002
-ENV ROUGHENOUGH_INTERFACE 0.0.0.0
-ENV ROUGHENOUGH_SEED 111111111aaaaaaaaa222222222bbbbbbbbb333333333ccccccccc4444444444
-
-# Alternatively Roughenough can use a config file
-# COPY roughenough.cfg /roughenough
-
-# How to provide credentials when using GCP KMS
-# COPY gcp-creds.json /roughenough
-# ENV GOOGLE_APPLICATION_CREDENTIALS /roughenough/creds.json
-
-EXPOSE 2002/udp 
-
-CMD ["/roughenough/roughenough-server", "ENV"]
-
-# Or if using a config file
-#CMD ["/roughenough/roughenough-server", "/roughenough/roughenough.cfg"]
+# Args for testing, need to set real args for prod
+CMD ["--interface", "0.0.0.0", "--port", "2003"]
