@@ -1,31 +1,161 @@
-name: Build
+name: Rust
 
 on:
   push:
-    branches: [ master, rfc ]
+    branches: [ "master" ]
   pull_request:
-    branches: [ master, rfc ]
+    branches: [ "master" ]
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: full
+  # Disable incremental compilation for CI to avoid cache bloat
+  CARGO_INCREMENTAL: 0
+  # Use a consistent toolchain version for better caching
+  RUST_VERSION: stable
+  # Domain socket for ssh-agent seed backend tests
+  SSH_AUTH_SOCK: /tmp/ssh_agent.sock
 
 jobs:
+  clippy:
+    name: Clippy (Linting)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: clippy
+
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  rustfmt:
+    name: Rustfmt (Code Formatting)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: nightly
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo +nightly fmt --all -- --check
+
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Cache cargo-audit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: ${{ runner.os }}-cargo-audit
+
+      - name: Install cargo-audit
+        run: |
+          if ! command -v cargo-audit &> /dev/null; then
+            cargo install cargo-audit --locked
+          fi
+
+      - name: Run security audit
+        run: cargo audit
+
+  license-check:
+    name: License Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Cache cargo-deny
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-deny
+          key: ${{ runner.os }}-cargo-deny
+
+      - name: Install cargo-deny
+        run: |
+          if ! command -v cargo-deny &> /dev/null; then
+            cargo install cargo-deny --locked
+          fi
+
+      - name: Check licenses
+        run: cargo deny check licenses
+
   build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        feature: ["default", "gcpkms", "awskms"]
-        toolchain: ["stable", "beta"]
-    steps:
-    - uses: actions/checkout@v2
-    - name: Install Rust ${{ matrix.toolchain }} 
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: ${{ matrix.toolchain }}
-        override: true
-        profile: minimal
-    - name: Build using Rust ${{ matrix.toolchain }}
-      run: cargo build --verbose --features ${{ matrix.feature }} --release
-    - name: Run tests using Rust ${{ matrix.toolchain }}
-      run: cargo test --verbose --features ${{ matrix.feature }} --release
 
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Install Rust toolchain
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: ${{ env.RUST_VERSION }}
+        components: llvm-tools-preview
+
+    - name: Cache Cargo tools
+      uses: actions/cache@v4
+      id: cache
+      with:
+        path: |
+          ~/.cargo/bin/cargo-llvm-cov
+          ~/.cargo/bin/cargo-auditable
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Install Cargo tools
+      if: steps.cache.outputs.cache-hit != 'true'
+      run: |
+          cargo install cargo-auditable --locked
+          cargo install cargo-llvm-cov --locked
+
+    # For the sshagent seed backend tests
+    - name: Start SSH Agent
+      run: ssh-agent -a $SSH_AUTH_SOCK > /dev/null
+
+    - name: Build
+      run: cargo auditable build --verbose --all-features
+
+    - name: Run tests
+      run: cargo test --verbose --all-features
+
+    - name: Generate code coverage
+      run: |
+        cargo llvm-cov --workspace --lcov --output-path lcov.info
+        cargo llvm-cov --workspace --html
+        
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v5
+      with:
+        files: ./lcov.info
+        fail_ci_if_error: false
+        verbose: true
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        
+    - name: Upload coverage artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report
+        path: target/llvm-cov/html/
+        retention-days: 30
+        
+    - name: Coverage summary
+      run: cargo llvm-cov --workspace --no-report --summary-only

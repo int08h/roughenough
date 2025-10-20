@@ -1,0 +1,37 @@
+name: Examples Validation
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  examples:
+    name: Build Examples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Build all examples
+        run: |
+          # Build examples for each crate that has them
+          for dir in crates/*/; do
+            if [ -d "${dir}examples" ]; then
+              echo "Building examples in $dir"
+              cargo build --manifest-path "${dir}Cargo.toml" --examples --all-features
+            fi
+          done
+
+      - name: List built examples
+        run: |
+          echo "Built examples:"
+          find target/debug/examples -type f -executable 2>/dev/null || echo "No examples found"

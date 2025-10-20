@@ -1,0 +1,44 @@
+name: Documentation
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTDOCFLAGS: -D warnings
+
+jobs:
+  docs:
+    name: Build Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Build documentation
+        run: |
+          # Build documentation for the workspace
+          # --no-deps: only document this crate, not dependencies
+          # --document-private-items: include private items in documentation
+          cargo doc --workspace --all-features --no-deps --document-private-items
+
+      - name: Check for missing documentation
+        run: |
+          # This will fail if there are any missing documentation warnings
+          # due to RUSTDOCFLAGS=-D warnings
+          cargo doc --workspace --all-features --no-deps
+
+      - name: Upload documentation
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation
+          path: target/doc/
+          retention-days: 30
