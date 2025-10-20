@@ -1,7 +1,20 @@
-Cargo.lock
-target/
-*.rs.bk
-example-kms.cfg
-example-gcp.cfg
-creds.json
+/target
+crates/reporting-server/target/
 .idea/
+
+# Environment variables and secrets
+.env
+
+# Code coverage artifacts
+*.profraw
+*.profdata
+lcov.info
+coverage.json
+/coverage/
+
+# AI agent configuration (local development only)
+CLAUDE.md
+GEMINI.md
+
+# Local development tooling
+.junie/
