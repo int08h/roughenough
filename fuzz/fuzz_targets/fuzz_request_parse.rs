@@ -2,10 +2,10 @@
 
 use libfuzzer_sys::fuzz_target;
 use arbitrary::{Arbitrary, Unstructured};
-use protocol::cursor::ParseCursor;
-use protocol::request::{Request, REQUEST_SIZE};
-use protocol::tags::{Nonce, SrvCommitment};
-use protocol::wire::{FromFrame, ToFrame};
+use roughenough_protocol::cursor::ParseCursor;
+use roughenough_protocol::request::{Request, REQUEST_SIZE};
+use roughenough_protocol::tags::{Nonce, SrvCommitment};
+use roughenough_protocol::wire::{FromFrame, ToFrame};
 
 // Simple structure for generating valid-looking requests
 #[derive(Arbitrary)]

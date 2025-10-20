@@ -1,11 +1,11 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use protocol::cursor::ParseCursor;
-use protocol::response::Response;
-use protocol::tags::MessageType;
-use protocol::ToWire;
-use protocol::wire::FromWire;
+use roughenough_protocol::cursor::ParseCursor;
+use roughenough_protocol::response::Response;
+use roughenough_protocol::tags::MessageType;
+use roughenough_protocol::ToWire;
+use roughenough_protocol::wire::FromWire;
 
 fuzz_target!(|data: &[u8]| {
     // Create a mutable copy of the data

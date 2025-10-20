@@ -1,5 +1,5 @@
 [package]
-name = "roughenough2-fuzz"
+name = "roughenough-fuzz"
 license = "Apache-2.0 OR MIT"
 version = "0.0.0"
 publish = false
@@ -9,7 +9,7 @@ edition = "2024"
 cargo-fuzz = true
 
 [dependencies]
-protocol = { path = "../crates/protocol" }
+roughenough-protocol = { path = "../crates/roughenough-protocol" }
 arbitrary = { version = "1.4", features = ["derive"] }
 libfuzzer-sys = "0.4"
 

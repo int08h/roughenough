@@ -1,0 +1,37 @@
+[package]
+name = "roughenough-client"
+description = "Command-line Roughtime client for querying time servers"
+license = "Apache-2.0 OR MIT"
+edition.workspace = true
+version.workspace = true
+repository = "https://github.com/int08h/roughenough"
+homepage = "https://github.com/int08h/roughenough"
+readme = "../../README.md"
+keywords = ["roughtime", "client", "time-sync", "ntp", "cli"]
+categories = ["network-programming", "command-line-utilities", "date-and-time"]
+
+[features]
+default = []
+reporting = ["dep:ureq"]
+
+[[bin]]
+name = "client"
+path = "src/main.rs"
+
+[dependencies]
+roughenough-common = { workspace = true }
+roughenough-merkle = { workspace = true }
+roughenough-protocol = { workspace = true }
+roughenough-server = { workspace = true }
+aws-lc-rs = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+data-encoding = { workspace = true }
+fastrand = { workspace = true }
+libc = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+ureq = { workspace = true, features = ["json"], optional = true }

@@ -8,13 +8,13 @@ rust-version = "1.88"
 
 [workspace.dependencies]
 # Internal workspace crates
-client = { path = "crates/client", version = "2.0.0" }
-common = { path = "crates/common", version = "2.0.0" }
-integration-test = { path = "crates/integration", version = "2.0.0" }
-keys = { path = "crates/keys", version = "2.0.0" }
-merkle = { path = "crates/merkle", version = "2.0.0" }
-protocol = { path = "crates/protocol", version = "2.0.0" }
-server = { path = "crates/server", version = "2.0.0" }
+roughenough-client = { path = "crates/roughenough-client", version = "2.0.0" }
+roughenough-common = { path = "crates/roughenough-common", version = "2.0.0" }
+roughenough-integration-test = { path = "crates/roughenough-integration", version = "2.0.0" }
+roughenough-keys = { path = "crates/roughenough-keys", version = "2.0.0" }
+roughenough-merkle = { path = "crates/roughenough-merkle", version = "2.0.0" }
+roughenough-protocol = { path = "crates/roughenough-protocol", version = "2.0.0" }
+roughenough-server = { path = "crates/roughenough-server", version = "2.0.0" }
 
 # External dependencies
 aws-config = "1.8"
@@ -55,26 +55,26 @@ features = ["std"]
 [workspace]
 resolver = "3"
 members = [
-    "crates/client",
-    "crates/common",
-    "crates/integration",
-    "crates/merkle",
-    "crates/protocol",
-    "crates/keys",
-    "crates/server",
+    "crates/roughenough-client",
+    "crates/roughenough-common",
+    "crates/roughenough-integration",
+    "crates/roughenough-merkle",
+    "crates/roughenough-protocol",
+    "crates/roughenough-keys",
+    "crates/roughenough-server",
 ]
 default-members = [
-    "crates/client",
-    "crates/common",
-    "crates/integration",
-    "crates/merkle",
-    "crates/protocol",
-    "crates/keys",
-    "crates/server",
+    "crates/roughenough-client",
+    "crates/roughenough-common",
+    "crates/roughenough-integration",
+    "crates/roughenough-merkle",
+    "crates/roughenough-protocol",
+    "crates/roughenough-keys",
+    "crates/roughenough-server",
 ]
 exclude = [
     "fuzz",
-    "crates/reporting-server"
+    "crates/roughenough-reporting-server"
 ]
 
 [profile.release]

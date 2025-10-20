@@ -2,14 +2,14 @@
 
 use libfuzzer_sys::fuzz_target;
 use arbitrary::{Arbitrary, Unstructured};
-use protocol::cursor::ParseCursor;
-use protocol::request::{Request, REQUEST_SIZE};
-use protocol::response::Response;
-use protocol::tags::{
+use roughenough_protocol::cursor::ParseCursor;
+use roughenough_protocol::request::{Request, REQUEST_SIZE};
+use roughenough_protocol::response::Response;
+use roughenough_protocol::tags::{
     Certificate, Delegation, MerklePath, Nonce, PublicKey, 
     Signature, SignedResponse, SrvCommitment, SupportedVersions, Version
 };
-use protocol::wire::{FromWire, ToWire};
+use roughenough_protocol::wire::{FromWire, ToWire};
 
 // Arbitrary implementations for structured fuzzing
 
