@@ -56,8 +56,8 @@ cargo test merkle::power_of_two        # Test specific module
 # Build (from root of project)
 cargo build
 
-# Run server/client integration test (from root of project) 
-target/debug/integration-test
+# Run server/client integration test (from root of project)
+target/debug/roughenough_integration_test
 ```
 
 ### Benchmarking
@@ -137,51 +137,51 @@ Coverage reports are generated in `target/llvm-cov/html/` and can be viewed in a
 ### Running the server
 ```bash
 # Debug build
-cargo run --bin server
+cargo run --bin roughenough_server
 
-# Release build  
-cargo run --release --bin server
+# Release build
+cargo run --release --bin roughenough_server
 
 # Or directly:
-target/debug/server
-target/release/server 
+target/debug/roughenough_server
+target/release/roughenough_server
 
 # With fixed time offset for testing:
-cargo run --bin server -- --fixed-offset="-60"  # 60 seconds behind UTC
+cargo run --bin roughenough_server -- --fixed-offset="-60"  # 60 seconds behind UTC
 ```
 
 ### Running the client
 ```bash
 # Basic usage
-cargo run --bin client -- hostname.com 2002
+cargo run --bin roughenough_client -- hostname.com 2002
 
 # With server key verification
-cargo run --bin client -- hostname.com 2002 -k <base64-or-hex-key>
+cargo run --bin roughenough_client -- hostname.com 2002 -k <base64-or-hex-key>
 
 # Multiple requests
-cargo run --bin client -- hostname.com 2002 -n 10
+cargo run --bin roughenough_client -- hostname.com 2002 -n 10
 
 # Verbose output
-cargo run --bin client -- hostname.com 2002 -v
+cargo run --bin roughenough_client -- hostname.com 2002 -v
 
 # Query multiple servers from JSON list
-cargo run --bin client -- -l servers.json
+cargo run --bin roughenough_client -- -l servers.json
 
 # Time format options
-cargo run --bin client -- hostname.com 2002 --epoch  # Unix timestamp
-cargo run --bin client -- hostname.com 2002 --zulu   # ISO 8601 UTC
+cargo run --bin roughenough_client -- hostname.com 2002 --epoch  # Unix timestamp
+cargo run --bin roughenough_client -- hostname.com 2002 --zulu   # ISO 8601 UTC
 
 # Enable malfeasance reporting
-cargo run --bin client -- hostname.com 2002 --report
+cargo run --bin roughenough_client -- hostname.com 2002 --report
 
 # Or directly:
-target/debug/client hostname.com 2002
+target/debug/roughenough_client hostname.com 2002
 ```
 
 ### Running the reporting server
 ```bash
 # Run the malfeasance reporting server
-cd crates/reporting-server && cargo run --bin reporting-server
+cd crates/reporting-server && cargo run --bin roughenough_reporting_server
 
 # The server listens on port 3000 by default
 # Endpoints:
@@ -196,10 +196,10 @@ cd crates/reporting-server && cargo run --bin reporting-server
 cargo build -p keys
 
 # Run the keys command-line tool
-cargo run -p keys --bin keys -- --help
+cargo run -p keys --bin roughenough_keys -- --help
 
 # Or directly:
-target/debug/keys --help
+target/debug/roughenough_keys --help
 ```
 
 ## Protocol Implementation Notes

@@ -15,7 +15,7 @@ default = []
 reporting = ["dep:ureq"]
 
 [[bin]]
-name = "client"
+name = "roughenough_client"
 path = "src/main.rs"
 
 [dependencies]

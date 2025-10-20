@@ -10,6 +10,10 @@ readme = "../../README.md"
 keywords = ["roughtime", "server", "time-sync", "udp", "async"]
 categories = ["network-programming", "date-and-time"]
 
+[[bin]]
+name = "roughenough_server"
+path = "src/main.rs"
+
 [features]
 test-utils = []
 

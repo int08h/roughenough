@@ -43,13 +43,13 @@ cargo build --release --all-features
 
 ```bash
 # Debug build
-cargo run --bin server
+cargo run --bin roughenough_server
 
 # Release build with optimizations
-cargo run --release --bin server
+cargo run --release --bin roughenough_server
 
 # Run the server binary directly
-target/release/server
+target/release/roughenough_server
 ```
 
 The server will start listening for UDP requests on the default port (2002).
@@ -60,26 +60,26 @@ Basic usage:
 
 ```bash
 # Query a Roughtime server
-cargo run --bin client -- roughtime.int08h.com 2002
+cargo run --bin roughenough_client -- roughtime.int08h.com 2002
 
 # Verify server public key
-cargo run --bin client -- roughtime.int08h.com 2002 -k <base64-or-hex-key>
+cargo run --bin roughenough_client -- roughtime.int08h.com 2002 -k <base64-or-hex-key>
 
 # Multiple requests
-cargo run --bin client -- roughtime.int08h.com 2002 -n 10
+cargo run --bin roughenough_client -- roughtime.int08h.com 2002 -n 10
 
 # Verbose output
-cargo run --bin client -- roughtime.int08h.com 2002 -v
+cargo run --bin roughenough_client -- roughtime.int08h.com 2002 -v
 
 # Different time formats
-cargo run --bin client -- roughtime.int08h.com 2002 --epoch  # Unix timestamp
-cargo run --bin client -- roughtime.int08h.com 2002 --zulu   # ISO 8601 UTC
+cargo run --bin roughenough_client -- roughtime.int08h.com 2002 --epoch  # Unix timestamp
+cargo run --bin roughenough_client -- roughtime.int08h.com 2002 --zulu   # ISO 8601 UTC
 ```
 
 Query multiple servers from an RFC compliant JSON list:
 
 ```bash
-cargo run --bin client -- -l servers.json
+cargo run --bin roughenough_client -- -l servers.json
 ```
 
 ### Running Tests
@@ -92,7 +92,7 @@ cargo test
 cargo test -p protocol
 
 # Run integration tests
-target/debug/integration-test
+target/debug/roughenough_integration_test
 ```
 
 ## Project Structure
@@ -116,7 +116,7 @@ Roughtime is structured as a Cargo workspace with multiple crates:
 - **reporting**: Enable clients to report malfeasance to a remote server
   ```bash
   cargo build -p client --features reporting
-  cargo run --bin client -- hostname.com 2002 --report
+  cargo run --bin roughenough_client -- hostname.com 2002 --report
   ```
 
 ### Keys Crate Features

@@ -40,7 +40,7 @@ cargo build --release
 cargo test
 
 # Run integration test on debug+release builds
-cargo build && cargo build --release && target/debug/integration-test
+cargo build && cargo build --release && target/debug/roughenough_integration_test
 
 # Run checks
 cargo check
@@ -76,7 +76,7 @@ cargo test -p merkle
 
 # Run integration tests
 cargo build
-target/debug/integration-test
+target/debug/roughenough_integration_test
 
 # Run tests with all features enabled
 cargo test --all-features

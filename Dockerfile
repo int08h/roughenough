@@ -12,19 +12,19 @@ WORKDIR /app
 COPY . .
 
 # Build the server in release mode with all features enabled
-RUN cargo build --release --bin server --all-features
+RUN cargo build --release --bin roughenough_server --all-features
 
 # Runtime stage - using distroless with shell
 FROM gcr.io/distroless/cc-debian12:debug
 
 # Copy the binary from builder
-COPY --from=builder /app/target/release/server /server
+COPY --from=builder /app/target/release/roughenough_server /roughenough_server
 
 # Expose the default Roughenough port
 EXPOSE 2003/udp
 
 # Set the entrypoint
-ENTRYPOINT ["/server"]
+ENTRYPOINT ["/roughenough_server"]
 
 # Args for testing, need to set real args for prod
 CMD ["--interface", "0.0.0.0", "--port", "2003"]

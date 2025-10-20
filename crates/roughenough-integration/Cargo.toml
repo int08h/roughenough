@@ -23,6 +23,10 @@ tracing = { workspace = true }
 libc = { workspace = true }
 
 [[bin]]
-name = "load_test"
+name = "roughenough_integration_test"
+path = "src/main.rs"
+
+[[bin]]
+name = "roughenough_load_test"
 path = "src/load_gen.rs"
 

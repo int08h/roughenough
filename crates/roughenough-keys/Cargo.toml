@@ -47,5 +47,5 @@ clap = { workspace = true, features = ["derive"] }
 linux-keyutils = { workspace = true, optional = true }
 
 [[bin]]
-name = "keys"
+name = "roughenough_keys"
 path = "bin/keys.rs"

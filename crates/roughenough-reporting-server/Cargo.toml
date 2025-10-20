@@ -11,7 +11,7 @@ keywords = ["roughtime", "malfeasance", "reporting", "server", "web"]
 categories = ["network-programming", "web-programming"]
 
 [[bin]]
-name = "reporting-server"
+name = "roughenough_reporting_server"
 path = "src/main.rs"
 
 [dependencies]
