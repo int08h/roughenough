@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability, please email **stuart@int08h.com** rather than opening a public issue.
+If you discover a security vulnerability, please email **stuart @ int08h.com** rather than opening a public issue.
 
 Include:
 - Description of the vulnerability

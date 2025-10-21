@@ -52,14 +52,14 @@ cargo +nightly fmt --check
 
 ## Project Structure
 
-- **crates/protocol**: Core wire format, request/response types, TLV encoding
-- **crates/merkle**: Merkle tree with Roughtime-specific tweaks
-- **crates/server**: Asynchronous UDP server with batching
-- **crates/client**: Command-line client and library
-- **crates/common**: Shared cryptography and encoding utilities
-- **crates/keys**: Key material handling with multiple secure backends
-- **crates/reporting-server**: Malfeasance report collection server
-- **crates/integration**: End-to-end integration tests
+- **crates/roughenough-protocol**: Core wire format, request/response types, TLV encoding
+- **crates/roughenough-merkle**: Merkle tree with Roughtime-specific tweaks
+- **crates/roughenough-server**: Asynchronous UDP server with batching
+- **crates/roughenough-client**: Command-line client and library
+- **crates/roughenough-common**: Shared cryptography and encoding utilities
+- **crates/roughenough-keys**: Key material handling with multiple secure backends
+- **crates/roughenough-reporting-server**: Malfeasance report collection server
+- **crates/roughenough-integration**: End-to-end integration tests
 - **fuzz**: Fuzzing harness (separate crate, requires nightly)
 - **doc/**: Protocol documentation and implementation guides
 - **tasks/**: Project management and task tracking
@@ -71,8 +71,8 @@ cargo +nightly fmt --check
 cargo test
 
 # Run tests for specific crate
-cargo test -p protocol
-cargo test -p merkle
+cargo test -p roughenough-protocol
+cargo test -p roughenough-merkle
 
 # Run integration tests
 cargo build
@@ -91,8 +91,8 @@ When making performance-critical changes, always benchmark before and after:
 cargo bench
 
 # Running benchmarks for specific crates
-cargo bench -p merkle
-cargo bench -p server
+cargo bench -p roughenough-merkle
+cargo bench -p roughenough-server
 ```
 
 **Important:** Use benchmarks to validate performance improvements. Be skeptical of assumptions - measure actual 
@@ -111,7 +111,7 @@ cargo install cargo-llvm-cov
 ./coverage.sh --lcov
 
 # Coverage for specific crate
-cargo llvm-cov -p protocol --html
+cargo llvm-cov -p roughenough-protocol --html
 ```
 
 ### Fuzzing
