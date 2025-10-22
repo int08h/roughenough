@@ -140,6 +140,17 @@ See [doc/PROTECTION.md](doc/PROTECTION.md) for detailed information on seed prot
 
 Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
+Thank you to all past and present contributors:
+
+* Stuart Stock (stuart {at} int08h.com)
+* Aaron Hill (aa1ronham {at} gmail.com)
+* Peter Todd (pete {at} petertodd.org)
+* Muncan90 (github.com/muncan90)
+* Zicklag (github.com/zicklag)
+* Greg at Unrelenting Tech (github.com/unrelentingtech)
+* Eric Swanson (github.com/lachesis)
+* Marcus Dansarie (github.com/dansarie)
+
 ## License
 
 Copyright (c) 2025 the Roughenough Project Contributors.
