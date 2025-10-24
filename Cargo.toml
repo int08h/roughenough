@@ -21,7 +21,7 @@ aws-config = "1.8"
 aws-lc-rs = "1.14"
 aws-sdk-kms = "1.90"
 aws-sdk-secretsmanager = "1.90"
-chrono = "0.4"
+jiff = { version = "0.2", features = ["serde"] }
 clap = "4.5"
 crc32c = "0.6"
 crossbeam-channel = "0.5"

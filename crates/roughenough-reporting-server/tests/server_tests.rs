@@ -2,14 +2,14 @@ use std::net::{SocketAddr, TcpListener};
 use std::sync::Arc;
 use std::time::Duration;
 
+use data_encoding::BASE64;
 use roughenough_client::measurement::MeasurementBuilder;
 use roughenough_client::{CausalityViolation, MalfeasanceReport};
 use roughenough_common::crypto::calculate_chained_nonce;
-use data_encoding::BASE64;
 use roughenough_protocol::ToFrame;
 use roughenough_protocol::tags::Nonce;
-use reporting_server::storage::InMemoryStorage;
-use reporting_server::{AppState, CreationResponse};
+use roughenough_reporting_server::storage::InMemoryStorage;
+use roughenough_reporting_server::{AppState, CreationResponse};
 use roughenough_server::test_utils::TestContext;
 use tokio::task::JoinHandle;
 
@@ -40,7 +40,7 @@ impl TestServer {
         };
 
         // Build the actual server router (no reimplementation!)
-        let app = reporting_server::create_app(state);
+        let app = roughenough_reporting_server::create_app(state);
 
         // Create the TCP listener
         let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
@@ -313,7 +313,7 @@ async fn test_nonexistent_report() {
 
 #[tokio::test]
 async fn test_report_validation_directly() {
-    use reporting_server::validation::validate_report;
+    use roughenough_reporting_server::validation::validate_report;
 
     let report = create_test_malfeasance_report();
     // Should validate successfully

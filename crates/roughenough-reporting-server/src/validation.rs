@@ -1,6 +1,6 @@
+use data_encoding::BASE64;
 use roughenough_client::{MalfeasanceReport, ReportEntry, ResponseValidator};
 use roughenough_common::crypto::calculate_chained_nonce;
-use data_encoding::BASE64;
 use roughenough_protocol::cursor::ParseCursor;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::response::Response;

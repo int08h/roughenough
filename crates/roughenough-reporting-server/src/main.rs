@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use reporting_server::{AppState, InMemoryStorage, create_app};
+use roughenough_reporting_server::{AppState, InMemoryStorage, create_app};
 use tracing::info;
 
 #[tokio::main]

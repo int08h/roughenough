@@ -9,7 +9,7 @@ use serde::Serialize;
 #[derive(Debug, Clone, Serialize)]
 pub struct StoredReport {
     pub id: String,
-    pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub timestamp: jiff::Timestamp,
     pub source_ip: String,
     pub report: MalfeasanceReport,
 }
@@ -43,7 +43,7 @@ impl ReportStorage for InMemoryStorage {
         let id = ulid::Ulid::new().to_string();
         let stored = StoredReport {
             id: id.clone(),
-            timestamp: chrono::Utc::now(),
+            timestamp: jiff::Timestamp::now(),
             source_ip,
             report,
         };

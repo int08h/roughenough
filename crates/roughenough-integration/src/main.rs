@@ -23,8 +23,8 @@ fn main() {
 }
 
 fn test_build_mode(build_mode: &str) -> bool {
-    let server_path = format!("target/{build_mode}/server");
-    let client_path = format!("target/{build_mode}/client");
+    let server_path = format!("target/{build_mode}/roughenough_server");
+    let client_path = format!("target/{build_mode}/roughenough_client");
 
     // Start the server
     println!("=== Starting server...");

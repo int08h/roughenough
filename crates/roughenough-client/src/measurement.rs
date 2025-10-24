@@ -3,7 +3,7 @@
 use std::net::SocketAddr;
 
 use ClientError::InvalidConfiguration;
-use chrono::DateTime;
+use jiff::Timestamp;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::response::Response;
 use roughenough_protocol::tags::PublicKey;
@@ -133,13 +133,13 @@ impl Measurement {
         self.response.srep().midp()
     }
 
-    /// The server's time measurement, in [DateTime] UTC.
+    /// The server's time measurement, in [Timestamp] UTC.
     ///
     /// The server's "true time" lies within `(midpoint - radius, midpoint + radius)` when
     /// the response was generated.
-    pub fn midpoint_datetime(&self) -> DateTime<chrono::Utc> {
+    pub fn midpoint_datetime(&self) -> Timestamp {
         let midpoint = self.midpoint();
-        DateTime::from_timestamp(midpoint as i64, 0).unwrap()
+        Timestamp::from_second(midpoint as i64).unwrap()
     }
 
     /// The servers estimate of uncertainty, in seconds. The radius value represents the

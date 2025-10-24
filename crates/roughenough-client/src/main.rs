@@ -3,8 +3,9 @@
 use std::net::ToSocketAddrs;
 use std::time::Duration;
 
-use chrono::{DateTime, Local};
 use clap::Parser;
+use jiff::Timestamp;
+use jiff::tz::TimeZone;
 use roughenough_client::ClientError::DnsLookupFailed;
 use roughenough_client::args::Args;
 use roughenough_client::measurement::Measurement;
@@ -225,10 +226,10 @@ fn display_violation(args: &Args, violation: &CausalityViolation) {
     let m1_lower = m1.midpoint() - m1.radius() as u64;
     let m2_upper = m2.midpoint() + m2.radius() as u64;
 
-    let m1_lower_dt = DateTime::from_timestamp(m1_lower as i64, 0).unwrap();
-    let m1_midpoint_dt = DateTime::from_timestamp(m1.midpoint() as i64, 0).unwrap();
-    let m2_upper_dt = DateTime::from_timestamp(m2_upper as i64, 0).unwrap();
-    let m2_midpoint_dt = DateTime::from_timestamp(m2.midpoint() as i64, 0).unwrap();
+    let m1_lower_dt = Timestamp::from_second(m1_lower as i64).unwrap();
+    let m1_midpoint_dt = Timestamp::from_second(m1.midpoint() as i64).unwrap();
+    let m2_upper_dt = Timestamp::from_second(m2_upper as i64).unwrap();
+    let m2_midpoint_dt = Timestamp::from_second(m2.midpoint() as i64).unwrap();
 
     error!("=== Causality violation ===");
     error!("");
@@ -236,24 +237,24 @@ fn display_violation(args: &Args, violation: &CausalityViolation) {
     error!("  Server:   {}", m1.server());
     error!(
         "  Time:     {} +/- {}s",
-        m1_midpoint_dt.format(&args.time_format),
+        m1_midpoint_dt.strftime(&args.time_format),
         m1.radius()
     );
-    error!("  Earliest: {}", m1_lower_dt.format(&args.time_format));
+    error!("  Earliest: {}", m1_lower_dt.strftime(&args.time_format));
     error!("");
     error!("Measurement B (requested second from {}):", m2.hostname());
     error!("  Server:   {}", m2.server());
     error!(
         "  Time:     {} +/- {}s",
-        m2_midpoint_dt.format(&args.time_format),
+        m2_midpoint_dt.strftime(&args.time_format),
         m2.radius()
     );
-    error!("  Latest:   {}", m2_upper_dt.format(&args.time_format));
+    error!("  Latest:   {}", m2_upper_dt.strftime(&args.time_format));
     error!("");
     error!(
         "Problem: A earliest ({}) > B latest ({})",
-        m1_lower_dt.format("%H:%M:%S"),
-        m2_upper_dt.format("%H:%M:%S")
+        m1_lower_dt.strftime("%H:%M:%S"),
+        m2_upper_dt.strftime("%H:%M:%S")
     );
 
     if m1.server() == m2.server() {
@@ -267,16 +268,19 @@ fn display_violation(args: &Args, violation: &CausalityViolation) {
 fn display_measurement(args: &Args, measurement: &Measurement) {
     let midpoint = measurement.midpoint();
     let radius = measurement.radius();
-    let timestamp = DateTime::from_timestamp(midpoint as i64, 0).unwrap();
+    let timestamp = Timestamp::from_second(midpoint as i64).unwrap();
 
     let output = match (args.zulu, args.epoch) {
-        (true, false) => format!("{} (+/-{}s)", timestamp.format(&args.time_format), radius),
-        (false, false) => format!(
-            "{} (+/-{}s)",
-            timestamp.with_timezone(&Local).format(&args.time_format),
-            radius
-        ),
-        (_, true) => format!("{}", timestamp.timestamp()),
+        (true, false) => format!("{} (+/-{}s)", timestamp.strftime(&args.time_format), radius),
+        (false, false) => {
+            let local_time = timestamp.to_zoned(TimeZone::system());
+            format!(
+                "{} (+/-{}s)",
+                local_time.strftime(&args.time_format),
+                radius
+            )
+        }
+        (_, true) => format!("{}", timestamp.as_second()),
     };
 
     info!("{}", output);

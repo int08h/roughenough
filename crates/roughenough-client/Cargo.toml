@@ -24,7 +24,7 @@ roughenough-merkle = { workspace = true }
 roughenough-protocol = { workspace = true }
 roughenough-server = { workspace = true }
 aws-lc-rs = { workspace = true }
-chrono = { workspace = true }
+jiff = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 data-encoding = { workspace = true }
 fastrand = { workspace = true }
