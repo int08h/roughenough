@@ -196,9 +196,9 @@ jobs:
 
     - name: Build binaries
       run: |
-        cross auditable build --release --all-features --target ${{ matrix.target }} --bin roughenough_client
-        cross auditable build --release --all-features --target ${{ matrix.target }} --bin roughenough_server
-        cross auditable build --release --all-features --target ${{ matrix.target }} -p keys --bin roughenough_keys
+        cross build --release --all-features --target ${{ matrix.target }} --bin roughenough_client
+        cross build --release --all-features --target ${{ matrix.target }} --bin roughenough_server
+        cross build --release --all-features --target ${{ matrix.target }} -p keys --bin roughenough_keys
 
     - name: Prepare artifacts
       run: |
