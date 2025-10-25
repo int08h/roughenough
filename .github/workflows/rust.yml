@@ -100,7 +100,7 @@ jobs:
         run: cargo deny check licenses
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
     - uses: actions/checkout@v5
@@ -159,3 +159,57 @@ jobs:
         
     - name: Coverage summary
       run: cargo llvm-cov --workspace --no-report --summary-only
+
+  build-artifacts:
+    name: Build Release Artifacts
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Install Rust toolchain
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: ${{ env.RUST_VERSION }}
+        target: ${{ matrix.target }}
+
+    - name: Install Cargo auditable
+      if: steps.cache.outputs.cache-hit != 'true'
+      run: |
+        cargo install cargo-auditable --locked
+
+    - name: Cache cross
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/bin/cross
+        key: ${{ runner.os }}-cross
+
+    - name: Install cross
+      run: |
+        if ! command -v cross &> /dev/null; then
+          cargo install cross --git https://github.com/cross-rs/cross --locked
+        fi
+
+    - name: Build binaries
+      run: |
+        cross auditable build --release --all-features --target ${{ matrix.target }} --bin roughenough_client
+        cross auditable build --release --all-features --target ${{ matrix.target }} --bin roughenough_server
+        cross auditable build --release --all-features --target ${{ matrix.target }} -p keys --bin roughenough_keys
+
+    - name: Prepare artifacts
+      run: |
+        mkdir -p artifacts
+        cp target/${{ matrix.target }}/release/roughenough_client artifacts/
+        cp target/${{ matrix.target }}/release/roughenough_server artifacts/
+        cp target/${{ matrix.target }}/release/roughenough_keys artifacts/
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: roughenough-${{ matrix.target }}
+        path: artifacts/
+        retention-days: 90
