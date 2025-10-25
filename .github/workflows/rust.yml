@@ -19,7 +19,7 @@ env:
 jobs:
   clippy:
     name: Clippy (Linting)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
@@ -34,7 +34,7 @@ jobs:
 
   rustfmt:
     name: Rustfmt (Code Formatting)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
@@ -49,7 +49,7 @@ jobs:
 
   security-audit:
     name: Security Audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
@@ -75,7 +75,7 @@ jobs:
 
   license-check:
     name: License Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
