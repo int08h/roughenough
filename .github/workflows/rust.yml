@@ -187,7 +187,7 @@ jobs:
       run: |
         cargo auditable build --release --all-features --bin roughenough_client
         cargo auditable build --release --all-features --bin roughenough_server
-        cargo auditable build --release --all-features -p keys --bin roughenough_keys
+        cargo auditable build --release --all-features --bin roughenough_keys
 
     - name: Prepare artifacts
       run: |
