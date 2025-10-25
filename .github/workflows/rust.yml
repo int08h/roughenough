@@ -163,11 +163,6 @@ jobs:
   build-artifacts:
     name: Build Release Artifacts
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        target:
-          - x86_64-unknown-linux-gnu
-          - aarch64-unknown-linux-gnu
     steps:
     - uses: actions/checkout@v5
 
@@ -175,41 +170,35 @@ jobs:
       uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         toolchain: ${{ env.RUST_VERSION }}
-        target: ${{ matrix.target }}
+
+    - name: Cache Cargo auditable
+      uses: actions/cache@v4
+      id: cache-auditable
+      with:
+        path: ~/.cargo/bin/cargo-auditable
+        key: ${{ runner.os }}-cargo-auditable
 
     - name: Install Cargo auditable
-      if: steps.cache.outputs.cache-hit != 'true'
+      if: steps.cache-auditable.outputs.cache-hit != 'true'
       run: |
         cargo install cargo-auditable --locked
 
-    - name: Cache cross
-      uses: actions/cache@v4
-      with:
-        path: ~/.cargo/bin/cross
-        key: ${{ runner.os }}-cross
-
-    - name: Install cross
-      run: |
-        if ! command -v cross &> /dev/null; then
-          cargo install cross --git https://github.com/cross-rs/cross --locked
-        fi
-
     - name: Build binaries
       run: |
-        cross build --release --all-features --target ${{ matrix.target }} --bin roughenough_client
-        cross build --release --all-features --target ${{ matrix.target }} --bin roughenough_server
-        cross build --release --all-features --target ${{ matrix.target }} -p keys --bin roughenough_keys
+        cargo auditable build --release --all-features --bin roughenough_client
+        cargo auditable build --release --all-features --bin roughenough_server
+        cargo auditable build --release --all-features -p keys --bin roughenough_keys
 
     - name: Prepare artifacts
       run: |
         mkdir -p artifacts
-        cp target/${{ matrix.target }}/release/roughenough_client artifacts/
-        cp target/${{ matrix.target }}/release/roughenough_server artifacts/
-        cp target/${{ matrix.target }}/release/roughenough_keys artifacts/
+        cp target/release/roughenough_client artifacts/
+        cp target/release/roughenough_server artifacts/
+        cp target/release/roughenough_keys artifacts/
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: roughenough-${{ matrix.target }}
+        name: roughenough-x86_64-unknown-linux-gnu
         path: artifacts/
         retention-days: 90
