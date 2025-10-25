@@ -189,6 +189,12 @@ jobs:
         cargo auditable build --release --all-features --bin roughenough_server
         cargo auditable build --release --all-features --bin roughenough_keys
 
+    - name: Strip binaries
+      run: |
+        strip target/release/roughenough_client
+        strip target/release/roughenough_server
+        strip target/release/roughenough_keys
+
     - name: Prepare artifacts
       run: |
         mkdir -p artifacts
