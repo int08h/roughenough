@@ -162,6 +162,8 @@ jobs:
 
   build-artifacts:
     name: Build Release Artifacts
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v5
