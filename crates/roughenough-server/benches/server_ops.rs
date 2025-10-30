@@ -4,11 +4,11 @@ use std::time::Duration;
 use divan::counter::BytesCount;
 use divan::{AllocProfiler, Bencher};
 use roughenough_keys::seed::MemoryBackend;
-use roughenough_protocol::ToFrame;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::tags::{Nonce, Version};
 use roughenough_protocol::util::ClockSource;
-use roughenough_server::args::{Args, ProtocolVersionArg, SeedBackendArg};
+use roughenough_protocol::ToFrame;
+use roughenough_server::args::{Args, ProtocolVersionArg, SecretBackendArg};
 use roughenough_server::keysource::KeySource;
 use roughenough_server::requests::RequestHandler;
 use roughenough_server::responses::ResponseHandler;
@@ -38,8 +38,8 @@ fn create_request_handler() -> RequestHandler {
         quiet: false,
         rotation_interval: 1,
         metrics_interval: 60,
-        seed: "".to_string(),
-        seed_backend: SeedBackendArg::Memory,
+        secret: "".to_string(),
+        secret_backend: SecretBackendArg::Memory,
         verbose: 0,
         metrics_output: None,
     };
