@@ -21,6 +21,8 @@ pub enum Tag {
     NONC = 0x4e4f4e43,
     DELE = 0x44454c45,
     TYPE = 0x54595045,
+    #[cfg(feature = "pq")]
+    QSIG = 0x51534947,
     PATH = 0x50415448,
     RADI = 0x52414449,
     PUBK = 0x5055424b,
@@ -77,6 +79,8 @@ impl Tag {
             b"NONC" => Ok(Tag::NONC),
             b"DELE" => Ok(Tag::DELE),
             b"TYPE" => Ok(Tag::TYPE),
+            #[cfg(feature = "pq")]
+            b"QSIG" => Ok(Tag::QSIG),
             b"PATH" => Ok(Tag::PATH),
             b"RADI" => Ok(Tag::RADI),
             b"PUBK" => Ok(Tag::PUBK),

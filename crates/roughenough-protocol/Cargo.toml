@@ -14,9 +14,13 @@ categories = ["network-programming", "cryptography"]
 name = "roughenough_protocol"
 bench = false
 
+[features]
+pq = ["dep:pqcrypto-falcon"]
+
 [dependencies]
 thiserror = { workspace = true }
 pastey = { workspace = true }
+pqcrypto-falcon = { workspace = true, optional = true }
 
 [dev-dependencies]
 divan = { workspace = true }

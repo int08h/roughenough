@@ -15,6 +15,7 @@ name = "roughenough_server"
 path = "src/main.rs"
 
 [features]
+pq = ["roughenough-keys/pq"]
 test-utils = []
 
 [dependencies]

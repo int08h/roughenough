@@ -10,7 +10,11 @@ readme = "../../README.md"
 keywords = ["roughtime", "cryptography", "encoding", "utilities", "ed25519"]
 categories = ["cryptography"]
 
+[features]
+pq = ["dep:pqcrypto-falcon"]
+
 [dependencies]
 roughenough-protocol = { workspace = true }
 aws-lc-rs = { workspace = true }
 data-encoding = { workspace = true }
+pqcrypto-falcon = { workspace = true, optional = true }

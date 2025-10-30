@@ -1,9 +1,7 @@
 use aws_lc_rs::signature::{Ed25519KeyPair, KeyPair};
 use roughenough_protocol::ToWire;
 use roughenough_protocol::cursor::ParseCursor;
-use roughenough_protocol::tags::{
-    Certificate, MerkleRoot, PublicKey, Signature, SignedResponse, SupportedVersions, Version,
-};
+use roughenough_protocol::tags::{Certificate, MerkleRoot, PublicKey, Signature, SignedResponse, SupportedVersions, Version};
 use roughenough_protocol::util::ClockSource;
 
 /// RFC 5.2.6: The PUBK tag MUST contain a temporary 32-byte Ed25519 public key

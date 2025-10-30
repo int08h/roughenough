@@ -12,6 +12,7 @@ categories = ["network-programming", "command-line-utilities", "date-and-time"]
 
 [features]
 default = []
+pq = ["roughenough-common/pq", "roughenough-protocol/pq"]
 reporting = ["dep:ureq"]
 
 [[bin]]
