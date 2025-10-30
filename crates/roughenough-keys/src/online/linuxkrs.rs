@@ -452,6 +452,7 @@ pub mod krs_backend {
             // Create backend on main thread
             let mut backend = LinuxKrsBackend::new().unwrap();
             let secret = Secret::new_random();
+            let secret_copy = secret.expose().to_vec();
             backend.store_secret(secret).unwrap();
 
             // Move backend to another thread and perform operations
@@ -467,10 +468,10 @@ pub mod krs_backend {
                 backend
             });
 
-            // Get backend back and verify it still works
+            // confirm the secret is the same
             let backend = handle.join().unwrap();
-            let secret = backend.get_secret().unwrap();
-            assert_eq!(secret.len(), 32);
+            let secret2 = backend.get_secret().unwrap();
+            assert_eq!(secret2.expose(), secret_copy);
         }
     }
 }
