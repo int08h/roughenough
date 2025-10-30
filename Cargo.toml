@@ -83,5 +83,9 @@ debug = "full"
 [profile.release-lto]
 inherits = "release"
 debug = "line-tables-only"
-lto = "fat"
+lto = "thin"
 codegen-units = 1
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release-lto"
