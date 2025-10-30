@@ -17,7 +17,7 @@ mod tests {
 
     use crate::longterm::identity::LongTermIdentity;
     use crate::online::onlinekey::OnlineSigner;
-    use crate::seed::{MemoryBackend, Seed};
+    use crate::seed::{MemoryBackend, Secret};
 
     #[cfg(test)]
     mod lifecycle_tests;
@@ -51,14 +51,14 @@ mod tests {
     }
 
     fn generate_ltk() -> LongTermIdentity {
-        let seed = MemoryBackend::from_random();
-        LongTermIdentity::new(RfcDraft14, Box::new(seed))
+        let secret = MemoryBackend::from_random();
+        LongTermIdentity::new(RfcDraft14, Box::new(secret))
     }
 
     #[test]
     #[should_panic(expected = "32 bytes")]
-    fn invalid_seed_length_should_panic() {
-        let _ = Seed::new(b"this won't work");
+    fn invalid_secret_length_should_panic() {
+        let _ = Secret::new(b"this won't work");
     }
 
     #[test]

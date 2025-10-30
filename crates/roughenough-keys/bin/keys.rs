@@ -5,10 +5,10 @@ use std::io::ErrorKind;
 use clap::Parser;
 #[cfg(feature = "longterm-aws-kms")]
 use roughenough_keys::longterm::awskms;
-use roughenough_keys::longterm::envelope::SeedEnvelope;
+use roughenough_keys::longterm::envelope::SecretEnvelope;
 #[cfg(feature = "longterm-gcp-kms")]
 use roughenough_keys::longterm::gcpkms;
-use roughenough_keys::seed::Seed;
+use roughenough_keys::seed::Secret;
 use roughenough_keys::storage;
 use roughenough_protocol::util::as_hex;
 use tokio::fs::File;
@@ -167,9 +167,9 @@ async fn handle_generate(mut output: OutFile, key: Option<String>, secret: Optio
     }
 
     let resource = key.or(secret).unwrap();
-    let seed = Seed::new_random();
+    let secret = Secret::new_random();
 
-    match storage::try_store_seed(&seed, &resource).await {
+    match storage::try_store_secret(&secret, &resource).await {
         Ok(envelope) => {
             let json = serde_json::to_string_pretty(&envelope).unwrap();
             output.write_all(json.as_bytes()).await.unwrap();
@@ -185,9 +185,9 @@ async fn handle_get(mut input: InFile, mut output: OutFile) {
     let mut value = String::new();
     input.read_to_string(&mut value).await.unwrap();
 
-    match storage::try_load_seed(&value).await {
-        Ok(seed) => {
-            let encoded = as_hex(seed.expose());
+    match storage::try_load_secret(&value).await {
+        Ok(secret) => {
+            let encoded = as_hex(secret.expose());
             output.write_all(encoded.as_bytes()).await.unwrap();
             output.write_all(b"\n").await.unwrap();
         }
@@ -198,24 +198,24 @@ async fn handle_get(mut input: InFile, mut output: OutFile) {
 }
 
 /// Store a long-term identity seed in a Secret manager
-async fn handle_store(mut input: InFile, mut output: OutFile, secret: String) {
-    let mut seed_bytes = Vec::new();
-    input.read_to_end(&mut seed_bytes).await.unwrap();
+async fn handle_store(mut input: InFile, mut output: OutFile, resource_id: String) {
+    let mut secret_bytes = Vec::new();
+    input.read_to_end(&mut secret_bytes).await.unwrap();
 
-    if seed_bytes.len() != 32 {
+    if secret_bytes.len() != 32 {
         error!(
             "Invalid seed length: expected 32 bytes, got {}",
-            seed_bytes.len()
+            secret_bytes.len()
         );
         return;
     }
 
-    let seed = Seed::new(&seed_bytes);
+    let secret = Secret::new(&secret_bytes);
 
     // TODO(stuart) need to encode this output into a format that can be read:
     //    aws-secret://...HEX ENCODED JSON...
     // awkward, but it will work
-    match storage::try_store_seed(&seed, &secret).await {
+    match storage::try_store_secret(&secret, &resource_id).await {
         Ok(envelope) => {
             let json = serde_json::to_string_pretty(&envelope).unwrap();
             output.write_all(json.as_bytes()).await.unwrap();
@@ -231,7 +231,7 @@ async fn handle_store(mut input: InFile, mut output: OutFile, secret: String) {
 async fn handle_open(mut input: InFile, mut output: OutFile, key: Option<String>) {
     let mut buf = Vec::new();
     input.read_to_end(&mut buf).await.unwrap();
-    let mut envelope: SeedEnvelope = serde_json::from_slice(&buf).unwrap();
+    let mut envelope: SecretEnvelope = serde_json::from_slice(&buf).unwrap();
 
     if let Some(key_id) = key {
         debug!(
@@ -245,13 +245,13 @@ async fn handle_open(mut input: InFile, mut output: OutFile, key: Option<String>
     // compiler and clippy happy
 
     #[allow(unused_mut)]
-    let mut seed: Seed = Seed::new_random();
+    let mut seed: Secret = Secret::new_random();
 
     #[cfg(feature = "longterm-gcp-kms")]
     {
         use crate::storage::Protection;
         if envelope.key_id.starts_with(Protection::GcpKms.prefix()) {
-            seed = gcpkms::GcpKms::decrypt_seed(&envelope).await
+            seed = gcpkms::GcpKms::decrypt_secret(&envelope).await
         }
     }
 
@@ -259,7 +259,7 @@ async fn handle_open(mut input: InFile, mut output: OutFile, key: Option<String>
     {
         use crate::storage::Protection;
         if envelope.key_id.starts_with(Protection::AwsKms.prefix()) {
-            seed = awskms::AwsKms::decrypt_seed(&envelope).await
+            seed = awskms::AwsKms::decrypt_secret(&envelope).await
         }
     }
 
@@ -278,20 +278,20 @@ async fn handle_open(mut input: InFile, mut output: OutFile, key: Option<String>
 
 /// Envelope encrypt a long-term identity seed
 async fn handle_seal(mut input: InFile, mut output: OutFile, key: String) {
-    let mut seed_bytes = Vec::new();
-    input.read_to_end(&mut seed_bytes).await.unwrap();
+    let mut secret_bytes = Vec::new();
+    input.read_to_end(&mut secret_bytes).await.unwrap();
 
-    if seed_bytes.len() != 32 {
+    if secret_bytes.len() != 32 {
         error!(
             "Invalid seed length: expected 32 bytes, got {}",
-            seed_bytes.len()
+            secret_bytes.len()
         );
         return;
     }
 
-    let seed = Seed::new(&seed_bytes);
+    let secret = Secret::new(&secret_bytes);
 
-    match storage::try_store_seed(&seed, &key).await {
+    match storage::try_store_secret(&secret, &key).await {
         Ok(envelope) => {
             let json = serde_json::to_string_pretty(&envelope).unwrap();
             output.write_all(json.as_bytes()).await.unwrap();

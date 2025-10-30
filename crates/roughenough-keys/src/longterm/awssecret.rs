@@ -3,12 +3,12 @@ use roughenough_common::encoding::try_decode;
 use roughenough_protocol::util::as_hex;
 use tracing::debug;
 
-use crate::seed::Seed;
+use crate::seed::Secret;
 
 pub struct AwsSecretManager {}
 
 impl AwsSecretManager {
-    pub async fn get_seed(resource: &str) -> Seed {
+    pub async fn get_secret(resource: &str) -> Seed {
         debug!(
             "Attempting to load seed from AWS Secret Manager '{}'",
             resource
@@ -43,7 +43,7 @@ impl AwsSecretManager {
         Seed::new(&value)
     }
 
-    pub async fn store_seed(resource: &str, seed: &Seed) -> Result<(), String> {
+    pub async fn store_secret(resource: &str, seed: &Seed) -> Result<(), String> {
         debug!(
             "Attempting to store seed in AWS Secret Manager '{}'",
             resource
@@ -56,7 +56,7 @@ impl AwsSecretManager {
             .load()
             .await;
 
-        let seed_hex = as_hex(seed.expose());
+        let seed_hex = as_hex(secret.expose());
         let client = aws_sdk_secretsmanager::Client::new(&config);
 
         let response = client
@@ -79,7 +79,7 @@ impl AwsSecretManager {
     }
 }
 fn extract_aws_region(arn: &str) -> String {
-    // "arn:aws:secretsmanager:us-east-2:382045063468:secret:roughenough-seed-QtQH5f";
+    // "arn:aws:secretsmanager:us-east-2:382045063468:secret:roughenough-secret-QtQH5f";
     //                        ^
     arn.split(":").nth(3).unwrap().to_string()
 }

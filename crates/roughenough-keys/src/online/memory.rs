@@ -1,70 +1,70 @@
 use aws_lc_rs::signature::{Ed25519KeyPair, KeyPair};
 use roughenough_protocol::tags::PublicKey;
 
-use crate::seed::{BackendError, Seed, SeedBackend};
+use crate::seed::{BackendError, Secret, SecretBackend};
 
 #[derive(Debug, Default)]
 pub struct MemoryBackend {
-    seed: Option<Seed>,
+    secret: Option<Secret>,
     public_key: Option<PublicKey>,
 }
 
 impl MemoryBackend {
     pub fn new() -> Result<MemoryBackend, BackendError> {
         Ok(Self {
-            seed: None,
+            secret: None,
             public_key: None,
         })
     }
 
     pub fn from_value(value: &[u8]) -> MemoryBackend {
-        let seed = Seed::new(value);
+        let secret = Secret::new(value);
         let mut backend = MemoryBackend::default();
-        backend.store_seed(seed).expect("bug: seed is valid");
+        backend.store_secret(secret).expect("bug: secret is valid");
 
         backend
     }
 
     pub fn from_random() -> MemoryBackend {
-        let seed = Seed::new_random();
+        let secret = Secret::new_random();
         let mut backend = MemoryBackend::default();
-        backend.store_seed(seed).expect("bug: seed is valid");
+        backend.store_secret(secret).expect("bug: secret is valid");
 
         backend
     }
 }
 
-impl SeedBackend for MemoryBackend {
-    fn store_seed(&mut self, seed: Seed) -> Result<(), BackendError> {
-        let keypair = Ed25519KeyPair::from_seed_unchecked(seed.expose()).unwrap();
+impl SecretBackend for MemoryBackend {
+    fn store_secret(&mut self, secret: Secret) -> Result<(), BackendError> {
+        let keypair = Ed25519KeyPair::from_seed_unchecked(secret.expose()).unwrap();
         let public_key = PublicKey::from(keypair.public_key().as_ref());
 
         self.public_key = Some(public_key);
-        self.seed = Some(seed);
+        self.secret = Some(secret);
 
         Ok(())
     }
 
-    fn get_seed(&self) -> Result<Seed, BackendError> {
-        let seed = self
-            .seed
+    fn get_secret(&self) -> Result<Secret, BackendError> {
+        let secret = self
+            .secret
             .as_ref()
-            .unwrap_or_else(|| panic!("bug: no seed?"));
-        Ok(Seed::new(seed.expose()))
+            .unwrap_or_else(|| panic!("bug: no secret?"));
+        Ok(Secret::new(secret.expose()))
     }
 
     fn sign(&mut self, data: &[u8]) -> Result<[u8; 64], BackendError> {
         let signature = {
-            let seed = self.get_seed()?;
-            let keypair = Ed25519KeyPair::from_seed_unchecked(seed.expose()).unwrap();
+            let secret = self.get_secret()?;
+            let keypair = Ed25519KeyPair::from_seed_unchecked(secret.expose()).unwrap();
             keypair.sign(data)
         };
         Ok(signature.as_ref().try_into().expect("infallible"))
     }
 
-    fn seed_len(&self) -> usize {
-        match &self.seed {
-            Some(seed) => seed.len(),
+    fn secret_len(&self) -> usize {
+        match &self.secret {
+            Some(secret) => secret.len(),
             None => 0,
         }
     }
@@ -88,8 +88,8 @@ mod tests {
     fn sign_verify_roundtrip() {
         // Given a MemoryBackend
         let mut backend = MemoryBackend::new().unwrap();
-        let seed = Seed::new_random();
-        backend.store_seed(seed).unwrap();
+        let secret = Secret::new_random();
+        backend.store_secret(secret).unwrap();
 
         // When the backend signs something
         let data = b"hello world";

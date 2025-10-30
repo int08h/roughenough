@@ -121,7 +121,7 @@ Roughtime is structured as a Cargo workspace with multiple crates:
 
 ### Keys Crate Features
 
-See [doc/PROTECTION.md](doc/PROTECTION.md) for detailed information on seed protection strategies.
+See [doc/PROTECTION.md](doc/PROTECTION.md) for detailed information on secret protection strategies.
 
 #### Runtime Protection (Online Key Backends)
 

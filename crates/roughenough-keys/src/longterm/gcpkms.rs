@@ -1,32 +1,32 @@
 use roughenough_common::crypto::random_bytes;
 
-use crate::longterm::envelope::{SeedEnvelope, open_seed, seal_seed};
-use crate::seed::Seed;
+use crate::longterm::envelope::{SecretEnvelope, open_secret, seal_secret};
+use crate::seed::Secret;
 use crate::storage::Protection;
 
 pub struct GcpKms {}
 
 impl GcpKms {
-    const AAD: &'static [u8] = b"roughenough-seed";
+    const AAD: &'static [u8] = b"roughenough-secret";
 
     /// Envelope encrypts the `seed` using a random DEK and the KMS key `key_id`
-    pub async fn encrypt_seed(key_id: &str, seed: &Seed) -> SeedEnvelope {
+    pub async fn encrypt_secret(key_id: &str, seed: &Seed) -> SecretEnvelope {
         let dek: [u8; 32] = random_bytes();
 
         let dek_ciphertext = Self::seal_dek(dek, key_id).await;
-        let seed_ciphertext = seal_seed(dek, seed, Self::AAD);
+        let seed_ciphertext = seal_secret(dek, seed, Self::AAD);
 
         let mut kid = Protection::GcpKms.prefix().to_string();
         kid.push_str(key_id);
 
-        SeedEnvelope {
+        SecretEnvelope {
             key_id: kid,
             dek_ct: dek_ciphertext,
-            seed_ct: seed_ciphertext,
+            secret_ct: seed_ciphertext,
         }
     }
 
-    pub async fn decrypt_seed(envelope: &SeedEnvelope) -> Seed {
+    pub async fn decrypt_secret(envelope: &SecretEnvelope) -> Seed {
         // Extract the GCP KMS key ID from the envelope
         let key_id = envelope
             .key_id
@@ -37,7 +37,7 @@ impl GcpKms {
         let dek = Self::open_dek(&envelope.dek_ct, key_id).await;
 
         // Use the DEK to decrypt the seed
-        open_seed(dek, &envelope.seed_ct, Self::AAD).expect("failed to decrypt seed")
+        open_secret(dek, &envelope.secret_ct, Self::AAD).expect("failed to decrypt secret")
     }
 
     async fn seal_dek(dek: [u8; 32], key_id: &str) -> Vec<u8> {
@@ -112,21 +112,21 @@ impl GcpKms {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::seed::Seed;
+    use crate::seed::Secret;
 
     #[cfg(feature = "longterm-gcp-kms")]
     #[tokio::test]
     #[ignore = "requires GCP credentials"]
-    async fn encrypt_decrypt_seed_roundtrip() {
+    async fn encrypt_decrypt_secret_roundtrip() {
         // For GcpKms testing, use this key:
         let key_id = "projects/int08h-blog/locations/us-central1/keyRings/roughenough/cryptoKeys/roughenough-int08h";
 
-        // Create a test seed
-        let original_seed = Seed::new_random();
-        let original_bytes = original_seed.expose().to_vec();
+        // Create a test secret
+        let original_secret = Seed::new_random();
+        let original_bytes = original_secret.expose().to_vec();
 
-        // Encrypt the seed
-        let envelope = GcpKms::encrypt_seed(key_id, &original_seed).await;
+        // Encrypt the secret
+        let envelope = GcpKms::encrypt_secret(key_id, &original_secret).await;
 
         // Verify the envelope contains the expected key ID
         assert!(envelope.key_id.starts_with(Protection::GcpKms.prefix()));
@@ -134,13 +134,13 @@ mod tests {
 
         // Verify that encrypted data is present
         assert!(!envelope.dek_ct.is_empty());
-        assert!(!envelope.seed_ct.is_empty());
+        assert!(!envelope.secret_ct.is_empty());
 
-        // Decrypt the seed
-        let decrypted_seed = GcpKms::decrypt_seed(&envelope).await;
+        // Decrypt the secret
+        let decrypted_seed = GcpKms::decrypt_secret(&envelope).await;
 
         // Verify the decrypted seed matches the original
-        assert_eq!(decrypted_seed.expose(), &original_bytes);
+        assert_eq!(decrypted_secret.expose(), &original_bytes);
     }
 
     #[cfg(feature = "longterm-gcp-kms")]
@@ -148,22 +148,22 @@ mod tests {
     fn envelope_serialization() {
         use serde_json;
 
-        let envelope = SeedEnvelope {
+        let envelope = SecretEnvelope {
             key_id: "gcp-kms://projects/test/locations/global/keyRings/test/cryptoKeys/test"
                 .to_string(),
             dek_ct: vec![1, 2, 3, 4, 5],
-            seed_ct: vec![6, 7, 8, 9, 10],
+            secret_ct: vec![6, 7, 8, 9, 10],
         };
 
         // Serialize to JSON
         let json = serde_json::to_string(&envelope).unwrap();
 
         // Deserialize back
-        let deserialized: SeedEnvelope = serde_json::from_str(&json).unwrap();
+        let deserialized: SecretEnvelope = serde_json::from_str(&json).unwrap();
 
         // Verify
         assert_eq!(envelope.key_id, deserialized.key_id);
         assert_eq!(envelope.dek_ct, deserialized.dek_ct);
-        assert_eq!(envelope.seed_ct, deserialized.seed_ct);
+        assert_eq!(envelope.secret_ct, deserialized.secret_ct);
     }
 }

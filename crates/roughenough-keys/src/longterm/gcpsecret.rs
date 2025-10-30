@@ -2,14 +2,14 @@ use roughenough_common::encoding::try_decode;
 use roughenough_protocol::util::as_hex;
 use tracing::debug;
 
-use crate::seed::Seed;
+use crate::seed::Secret;
 
-// projects/630192955771/secrets/roughenough-seed-test-1/versions/1
+// projects/630192955771/secrets/roughenough-secret-test-1/versions/1
 // https://cloud.google.com/docs/authentication/application-default-credentials
 pub struct GcpSecretManager {}
 
 impl GcpSecretManager {
-    pub async fn get_seed(resource: &str) -> Seed {
+    pub async fn get_secret(resource: &str) -> Seed {
         debug!(
             "Attempting to load seed from GCP Secret Manager '{}'",
             resource
@@ -55,7 +55,7 @@ impl GcpSecretManager {
         Seed::new(&value)
     }
 
-    pub async fn store_seed(resource: &str, seed: &Seed) -> Result<String, String> {
+    pub async fn store_secret(resource: &str, seed: &Seed) -> Result<String, String> {
         debug!(
             "Attempting to store seed in GCP Secret Manager '{}'",
             resource
@@ -67,7 +67,7 @@ impl GcpSecretManager {
             .await
             .map_err(|e| format!("failed to create GCP secret manager client: {e}"))?;
 
-        let seed_hex = as_hex(seed.expose());
+        let seed_hex = as_hex(secret.expose());
         let mut payload = google_cloud_secretmanager_v1::model::SecretPayload::default();
         payload.data = seed_hex.into_bytes().into();
         payload.data_crc32c = Some(crc32c::crc32c(&payload.data) as i64);
@@ -122,15 +122,15 @@ mod tests {
     fn test_extract_secret_parent() {
         assert_eq!(
             extract_secret_parent(
-                "projects/630192955771/secrets/roughenough-seed-test-1/versions/1"
+                "projects/630192955771/secrets/roughenough-secret-test-1/versions/1"
             ),
-            Ok("projects/630192955771/secrets/roughenough-seed-test-1".to_string())
+            Ok("projects/630192955771/secrets/roughenough-secret-test-1".to_string())
         );
 
         // Test already parent format
         assert_eq!(
-            extract_secret_parent("projects/630192955771/secrets/roughenough-seed-test-1"),
-            Ok("projects/630192955771/secrets/roughenough-seed-test-1".to_string())
+            extract_secret_parent("projects/630192955771/secrets/roughenough-secret-test-1"),
+            Ok("projects/630192955771/secrets/roughenough-secret-test-1".to_string())
         );
 
         // Test invalid formats

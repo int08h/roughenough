@@ -6,29 +6,29 @@ use roughenough_protocol::tags::{Certificate, Delegation, PublicKey, Signature, 
 use roughenough_protocol::util::ClockSource;
 
 use crate::online::onlinekey::OnlineKey;
-use crate::seed::SeedBackend;
+use crate::seed::SecretBackend;
 
 /// The server's long-term Ed25519 identity.
 pub struct LongTermIdentity {
-    seed: Box<dyn SeedBackend>,
+    secret: Box<dyn SecretBackend>,
     version: Version,
 }
 
 impl LongTermIdentity {
-    pub fn new(version: Version, seed: Box<dyn SeedBackend>) -> LongTermIdentity {
-        assert_eq!(seed.seed_len(), 32, "seed must be 32 bytes long");
+    pub fn new(version: Version, secret: Box<dyn SecretBackend>) -> LongTermIdentity {
+        assert_eq!(secret.secret_len(), 32, "secret must be 32 bytes long");
 
-        LongTermIdentity { seed, version }
+        LongTermIdentity { secret, version }
     }
 
     /// Retrieves the raw public key bytes associated with this LongTermIdentity.
     pub fn public_key_bytes(&self) -> [u8; 32] {
-        self.seed.public_key_bytes()
+        self.secret.public_key_bytes()
     }
 
     /// Retrieves the public key associated with this LongTermIdentity.
     pub fn public_key(&self) -> PublicKey {
-        self.seed.public_key()
+        self.secret.public_key()
     }
 
     /// Creates a new [`OnlineKey`] and delegation certificate (CERT) signed by the long-term key.
@@ -55,7 +55,7 @@ impl LongTermIdentity {
         to_sign.extend_from_slice(&dele.as_bytes().expect("DELE serialization should not fail"));
 
         let dele_sig: [u8; 64] = self
-            .seed
+            .secret
             .sign(&to_sign)
             .expect("should not fail; can't continue if it does");
         let sig = Signature::from(dele_sig);

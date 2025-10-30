@@ -6,13 +6,13 @@ use ssh_key::{PrivateKey, PublicKey};
 use tracing::{debug, info};
 use zeroize::Zeroize;
 
-use crate::seed::{BackendError, Seed, SeedBackend};
+use crate::seed::{BackendError, Secret, SecretBackend};
 
 /// Uses `ssh-agent` to hold the private key and perform signing operations on our behalf
 pub struct SshAgentBackend {
     connection: Client,
     public_key: Option<PublicKey>,
-    seed_len: usize,
+    secret_len: usize,
 }
 
 impl SshAgentBackend {
@@ -31,7 +31,7 @@ impl SshAgentBackend {
         Ok(SshAgentBackend {
             connection: client,
             public_key: None,
-            seed_len: 0,
+            secret_len: 0,
         })
     }
 }
@@ -49,23 +49,23 @@ impl Drop for SshAgentBackend {
     }
 }
 
-impl SeedBackend for SshAgentBackend {
-    fn store_seed(&mut self, seed: Seed) -> Result<(), BackendError> {
-        let private_key = key_from_seed(seed.expose());
+impl SecretBackend for SshAgentBackend {
+    fn store_secret(&mut self, secret: Secret) -> Result<(), BackendError> {
+        let private_key = key_from_secret(secret.expose());
 
         self.connection.add_identity(&private_key)?;
         self.public_key = Some(private_key.public_key().clone());
-        self.seed_len = seed.len();
+        self.secret_len = secret.len();
 
         debug!(
-            "added {}-byte seed as private key to ssh-agent",
-            self.seed_len
+            "added {}-byte secret as private key to ssh-agent",
+            self.secret_len
         );
         Ok(())
     }
 
-    fn get_seed(&self) -> Result<Seed, BackendError> {
-        let msg = "get_seed is not supported for ssh-agent backend".to_string();
+    fn get_secret(&self) -> Result<Secret, BackendError> {
+        let msg = "get_secret is not supported for ssh-agent backend".to_string();
         Err(BackendError::NotSupported(msg))
     }
 
@@ -78,8 +78,8 @@ impl SeedBackend for SshAgentBackend {
         Ok(sig_bytes)
     }
 
-    fn seed_len(&self) -> usize {
-        self.seed_len
+    fn secret_len(&self) -> usize {
+        self.secret_len
     }
 
     fn public_key(&self) -> roughenough_protocol::tags::PublicKey {
@@ -98,13 +98,13 @@ impl SeedBackend for SshAgentBackend {
     }
 }
 
-fn key_from_seed(seed: &[u8]) -> PrivateKey {
-    let mut seed0: [u8; 32] = seed.try_into().expect("seed is 32 bytes");
-    let key = ssh_key::private::Ed25519Keypair::from_seed(&seed0);
-    seed0.zeroize();
+fn key_from_secret(secret: &[u8]) -> PrivateKey {
+    let mut secret0: [u8; 32] = secret.try_into().expect("secret is 32 bytes");
+    let key = ssh_key::private::Ed25519Keypair::from_seed(&secret0);
+    secret0.zeroize();
 
     let mut private_key = ssh_key::PrivateKey::from(key);
-    private_key.set_comment("roughenough-seed");
+    private_key.set_comment("roughenough-secret");
 
     private_key
 }
@@ -123,8 +123,8 @@ mod tests {
 
         // Given an SshAgentBackend
         let mut agent = SshAgentBackend::new(None).unwrap();
-        let seed = Seed::new_random();
-        agent.store_seed(seed).unwrap();
+        let secret = Secret::new_random();
+        agent.store_secret(secret).unwrap();
 
         // When the ssh-agent signs something
         let data = b"hello world";

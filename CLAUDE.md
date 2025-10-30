@@ -204,7 +204,7 @@ target/debug/roughenough_keys --help
 
 ## Protocol Implementation Notes
 
-See `doc/RFC-PROTOCOL.md` for a summary of the Roughtime protocol details. See `doc/PROTECTION.md` for information about long-term identity seed protection strategies using KMS, secret managers, Linux KRS, and SSH agent.
+See `doc/RFC-PROTOCOL.md` for a summary of the Roughtime protocol details. See `doc/PROTECTION.md` for information about long-term identity protection strategies using KMS, secret managers, Linux KRS, and SSH agent.
 
 - Wire-encoded Requests and Responses are framed: 8-bytes of 'ROUGHTIM' magic value, 4-bytes of length (in little endian), and then the message bytes
 - Only Requests and Responses are framed. No other messages have a framed wire encoding

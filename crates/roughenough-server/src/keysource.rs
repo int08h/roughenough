@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use roughenough_keys::longterm::LongTermIdentity;
 use roughenough_keys::online::onlinekey::OnlineKey;
-use roughenough_keys::seed::SeedBackend;
+use roughenough_keys::seed::SecretBackend;
 use roughenough_protocol::tags::{PublicKey, Version};
 use roughenough_protocol::util::ClockSource;
 
@@ -28,7 +28,7 @@ impl KeySource {
     #[allow(clippy::arc_with_non_send_sync)]
     pub fn new(
         version: Version,
-        seed: Box<dyn SeedBackend>,
+        seed: Box<dyn SecretBackend>,
         clock_source: ClockSource,
         validity_length: Duration,
     ) -> Self {
@@ -82,7 +82,7 @@ mod tests {
     fn zero_validity_duration_panics() {
         // Given an attempt to create a KeySource
         let version = roughenough_protocol::tags::Version::RfcDraft14;
-        let seed: Box<dyn roughenough_keys::seed::SeedBackend> =
+        let secret: Box<dyn roughenough_keys::seed::SecretBackend> =
             Box::new(MemoryBackend::from_random());
         let clock = ClockSource::System;
 
@@ -90,7 +90,7 @@ mod tests {
         let zero_duration = Duration::from_secs(0);
 
         // Then `new` will panic
-        let _ = KeySource::new(version, seed, clock, zero_duration);
+        let _ = KeySource::new(version, secret, clock, zero_duration);
     }
 
     #[test]

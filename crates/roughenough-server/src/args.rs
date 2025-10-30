@@ -88,20 +88,20 @@ pub struct Args {
     #[clap(
         long,
         value_name = "SEED",
-        env = "ROUGHENOUGH_SEED",
+        env = "ROUGHENOUGH_SECRET",
         default_value = ""
     )]
-    pub seed: String,
+    pub secret: String,
 
     /// How to store the server's long-term identity while it's running
     #[clap(
         value_enum,
         long,
         value_name = "TYPE",
-        env = "ROUGHENOUGH_SEED_BACKEND",
-        default_value_t = SeedBackendArg::Memory
+        env = "ROUGHENOUGH_SECRET_BACKEND",
+        default_value_t = SecretBackendArg::Memory
     )]
-    pub seed_backend: SeedBackendArg,
+    pub secret_backend: SecretBackendArg,
 
     /// Directory path where metrics JSON files will be written
     #[clap(
@@ -129,7 +129,7 @@ pub enum ProtocolVersionArg {
 }
 
 #[derive(ValueEnum, Debug, Clone)]
-pub enum SeedBackendArg {
+pub enum SecretBackendArg {
     #[value(name = "memory")]
     Memory,
     #[value(name = "krs")]
@@ -138,7 +138,7 @@ pub enum SeedBackendArg {
     SshAgent,
 }
 
-impl Display for SeedBackendArg {
+impl Display for SecretBackendArg {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let value = self.to_possible_value().unwrap();
         f.write_str(value.get_name())

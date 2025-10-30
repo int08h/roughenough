@@ -30,8 +30,8 @@ use std::time::Duration;
 use clap::Parser;
 use crossbeam_channel::{Sender, bounded};
 use mio::net::UdpSocket as MioUdpSocket;
-use roughenough_keys::seed::{Seed, SeedBackend, try_choose_backend};
-use roughenough_keys::storage::try_load_seed_sync;
+use roughenough_keys::seed::{Secret, SecretBackend, try_choose_backend};
+use roughenough_keys::storage::try_load_secret_sync;
 use roughenough_protocol::util::ClockSource;
 use roughenough_server::args::Args;
 use roughenough_server::keysource::KeySource;
@@ -56,10 +56,10 @@ fn main() {
     debug!("{args:?}");
 
     let clock = choose_clock(&args);
-    let seed = load_seed(&args);
+    let secret = load_secret(&args);
     let key_source = KeySource::new(
         args.version(),
-        seed,
+        secret,
         clock.clone(),
         args.rotation_interval(),
     );
@@ -93,24 +93,24 @@ fn main() {
     info!("Server finished");
 }
 
-fn load_seed(args: &Args) -> Box<dyn SeedBackend> {
-    let seed = if args.seed.is_empty() {
-        warn!("--seed is empty, using all zero seed");
-        Seed::new(&[0u8; 32])
+fn load_secret(args: &Args) -> Box<dyn SecretBackend> {
+    let secret = if args.secret.is_empty() {
+        warn!("--secret is empty, using all zero secret");
+        Secret::new(&[0u8; 32])
     } else {
-        try_load_seed_sync(&args.seed).unwrap_or_else(|e| panic!("loading seed: {e}"))
+        try_load_secret_sync(&args.secret).unwrap_or_else(|e| panic!("loading secret: {e}"))
     };
 
-    let mut backend = try_choose_backend(&args.seed_backend.to_string())
-        .unwrap_or_else(|e| panic!("choosing seed backend: {e}"));
+    let mut backend = try_choose_backend(&args.secret_backend.to_string())
+        .unwrap_or_else(|e| panic!("choosing secret backend: {e}"));
 
     info!(
-        "Loaded {}-byte seed into '{}' backend",
-        seed.len(),
-        &args.seed_backend
+        "Loaded {}-byte secret into '{}' backend",
+        secret.len(),
+        &args.secret_backend
     );
 
-    backend.store_seed(seed).unwrap();
+    backend.store_secret(secret).unwrap();
     backend
 }
 

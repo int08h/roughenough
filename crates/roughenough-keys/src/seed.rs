@@ -12,35 +12,35 @@ pub use crate::online::memory::*;
 #[cfg(feature = "online-ssh-agent")]
 pub use crate::online::sshagent::*;
 
-/// Seed backends keep the seed/long-term key available for on-line use while protecting it from
+/// Secret backends keep the secret/long-term key available for on-line use while protecting it from
 /// unauthorized access.
 #[allow(clippy::len_without_is_empty)]
-pub trait SeedBackend {
-    fn store_seed(&mut self, seed: Seed) -> Result<(), BackendError>;
-    fn get_seed(&self) -> Result<Seed, BackendError>;
+pub trait SecretBackend {
+    fn store_secret(&mut self, secret: Secret) -> Result<(), BackendError>;
+    fn get_secret(&self) -> Result<Secret, BackendError>;
     fn sign(&mut self, data: &[u8]) -> Result<[u8; 64], BackendError>;
-    fn seed_len(&self) -> usize;
+    fn secret_len(&self) -> usize;
     fn public_key(&self) -> PublicKey;
     fn public_key_bytes(&self) -> [u8; 32];
 }
 
 /// Secret value used to derive the keypair of a LongTermIdentity.
 #[derive(ZeroizeOnDrop)]
-pub struct Seed {
+pub struct Secret {
     value: Vec<u8>,
 }
 
 #[allow(clippy::len_without_is_empty)]
-impl Seed {
+impl Secret {
     pub fn new(value: &[u8]) -> Self {
-        assert_eq!(value.len(), 32, "seed must be 32 bytes");
+        assert_eq!(value.len(), 32, "secret must be 32 bytes");
         Self {
             value: Vec::from(value),
         }
     }
 
     pub fn new_random() -> Self {
-        Seed::new(&random_bytes::<32>())
+        Secret::new(&random_bytes::<32>())
     }
 
     pub fn expose(&self) -> &[u8] {
@@ -52,9 +52,9 @@ impl Seed {
     }
 }
 
-impl Debug for Seed {
+impl Debug for Secret {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Seed(len={})", self.len())
+        write!(f, "Secret(len={})", self.len())
     }
 }
 
@@ -66,7 +66,7 @@ pub enum BackendError {
     #[error("'{0}'")]
     NotSupported(String),
 
-    #[error("Seed backend '{0}' is not available (requires compile-time feature '{1}')")]
+    #[error("Secret backend '{0}' is not available (requires compile-time feature '{1}')")]
     BackendNotAvailable(String, String),
 
     #[cfg(all(target_os = "linux", feature = "online-linux-krs"))]
@@ -92,7 +92,7 @@ pub enum BackendError {
 /// Select a backend based on a text value. Can return `BackendError` if the requested backend
 /// is not supported (feature wasn't enabled at compile-time), or a backend corresponding to
 /// the provided value doesn't exist.
-pub fn try_choose_backend(backend: &str) -> Result<Box<dyn SeedBackend>, BackendError> {
+pub fn try_choose_backend(backend: &str) -> Result<Box<dyn SecretBackend>, BackendError> {
     match backend.to_ascii_lowercase().as_str() {
         "memory" => Ok(Box::new(MemoryBackend::new()?)),
         "krs" => {

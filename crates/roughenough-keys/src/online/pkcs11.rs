@@ -9,7 +9,7 @@ use cryptoki::types::AuthPin;
 use roughenough_protocol::tags::PublicKey;
 use tracing::{debug, warn};
 
-use crate::seed::{BackendError, Seed, SeedBackend};
+use crate::seed::{BackendError, Secret, SecretBackend};
 
 pub struct Pkcs11Backend {
     session: Session,
@@ -95,14 +95,14 @@ impl Pkcs11Backend {
     }
 }
 
-impl SeedBackend for Pkcs11Backend {
-    fn store_seed(&mut self, _seed: Seed) -> Result<(), BackendError> {
-        let msg = "store_seed is not supported by the SeedPkcs11 backend".to_string();
+impl SecretBackend for Pkcs11Backend {
+    fn store_secret(&mut self, _secret: Secret) -> Result<(), BackendError> {
+        let msg = "store_secret is not supported by the Pkcs11 backend".to_string();
         Err(BackendError::NotSupported(msg))
     }
 
-    fn get_seed(&self) -> Result<Seed, BackendError> {
-        let msg = "get_seed is not supported by the SeedPkcs11 backend".to_string();
+    fn get_secret(&self) -> Result<Secret, BackendError> {
+        let msg = "get_secret is not supported by the Pkcs11 backend".to_string();
         Err(BackendError::NotSupported(msg))
     }
 
@@ -117,7 +117,7 @@ impl SeedBackend for Pkcs11Backend {
         Ok(sig.try_into().unwrap())
     }
 
-    fn seed_len(&self) -> usize {
+    fn secret_len(&self) -> usize {
         32
     }
 

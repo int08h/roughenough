@@ -3,7 +3,7 @@ pub use krs_backend::LinuxKrsBackend;
 #[cfg(not(target_os = "linux"))]
 pub use stub_backend::LinuxKrsBackend;
 
-// It would be nice if only the **signing operation** was available to the thread, not the seed
+// It would be nice if only the **signing operation** was available to the thread, not the secret
 // contents. However, Linux doesn't support Ed25519 as a PKCS8 parsable asymmetric private key type.
 // Only RSA are supported for that. :(
 //
@@ -47,16 +47,16 @@ pub mod krs_backend {
     use tracing::{debug, error};
     use zeroize::Zeroize;
 
-    use crate::seed::{BackendError, Seed, SeedBackend};
+    use crate::seed::{BackendError, Secret, SecretBackend};
 
     /// Request types for the worker thread
     enum Request {
-        StoreSeed {
-            seed: Seed,
-            response_tx: Sender<Result<StoreSeedResponse, BackendError>>,
+        StoreSecret {
+            secret: Secret,
+            response_tx: Sender<Result<StoreSecretResponse, BackendError>>,
         },
-        GetSeed {
-            response_tx: Sender<Result<Seed, BackendError>>,
+        GetSecret {
+            response_tx: Sender<Result<Secret, BackendError>>,
         },
         Sign {
             data: Vec<u8>,
@@ -65,13 +65,13 @@ pub mod krs_backend {
         Shutdown,
     }
 
-    /// Response for store_seed operation
-    struct StoreSeedResponse {
+    /// Response for store_secret operation
+    struct StoreSecretResponse {
         public_key: PublicKey,
-        seed_len: usize,
+        secret_len: usize,
     }
 
-    /// Linux Key Retention Service (KRS) backend that stores Ed25519 seed material in the kernel's
+    /// Linux Key Retention Service (KRS) backend that stores Ed25519 secret material in the kernel's
     /// thread-specific keyring. Since KeyRing is inherently thread-local, this implementation uses
     /// a dedicated worker thread that owns the KeyRing and processes all operations via mpsc channels.
     /// Each public method sends a request with an embedded response channel, enabling thread-safe
@@ -80,11 +80,11 @@ pub mod krs_backend {
         request_tx: Sender<Request>,
         worker_handle: Option<thread::JoinHandle<()>>,
         public_key: Option<PublicKey>,
-        seed_len: usize,
+        secret_len: usize,
     }
 
     impl LinuxKrsBackend {
-        const KEY_NAME: &'static str = "roughenough-seed";
+        const KEY_NAME: &'static str = "roughenough-secret";
 
         pub fn new() -> Result<LinuxKrsBackend, BackendError> {
             let (request_tx, request_rx) = mpsc::channel();
@@ -99,7 +99,7 @@ pub mod krs_backend {
                 request_tx,
                 worker_handle: Some(worker_handle),
                 public_key: None,
-                seed_len: 0,
+                secret_len: 0,
             })
         }
 
@@ -134,12 +134,15 @@ pub mod krs_backend {
             // Process requests
             while let Ok(request) = request_rx.recv() {
                 match request {
-                    Request::StoreSeed { seed, response_tx } => {
-                        let result = Self::handle_store_seed(&thread_key_ring, seed);
+                    Request::StoreSecret {
+                        secret,
+                        response_tx,
+                    } => {
+                        let result = Self::handle_store_secret(&thread_key_ring, secret);
                         let _ = response_tx.send(result);
                     }
-                    Request::GetSeed { response_tx } => {
-                        let result = Self::handle_get_seed(&thread_key_ring);
+                    Request::GetSecret { response_tx } => {
+                        let result = Self::handle_get_secret(&thread_key_ring);
                         let _ = response_tx.send(result);
                     }
                     Request::Sign { data, response_tx } => {
@@ -161,17 +164,17 @@ pub mod krs_backend {
             }
         }
 
-        fn handle_store_seed(
+        fn handle_store_secret(
             thread_key_ring: &KeyRing,
-            seed: Seed,
-        ) -> Result<StoreSeedResponse, BackendError> {
+            secret: Secret,
+        ) -> Result<StoreSecretResponse, BackendError> {
             // Check if key already exists
             if thread_key_ring.search(Self::KEY_NAME).is_ok() {
                 panic!("{} already exists somehow?", Self::KEY_NAME);
             }
 
-            let seed_len = seed.len();
-            let krs_key = thread_key_ring.add_key(Self::KEY_NAME, seed.expose())?;
+            let secret_len = secret.len();
+            let krs_key = thread_key_ring.add_key(Self::KEY_NAME, secret.expose())?;
 
             // Set restrictive permissions
             let permissions = KeyPermissionsBuilder::builder()
@@ -181,41 +184,45 @@ pub mod krs_backend {
             krs_key.set_perms(permissions)?;
 
             // Derive public key
-            let keypair = Ed25519KeyPair::from_seed_unchecked(seed.expose()).unwrap();
+            let keypair = Ed25519KeyPair::from_seed_unchecked(secret.expose()).unwrap();
             let public_key = PublicKey::from(keypair.public_key().as_ref());
 
-            debug!("stored {}-byte seed as {:?}", seed_len, krs_key.get_id());
+            debug!(
+                "stored {}-byte secret as {:?}",
+                secret_len,
+                krs_key.get_id()
+            );
 
-            Ok(StoreSeedResponse {
+            Ok(StoreSecretResponse {
                 public_key,
-                seed_len,
+                secret_len,
             })
         }
 
-        fn handle_get_seed(thread_key_ring: &KeyRing) -> Result<Seed, BackendError> {
+        fn handle_get_secret(thread_key_ring: &KeyRing) -> Result<Secret, BackendError> {
             match thread_key_ring.search(Self::KEY_NAME) {
-                Ok(seed_key) => {
-                    // Ed25519 seeds are always 32 bytes
+                Ok(secret_key) => {
+                    // Ed25519 secrets are always 32 bytes
                     let mut buf = vec![0u8; 32];
-                    let nread = seed_key.read(&mut buf).map_err(BackendError::from)?;
+                    let nread = secret_key.read(&mut buf).map_err(BackendError::from)?;
 
                     if nread != 32 {
                         return Err(BackendError::NotFound(format!(
-                            "Expected 32-byte seed, got {nread} bytes"
+                            "Expected 32-byte secret, got {nread} bytes"
                         )));
                     }
 
-                    let seed = Seed::new(&buf);
+                    let secret = Secret::new(&buf);
                     buf.zeroize();
 
                     debug!(
-                        "read {}-byte seed '{}' from {:?}",
+                        "read {}-byte secret '{}' from {:?}",
                         nread,
                         Self::KEY_NAME,
-                        seed_key.get_id()
+                        secret_key.get_id()
                     );
 
-                    Ok(seed)
+                    Ok(secret)
                 }
                 Err(KeyError::KeyDoesNotExist) => {
                     Err(BackendError::NotFound(Self::KEY_NAME.to_string()))
@@ -225,18 +232,21 @@ pub mod krs_backend {
         }
 
         fn handle_sign(thread_key_ring: &KeyRing, data: &[u8]) -> Result<[u8; 64], BackendError> {
-            let seed = Self::handle_get_seed(thread_key_ring)?;
-            let keypair = Ed25519KeyPair::from_seed_unchecked(seed.expose()).unwrap();
+            let secret = Self::handle_get_secret(thread_key_ring)?;
+            let keypair = Ed25519KeyPair::from_seed_unchecked(secret.expose()).unwrap();
             let signature = keypair.sign(data);
             Ok(signature.as_ref().try_into().expect("infallible"))
         }
     }
 
-    impl SeedBackend for LinuxKrsBackend {
-        fn store_seed(&mut self, seed: Seed) -> Result<(), BackendError> {
+    impl SecretBackend for LinuxKrsBackend {
+        fn store_secret(&mut self, secret: Secret) -> Result<(), BackendError> {
             let (response_tx, response_rx) = mpsc::channel();
             self.request_tx
-                .send(Request::StoreSeed { seed, response_tx })
+                .send(Request::StoreSecret {
+                    secret,
+                    response_tx,
+                })
                 .map_err(|_| BackendError::WorkerDisconnect)?;
 
             let response = response_rx
@@ -245,15 +255,15 @@ pub mod krs_backend {
 
             // Update local state
             self.public_key = Some(response.public_key);
-            self.seed_len = response.seed_len;
+            self.secret_len = response.secret_len;
 
             Ok(())
         }
 
-        fn get_seed(&self) -> Result<Seed, BackendError> {
+        fn get_secret(&self) -> Result<Secret, BackendError> {
             let (response_tx, response_rx) = mpsc::channel();
             self.request_tx
-                .send(Request::GetSeed { response_tx })
+                .send(Request::GetSecret { response_tx })
                 .map_err(|_| BackendError::WorkerDisconnect)?;
 
             response_rx
@@ -275,8 +285,8 @@ pub mod krs_backend {
                 .map_err(|_| BackendError::WorkerDisconnect)?
         }
 
-        fn seed_len(&self) -> usize {
-            self.seed_len
+        fn secret_len(&self) -> usize {
+            self.secret_len
         }
 
         fn public_key(&self) -> PublicKey {
@@ -312,7 +322,7 @@ pub mod krs_backend {
 
         use super::*;
         use crate::online::test_util::enable_logging;
-        use crate::seed::SeedBackend;
+        use crate::seed::SecretBackend;
 
         #[test]
         fn init_keyring_succeeds() {
@@ -328,30 +338,30 @@ pub mod krs_backend {
 
             // given a LinuxKrsBackend instance
             let mut backend = LinuxKrsBackend::new().unwrap();
-            assert!(backend.get_seed().is_err());
+            assert!(backend.get_secret().is_err());
 
-            // when we store a seed
+            // when we store a secret
             let value = [99u8; 32];
-            backend.store_seed(Seed::new(&value)).unwrap();
+            backend.store_secret(Secret::new(&value)).unwrap();
 
             // then we can read it back
-            let read = backend.get_seed().unwrap();
+            let read = backend.get_secret().unwrap();
             assert_eq!(read.expose(), value.as_slice());
         }
 
         #[test]
-        fn confirm_drop_clears_the_seed_key() {
+        fn confirm_drop_clears_the_secret_key() {
             enable_logging();
 
             // given a LinuxKrsBackend instance
             let mut backend = LinuxKrsBackend::new().unwrap();
 
-            // when we store a seed
+            // when we store a secret
             let value = [123u8; 32];
-            backend.store_seed(Seed::new(&value)).unwrap();
+            backend.store_secret(Secret::new(&value)).unwrap();
 
             // and we confirmed it's there
-            let read = backend.get_seed().unwrap();
+            let read = backend.get_secret().unwrap();
             assert_eq!(read.expose(), value.as_slice());
 
             // When we drop the backend, it should clear the keyring
@@ -361,24 +371,24 @@ pub mod krs_backend {
             // backend cleared the key on drop
             let mut new_backend = LinuxKrsBackend::new().unwrap();
 
-            // The new backend should not have any seed stored
-            match new_backend.get_seed() {
-                Err(BackendError::NotFound(_)) => {} // success, no seed stored
-                Ok(_) => panic!("seed still exists after drop"),
+            // The new backend should not have any secret stored
+            match new_backend.get_secret() {
+                Err(BackendError::NotFound(_)) => {} // success, no secret stored
+                Ok(_) => panic!("secret still exists after drop"),
                 Err(e) => panic!("unexpected error: {e}"),
             }
 
-            // And we should be able to store a new seed
+            // And we should be able to store a new secret
             let new_value = [99u8; 32];
-            new_backend.store_seed(Seed::new(&new_value)).unwrap();
+            new_backend.store_secret(Secret::new(&new_value)).unwrap();
         }
 
         #[test]
         fn sign_verify_roundtrip() {
             // Given a LinuxKrsBackend
             let mut backend = LinuxKrsBackend::new().unwrap();
-            let seed = Seed::new_random();
-            backend.store_seed(seed).unwrap();
+            let secret = Secret::new_random();
+            backend.store_secret(secret).unwrap();
 
             // When the backend signs something
             let data = b"hello world";
@@ -395,10 +405,10 @@ pub mod krs_backend {
             enable_logging();
             use std::sync::{Arc, Mutex};
 
-            // Create a backend and store a seed
+            // Create a backend and store a secret
             let backend = Arc::new(Mutex::new(LinuxKrsBackend::new().unwrap()));
-            let seed = Seed::new_random();
-            backend.lock().unwrap().store_seed(seed).unwrap();
+            let secret = Secret::new_random();
+            backend.lock().unwrap().store_secret(secret).unwrap();
 
             // Test concurrent access from multiple threads
             let mut handles = vec![];
@@ -409,9 +419,9 @@ pub mod krs_backend {
                 let handle = thread::spawn(move || {
                     // Each thread performs multiple operations
                     for j in 0..3 {
-                        // Get seed
-                        let seed = backend_clone.lock().unwrap().get_seed().unwrap();
-                        assert_eq!(seed.len(), 32);
+                        // Get secret
+                        let secret = backend_clone.lock().unwrap().get_secret().unwrap();
+                        assert_eq!(secret.len(), 32);
 
                         // Sign data
                         let data = format!("thread {i} iteration {j}");
@@ -441,14 +451,14 @@ pub mod krs_backend {
 
             // Create backend on main thread
             let mut backend = LinuxKrsBackend::new().unwrap();
-            let seed = Seed::new_random();
-            backend.store_seed(seed).unwrap();
+            let secret = Secret::new_random();
+            backend.store_secret(secret).unwrap();
 
             // Move backend to another thread and perform operations
             let handle = thread::spawn(move || {
                 // These operations should work even though we're on a different thread
-                let retrieved_seed = backend.get_seed().unwrap();
-                assert_eq!(retrieved_seed.len(), 32);
+                let retrieved_secret = backend.get_secret().unwrap();
+                assert_eq!(retrieved_secret.len(), 32);
 
                 let data = b"cross-thread test";
                 let signature = backend.sign(data).unwrap();
@@ -459,8 +469,8 @@ pub mod krs_backend {
 
             // Get backend back and verify it still works
             let backend = handle.join().unwrap();
-            let seed = backend.get_seed().unwrap();
-            assert_eq!(seed.len(), 32);
+            let secret = backend.get_secret().unwrap();
+            assert_eq!(secret.len(), 32);
         }
     }
 }
@@ -469,7 +479,7 @@ pub mod krs_backend {
 pub mod stub_backend {
     use roughenough_protocol::tags::PublicKey;
 
-    use crate::seed::{BackendError, Seed, SeedBackend};
+    use crate::seed::{BackendError, Secret, SecretBackend};
 
     /// Stub implementation for non-Linux platforms
     pub struct LinuxKrsBackend;
@@ -480,12 +490,12 @@ pub mod stub_backend {
         }
     }
 
-    impl SeedBackend for LinuxKrsBackend {
-        fn store_seed(&mut self, _seed: Seed) -> Result<(), BackendError> {
+    impl SecretBackend for LinuxKrsBackend {
+        fn store_secret(&mut self, _secret: Secret) -> Result<(), BackendError> {
             unimplemented!("Linux Key Retention Service is not available on this platform");
         }
 
-        fn get_seed(&self) -> Result<Seed, BackendError> {
+        fn get_secret(&self) -> Result<Secret, BackendError> {
             unimplemented!("Linux Key Retention Service is not available on this platform");
         }
 
@@ -493,7 +503,7 @@ pub mod stub_backend {
             unimplemented!("Linux Key Retention Service is not available on this platform");
         }
 
-        fn seed_len(&self) -> usize {
+        fn secret_len(&self) -> usize {
             unimplemented!("Linux Key Retention Service is not available on this platform");
         }
 

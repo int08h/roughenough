@@ -1,13 +1,13 @@
 use roughenough_common::encoding;
 use tracing::{debug, error, trace};
 
-use crate::longterm::envelope::SeedEnvelope;
-use crate::seed::Seed;
+use crate::longterm::envelope::SecretEnvelope;
+use crate::seed::Secret;
 
 #[derive(thiserror::Error, Debug)]
 pub enum StorageError {
     #[error("{0}")]
-    InvalidSeed(String),
+    InvalidSecret(String),
 
     #[error("{0}")]
     NotImplemented(String),
@@ -23,14 +23,14 @@ pub enum StorageError {
 }
 
 /// Loads the seed from secure long-term storage and transfers it to an online backend. This is a
-/// convenience function that uses an async runtime internally to call `try_load_seed`.
-pub fn try_load_seed_sync(encoded_value: &str) -> Result<Seed, StorageError> {
+/// convenience function that uses an async runtime internally to call `try_load_secret`.
+pub fn try_load_secret_sync(encoded_value: &str) -> Result<Secret, StorageError> {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(try_load_seed(encoded_value))
+    rt.block_on(try_load_secret(encoded_value))
 }
 
 /// Loads the seed from secure long-term storage and transfers it to an online backend.
-pub async fn try_load_seed(encoded_value: &str) -> Result<Seed, StorageError> {
+pub async fn try_load_secret(encoded_value: &str) -> Result<Secret, StorageError> {
     trace!("Loading seed from {}", encoded_value);
 
     match Protection::from_prefix(encoded_value) {
@@ -46,16 +46,19 @@ pub async fn try_load_seed(encoded_value: &str) -> Result<Seed, StorageError> {
     }
 }
 
-pub async fn try_store_seed(seed: &Seed, resource_id: &str) -> Result<SeedEnvelope, StorageError> {
+pub async fn try_store_secret(
+    secret: &Secret,
+    resource_id: &str,
+) -> Result<SecretEnvelope, StorageError> {
     trace!("Storing seed for {}", resource_id);
 
     match Protection::from_prefix(resource_id) {
         Some(method) => {
             debug!("Seed protection method: {:?}", method);
             let resource_id = resource_id.strip_prefix(method.prefix()).unwrap();
-            method.try_store(seed, resource_id).await
+            method.try_store(secret, resource_id).await
         }
-        None => Err(StorageError::InvalidSeed(
+        None => Err(StorageError::InvalidSecret(
             "no protection method specified in resource".to_string(),
         )),
     }
@@ -81,7 +84,7 @@ impl Protection {
             Some(Protection::GcpKms)
         } else if prefix.starts_with("gcp-secret://") {
             Some(Protection::GcpSecretManager)
-        } else if prefix.starts_with("seed://") {
+        } else if prefix.starts_with("secret://") {
             Some(Protection::Plain)
         } else {
             None
@@ -90,7 +93,7 @@ impl Protection {
 
     pub fn prefix(&self) -> &str {
         match self {
-            Protection::Plain => "seed://",
+            Protection::Plain => "secret://",
             Protection::AwsKms => "aws-kms://",
             Protection::GcpKms => "gcp-kms://",
             Protection::AwsSecretManager => "aws-secret://",
@@ -98,7 +101,7 @@ impl Protection {
         }
     }
 
-    async fn try_load(&self, value: &str) -> Result<Seed, StorageError> {
+    async fn try_load(&self, value: &str) -> Result<Secret, StorageError> {
         match self {
             Protection::Plain => self.try_load_plain(value).await,
             Protection::AwsKms => self.try_load_aws_kms(value).await,
@@ -110,17 +113,17 @@ impl Protection {
 
     async fn try_store(
         &self,
-        seed: &Seed,
+        secret: &Secret,
         resource_id: &str,
-    ) -> Result<SeedEnvelope, StorageError> {
+    ) -> Result<SecretEnvelope, StorageError> {
         match self {
-            Protection::AwsKms => self.try_store_aws_kms(seed, resource_id).await,
-            Protection::GcpKms => self.try_store_gcp_kms(seed, resource_id).await,
+            Protection::AwsKms => self.try_store_aws_kms(secret, resource_id).await,
+            Protection::GcpKms => self.try_store_gcp_kms(secret, resource_id).await,
             Protection::AwsSecretManager => {
-                self.try_store_aws_secret_manager(seed, resource_id).await
+                self.try_store_aws_secret_manager(secret, resource_id).await
             }
             Protection::GcpSecretManager => {
-                self.try_store_gcp_secret_manager(seed, resource_id).await
+                self.try_store_gcp_secret_manager(secret, resource_id).await
             }
             Protection::Plain => {
                 unreachable!("Plain protection method should not be used for storing seeds");
@@ -128,31 +131,31 @@ impl Protection {
         }
     }
 
-    async fn try_load_plain(&self, value: &str) -> Result<Seed, StorageError> {
+    async fn try_load_plain(&self, value: &str) -> Result<Secret, StorageError> {
         let data = encoding::try_decode(value)?;
         if data.len() != 32 {
             let msg = format!("need 32 bytes, found: {0}", data.len());
-            return Err(StorageError::InvalidSeed(msg));
+            return Err(StorageError::InvalidSecret(msg));
         }
-        Ok(Seed::new(&data))
+        Ok(Secret::new(&data))
     }
 
     #[cfg(feature = "longterm-aws-kms")]
-    async fn try_load_aws_kms(&self, value: &str) -> Result<Seed, StorageError> {
+    async fn try_load_aws_kms(&self, value: &str) -> Result<Secret, StorageError> {
         use crate::longterm::awskms::AwsKms;
-        use crate::longterm::envelope::SeedEnvelope;
+        use crate::longterm::envelope::SecretEnvelope;
 
         let json_envelope = encoding::try_decode(value)?;
-        let seed_envelope = serde_json::from_slice::<SeedEnvelope>(&json_envelope)?;
+        let seed_envelope = serde_json::from_slice::<SecretEnvelope>(&json_envelope)?;
 
         debug!("AWS KMS key: {}", seed_envelope.key_id);
 
-        let seed = AwsKms::decrypt_seed(&seed_envelope).await;
-        Ok(seed)
+        let secret = AwsKms::decrypt_secret(&seed_envelope).await;
+        Ok(secret)
     }
 
     #[cfg(not(feature = "longterm-aws-kms"))]
-    async fn try_load_aws_kms(&self, _value: &str) -> Result<Seed, StorageError> {
+    async fn try_load_aws_kms(&self, _value: &str) -> Result<Secret, StorageError> {
         use crate::storage::StorageError::NotImplemented;
 
         let msg =
@@ -163,19 +166,19 @@ impl Protection {
     #[cfg(feature = "longterm-aws-kms")]
     async fn try_store_aws_kms(
         &self,
-        seed: &Seed,
+        secret: &Secret,
         resource_id: &str,
-    ) -> Result<SeedEnvelope, StorageError> {
+    ) -> Result<SecretEnvelope, StorageError> {
         use crate::longterm::awskms::AwsKms;
-        Ok(AwsKms::encrypt_seed(resource_id, seed).await)
+        Ok(AwsKms::encrypt_secret(resource_id, secret).await)
     }
 
     #[cfg(not(feature = "longterm-aws-kms"))]
     async fn try_store_aws_kms(
         &self,
-        _seed: &Seed,
+        _secret: &Secret,
         _resource_id: &str,
-    ) -> Result<SeedEnvelope, StorageError> {
+    ) -> Result<SecretEnvelope, StorageError> {
         use crate::storage::StorageError::NotImplemented;
 
         let msg =
@@ -184,21 +187,21 @@ impl Protection {
     }
 
     #[cfg(feature = "longterm-gcp-kms")]
-    async fn try_load_gcp_kms(&self, value: &str) -> Result<Seed, StorageError> {
-        use crate::longterm::envelope::SeedEnvelope;
+    async fn try_load_gcp_kms(&self, value: &str) -> Result<Secret, StorageError> {
+        use crate::longterm::envelope::SecretEnvelope;
         use crate::longterm::gcpkms::GcpKms;
 
         let json_envelope = encoding::try_decode(value)?;
-        let seed_envelope = serde_json::from_slice::<SeedEnvelope>(&json_envelope)?;
+        let seed_envelope = serde_json::from_slice::<SecretEnvelope>(&json_envelope)?;
 
         debug!("GCP KMS key: {}", seed_envelope.key_id);
 
-        let seed = GcpKms::decrypt_seed(&seed_envelope).await;
-        Ok(seed)
+        let secret = GcpKms::decrypt_secret(&seed_envelope).await;
+        Ok(secret)
     }
 
     #[cfg(not(feature = "longterm-gcp-kms"))]
-    async fn try_load_gcp_kms(&self, _value: &str) -> Result<Seed, StorageError> {
+    async fn try_load_gcp_kms(&self, _value: &str) -> Result<Secret, StorageError> {
         use crate::storage::StorageError::NotImplemented;
 
         let msg =
@@ -207,12 +210,12 @@ impl Protection {
     }
 
     #[cfg(feature = "longterm-aws-secret-manager")]
-    async fn try_load_aws_secret_manager(&self, value: &str) -> Result<Seed, StorageError> {
+    async fn try_load_aws_secret_manager(&self, value: &str) -> Result<Secret, StorageError> {
         use crate::longterm::awssecret::AwsSecretManager;
-        use crate::longterm::envelope::SeedEnvelope;
+        use crate::longterm::envelope::SecretEnvelope;
 
         let json_envelope = encoding::try_decode(value)?;
-        let seed_envelope = serde_json::from_slice::<SeedEnvelope>(&json_envelope)?;
+        let seed_envelope = serde_json::from_slice::<SecretEnvelope>(&json_envelope)?;
 
         let secret_id = seed_envelope
             .key_id
@@ -221,12 +224,12 @@ impl Protection {
 
         debug!("AWS Secret Manager secret: {}", secret_id);
 
-        let seed = AwsSecretManager::get_seed(secret_id).await;
-        Ok(seed)
+        let secret = AwsSecretManager::get_secret(secret_id).await;
+        Ok(secret)
     }
 
     #[cfg(not(feature = "longterm-aws-secret-manager"))]
-    async fn try_load_aws_secret_manager(&self, _value: &str) -> Result<Seed, StorageError> {
+    async fn try_load_aws_secret_manager(&self, _value: &str) -> Result<Secret, StorageError> {
         use crate::storage::StorageError::NotImplemented;
 
         let msg = "AWS Secret Manager is not enabled. Recompile with the 'longterm-aws-secret-manager' feature to support it";
@@ -236,17 +239,17 @@ impl Protection {
     #[cfg(feature = "longterm-aws-secret-manager")]
     async fn try_store_aws_secret_manager(
         &self,
-        seed: &Seed,
+        secret: &Secret,
         resource_id: &str,
-    ) -> Result<SeedEnvelope, StorageError> {
+    ) -> Result<SecretEnvelope, StorageError> {
         use crate::longterm::awssecret::AwsSecretManager;
-        use crate::longterm::envelope::SeedEnvelope;
+        use crate::longterm::envelope::SecretEnvelope;
 
-        match AwsSecretManager::store_seed(resource_id, seed).await {
+        match AwsSecretManager::store_secret(resource_id, seed).await {
             Err(_) => Err(StorageError::SecretManager(
                 "Failed to store seed in AWS Secret Manager".to_string(),
             )),
-            Ok(_) => Ok(SeedEnvelope {
+            Ok(_) => Ok(SecretEnvelope {
                 key_id: format!("{}{}", Protection::AwsSecretManager.prefix(), resource_id),
                 seed_ct: vec![],
                 dek_ct: vec![],
@@ -257,9 +260,9 @@ impl Protection {
     #[cfg(not(feature = "longterm-aws-secret-manager"))]
     async fn try_store_aws_secret_manager(
         &self,
-        _seed: &Seed,
+        _secret: &Secret,
         _resource_id: &str,
-    ) -> Result<SeedEnvelope, StorageError> {
+    ) -> Result<SecretEnvelope, StorageError> {
         use crate::storage::StorageError::NotImplemented;
 
         let msg = "AWS Secret Manager is not enabled. Recompile with the 'longterm-aws-secret-manager' feature to support it";
@@ -267,23 +270,23 @@ impl Protection {
     }
 
     #[cfg(feature = "longterm-gcp-secret-manager")]
-    async fn try_load_gcp_secret_manager(&self, value: &str) -> Result<Seed, StorageError> {
+    async fn try_load_gcp_secret_manager(&self, value: &str) -> Result<Secret, StorageError> {
         use crate::longterm::gcpsecret::GcpSecretManager;
 
         let json_envelope = encoding::try_decode(value)?;
-        let seed_envelope = serde_json::from_slice::<SeedEnvelope>(&json_envelope)?;
+        let seed_envelope = serde_json::from_slice::<SecretEnvelope>(&json_envelope)?;
 
         let secret_id = seed_envelope
             .key_id
             .strip_prefix(Protection::GcpSecretManager.prefix())
             .unwrap();
 
-        let seed = GcpSecretManager::get_seed(secret_id).await;
-        Ok(seed)
+        let secret = GcpSecretManager::get_secret(secret_id).await;
+        Ok(secret)
     }
 
     #[cfg(not(feature = "longterm-gcp-secret-manager"))]
-    async fn try_load_gcp_secret_manager(&self, _value: &str) -> Result<Seed, StorageError> {
+    async fn try_load_gcp_secret_manager(&self, _value: &str) -> Result<Secret, StorageError> {
         use crate::storage::StorageError::NotImplemented;
 
         let msg = "GCP Secret Manager is not enabled. Recompile with the 'longterm-gcp-secret-manager' feature to support it";
@@ -293,18 +296,18 @@ impl Protection {
     #[cfg(feature = "longterm-gcp-secret-manager")]
     async fn try_store_gcp_secret_manager(
         &self,
-        seed: &Seed,
+        secret: &Secret,
         resource_id: &str,
-    ) -> Result<SeedEnvelope, StorageError> {
-        use crate::longterm::envelope::SeedEnvelope;
+    ) -> Result<SecretEnvelope, StorageError> {
+        use crate::longterm::envelope::SecretEnvelope;
         use crate::longterm::gcpsecret::GcpSecretManager;
 
-        match GcpSecretManager::store_seed(resource_id, seed).await {
+        match GcpSecretManager::store_secret(resource_id, seed).await {
             Err(e) => {
                 let msg = format!("Failed to store seed in GCP Secret Manager: {e}");
                 Err(StorageError::SecretManager(msg))
             }
-            Ok(version) => Ok(SeedEnvelope {
+            Ok(version) => Ok(SecretEnvelope {
                 key_id: format!("{}{}", Protection::GcpSecretManager.prefix(), version),
                 seed_ct: vec![],
                 dek_ct: vec![],
@@ -315,9 +318,9 @@ impl Protection {
     #[cfg(not(feature = "longterm-gcp-secret-manager"))]
     async fn try_store_gcp_secret_manager(
         &self,
-        _seed: &Seed,
+        _secret: &Secret,
         _resource_id: &str,
-    ) -> Result<SeedEnvelope, StorageError> {
+    ) -> Result<SecretEnvelope, StorageError> {
         use crate::storage::StorageError::NotImplemented;
 
         let msg = "GCP Secret Manager is not enabled. Recompile with the 'longterm-gcp-secret-manager' feature to support it";
@@ -327,21 +330,21 @@ impl Protection {
     #[cfg(feature = "longterm-gcp-kms")]
     async fn try_store_gcp_kms(
         &self,
-        seed: &Seed,
+        secret: &Secret,
         resource_id: &str,
-    ) -> Result<SeedEnvelope, StorageError> {
+    ) -> Result<SecretEnvelope, StorageError> {
         use crate::longterm::gcpkms::GcpKms;
 
         // TODO(stuart) fix the lack of error handling
-        Ok(GcpKms::encrypt_seed(resource_id, seed).await)
+        Ok(GcpKms::encrypt_secret(resource_id, secret).await)
     }
 
     #[cfg(not(feature = "longterm-gcp-kms"))]
     async fn try_store_gcp_kms(
         &self,
-        _seed: &Seed,
+        _secret: &Secret,
         _resource_id: &str,
-    ) -> Result<SeedEnvelope, StorageError> {
+    ) -> Result<SecretEnvelope, StorageError> {
         use crate::storage::StorageError::NotImplemented;
 
         let msg =
