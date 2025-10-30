@@ -121,8 +121,8 @@ mod tests {
 
     use crate::cursor::ParseCursor;
     use crate::error::Error;
-    use crate::tags::Certificate;
     use crate::{FromWire, ToWire};
+    use crate::tags::pqcert::Certificate;
 
     #[test]
     fn pqcert_from_wire_fails_on_empty_buffer() {

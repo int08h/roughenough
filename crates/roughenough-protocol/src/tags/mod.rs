@@ -7,7 +7,6 @@ pub mod nonce;
 pub mod path;
 #[cfg(feature = "pq")]
 pub mod pqcert;
-#[cfg(feature = "pq")]
 pub mod pqsig;
 pub mod pubk;
 pub mod root;
@@ -17,13 +16,14 @@ pub mod srv;
 pub mod ver;
 pub mod vers;
 
-pub use cert::*;
 pub use dele::*;
 pub use mtype::*;
 pub use nonce::*;
 pub use path::*;
 #[cfg(feature = "pq")]
 pub use pqcert as cert;
+pub use cert::*;
+pub use pqsig::*;
 pub use pubk::*;
 pub use root::*;
 pub use sig::*;

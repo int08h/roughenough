@@ -2,9 +2,7 @@ use std::time::Duration;
 
 use roughenough_protocol::ToWire;
 use roughenough_protocol::tags::Version::RfcDraft14;
-#[cfg(feature = "pq")]
-use roughenough_protocol::tags::pqsig::PQSignature;
-use roughenough_protocol::tags::{Certificate, Delegation, PublicKey, Signature, Version};
+use roughenough_protocol::tags::{Certificate, Delegation, PQSignature, PublicKey, Signature, Version};
 use roughenough_protocol::util::ClockSource;
 
 use crate::online::onlinekey::OnlineKey;

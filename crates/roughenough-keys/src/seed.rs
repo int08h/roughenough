@@ -24,7 +24,7 @@ pub trait SecretBackend {
     fn public_key_bytes(&self) -> [u8; 32];
 }
 
-/// Secret value used to derive the keypair of a LongTermIdentity.
+/// Secret of a LongTermIdentity. Could be a private key or a seed to derive a private key.
 #[derive(ZeroizeOnDrop)]
 pub struct Secret {
     value: Vec<u8>,
