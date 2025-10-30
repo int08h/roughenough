@@ -2,6 +2,8 @@ use std::time::Duration;
 
 use roughenough_protocol::ToWire;
 use roughenough_protocol::tags::Version::RfcDraft14;
+#[cfg(feature = "pq")]
+use roughenough_protocol::tags::pqsig::PQSignature;
 use roughenough_protocol::tags::{Certificate, Delegation, PublicKey, Signature, Version};
 use roughenough_protocol::util::ClockSource;
 
@@ -59,7 +61,16 @@ impl LongTermIdentity {
             .sign(&to_sign)
             .expect("should not fail; can't continue if it does");
         let sig = Signature::from(dele_sig);
+
+        #[cfg(feature = "pq")]
+        let cert = {
+            let pqsig = PQSignature::default();
+            Certificate::new(sig, dele, pqsig)
+        };
+
+        #[cfg(not(feature = "pq"))]
         let cert = Certificate::new(sig, dele);
+
         olk.set_cert(cert);
 
         olk

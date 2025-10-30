@@ -1,12 +1,14 @@
 #[cfg(not(feature = "pq"))]
 pub mod cert;
-#[cfg(feature = "pq")]
-pub mod pqcert;
 pub mod dele;
 pub mod fixed_tag;
 pub mod mtype;
 pub mod nonce;
 pub mod path;
+#[cfg(feature = "pq")]
+pub mod pqcert;
+#[cfg(feature = "pq")]
+pub mod pqsig;
 pub mod pubk;
 pub mod root;
 pub mod sig;
@@ -14,16 +16,14 @@ pub mod srep;
 pub mod srv;
 pub mod ver;
 pub mod vers;
-#[cfg(feature = "pq")]
-pub mod pqsig;
 
-#[cfg(feature = "pq")]
-pub use pqcert as cert;
 pub use cert::*;
 pub use dele::*;
 pub use mtype::*;
 pub use nonce::*;
 pub use path::*;
+#[cfg(feature = "pq")]
+pub use pqcert as cert;
 pub use pubk::*;
 pub use root::*;
 pub use sig::*;

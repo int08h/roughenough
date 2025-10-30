@@ -12,26 +12,26 @@ pub enum StorageError {
     #[error("{0}")]
     NotImplemented(String),
 
-    #[error("Decoding seed: {0}")]
+    #[error("Decoding secret: {0}")]
     DecodeError(#[from] data_encoding::DecodeError),
 
-    #[error("Parsing seed envelope: {0}")]
+    #[error("Parsing secret envelope: {0}")]
     InvalidJson(#[from] serde_json::Error),
 
     #[error("secret manager error: {0}")]
     SecretManager(String),
 }
 
-/// Loads the seed from secure long-term storage and transfers it to an online backend. This is a
+/// Loads a secret from secure long-term storage and transfers it to an online backend. This is a
 /// convenience function that uses an async runtime internally to call `try_load_secret`.
 pub fn try_load_secret_sync(encoded_value: &str) -> Result<Secret, StorageError> {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(try_load_secret(encoded_value))
 }
 
-/// Loads the seed from secure long-term storage and transfers it to an online backend.
+/// Loads a secret from secure long-term storage and transfers it to an online backend.
 pub async fn try_load_secret(encoded_value: &str) -> Result<Secret, StorageError> {
-    trace!("Loading seed from {}", encoded_value);
+    trace!("Loading secret from {}", encoded_value);
 
     match Protection::from_prefix(encoded_value) {
         Some(method) => {
@@ -40,7 +40,7 @@ pub async fn try_load_secret(encoded_value: &str) -> Result<Secret, StorageError
             Ok(method.try_load(value).await?)
         }
         None => {
-            debug!("No seed protection prefix, assuming plain text");
+            debug!("No secret protection prefix, assuming plain text");
             Protection::Plain.try_load(encoded_value).await
         }
     }
@@ -50,7 +50,7 @@ pub async fn try_store_secret(
     secret: &Secret,
     resource_id: &str,
 ) -> Result<SecretEnvelope, StorageError> {
-    trace!("Storing seed for {}", resource_id);
+    trace!("Storing secret for {}", resource_id);
 
     match Protection::from_prefix(resource_id) {
         Some(method) => {
@@ -245,13 +245,13 @@ impl Protection {
         use crate::longterm::awssecret::AwsSecretManager;
         use crate::longterm::envelope::SecretEnvelope;
 
-        match AwsSecretManager::store_secret(resource_id, seed).await {
+        match AwsSecretManager::store_secret(resource_id, secret).await {
             Err(_) => Err(StorageError::SecretManager(
                 "Failed to store seed in AWS Secret Manager".to_string(),
             )),
             Ok(_) => Ok(SecretEnvelope {
                 key_id: format!("{}{}", Protection::AwsSecretManager.prefix(), resource_id),
-                seed_ct: vec![],
+                secret_ct: vec![],
                 dek_ct: vec![],
             }),
         }
@@ -302,14 +302,14 @@ impl Protection {
         use crate::longterm::envelope::SecretEnvelope;
         use crate::longterm::gcpsecret::GcpSecretManager;
 
-        match GcpSecretManager::store_secret(resource_id, seed).await {
+        match GcpSecretManager::store_secret(resource_id, secret).await {
             Err(e) => {
                 let msg = format!("Failed to store seed in GCP Secret Manager: {e}");
                 Err(StorageError::SecretManager(msg))
             }
             Ok(version) => Ok(SecretEnvelope {
                 key_id: format!("{}{}", Protection::GcpSecretManager.prefix(), version),
-                seed_ct: vec![],
+                secret_ct: vec![],
                 dek_ct: vec![],
             }),
         }

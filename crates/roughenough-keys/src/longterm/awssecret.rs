@@ -8,7 +8,7 @@ use crate::seed::Secret;
 pub struct AwsSecretManager {}
 
 impl AwsSecretManager {
-    pub async fn get_secret(resource: &str) -> Seed {
+    pub async fn get_secret(resource: &str) -> Secret {
         debug!(
             "Attempting to load seed from AWS Secret Manager '{}'",
             resource
@@ -40,10 +40,10 @@ impl AwsSecretManager {
         let value = try_decode(&encoded_str).expect("failed to decode secret value");
         debug!("Decoded a {}-byte value", value.len());
 
-        Seed::new(&value)
+        Secret::new(&value)
     }
 
-    pub async fn store_secret(resource: &str, seed: &Seed) -> Result<(), String> {
+    pub async fn store_secret(resource: &str, secret: &Secret) -> Result<(), String> {
         debug!(
             "Attempting to store seed in AWS Secret Manager '{}'",
             resource

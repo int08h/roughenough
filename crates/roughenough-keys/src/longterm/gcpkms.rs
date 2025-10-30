@@ -10,11 +10,11 @@ impl GcpKms {
     const AAD: &'static [u8] = b"roughenough-secret";
 
     /// Envelope encrypts the `seed` using a random DEK and the KMS key `key_id`
-    pub async fn encrypt_secret(key_id: &str, seed: &Seed) -> SecretEnvelope {
+    pub async fn encrypt_secret(key_id: &str, secret: &Secret) -> SecretEnvelope {
         let dek: [u8; 32] = random_bytes();
 
         let dek_ciphertext = Self::seal_dek(dek, key_id).await;
-        let seed_ciphertext = seal_secret(dek, seed, Self::AAD);
+        let seed_ciphertext = seal_secret(dek, secret, Self::AAD);
 
         let mut kid = Protection::GcpKms.prefix().to_string();
         kid.push_str(key_id);
@@ -26,7 +26,7 @@ impl GcpKms {
         }
     }
 
-    pub async fn decrypt_secret(envelope: &SecretEnvelope) -> Seed {
+    pub async fn decrypt_secret(envelope: &SecretEnvelope) -> Secret {
         // Extract the GCP KMS key ID from the envelope
         let key_id = envelope
             .key_id
@@ -122,7 +122,7 @@ mod tests {
         let key_id = "projects/int08h-blog/locations/us-central1/keyRings/roughenough/cryptoKeys/roughenough-int08h";
 
         // Create a test secret
-        let original_secret = Seed::new_random();
+        let original_secret = Secret::new_random();
         let original_bytes = original_secret.expose().to_vec();
 
         // Encrypt the secret
@@ -137,7 +137,7 @@ mod tests {
         assert!(!envelope.secret_ct.is_empty());
 
         // Decrypt the secret
-        let decrypted_seed = GcpKms::decrypt_secret(&envelope).await;
+        let decrypted_secret = GcpKms::decrypt_secret(&envelope).await;
 
         // Verify the decrypted seed matches the original
         assert_eq!(decrypted_secret.expose(), &original_bytes);

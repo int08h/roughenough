@@ -117,11 +117,12 @@ impl Debug for Certificate {
 
 #[cfg(test)]
 mod tests {
+    use std::mem::size_of;
+
     use crate::cursor::ParseCursor;
     use crate::error::Error;
     use crate::tags::Certificate;
     use crate::{FromWire, ToWire};
-    use std::mem::size_of;
 
     #[test]
     fn pqcert_from_wire_fails_on_empty_buffer() {
