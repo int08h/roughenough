@@ -202,6 +202,44 @@ cargo run -p keys --bin roughenough_keys -- --help
 target/debug/roughenough_keys --help
 ```
 
+## On Commenting
+
+Comments should not repeat what the code is saying. Instead, reserve comments
+for explaining **why** something is being done, or to provide context that is not
+obvious from the code itself.
+
+Bad:
+```
+// Increment the retry count by 1
+retries += 1
+```
+
+Good:
+```
+// Some APIs occasionally return 500s on valid requests. We retry up to 3 times
+// before surfacing an error.
+retries += 1
+```
+
+When to Comment
+
+- To explain why a particular approach or workaround was chosen.
+- To clarify intent when the code could be misread or misunderstood.
+- To provide context from external systems, specs, or requirements.
+- To document assumptions, edge cases, or limitations.
+
+When Not to Comment
+
+- Don't narrate what the code is doing — the code already says that.
+- Don't duplicate function or variable names in plain English.
+- Don't leave stale comments that contradict the code.
+
+Avoid comments that reference removed or obsolete code paths (e.g. "No longer
+uses X format"). If compatibility code or legacy behavior is deleted, comments
+about it should also be deleted. The comment should describe the code that
+exists now, not what used to be there. Historic details belong in commit
+messages or documentation, not in-line comments.
+
 ## Protocol Implementation Notes
 
 See `doc/RFC-PROTOCOL.md` for a summary of the Roughtime protocol details. See `doc/PROTECTION.md` for information about long-term identity seed protection strategies using KMS, secret managers, Linux KRS, and SSH agent.
@@ -238,11 +276,11 @@ Core dependencies used across crates:
 - **Benchmarking**: divan for performance benchmarks
 - **Error Handling**: thiserror for structured error types
 - **Logging**: tracing and tracing-subscriber for structured logging
-- **Concurrency**: crossbeam-channel for message passing, fastrand for random number generation
+- **Concurrency**: crossbeam-channel for message passing
 
 Dependencies for optional features:
 
-- **Async Runtime**: tokio for async operations (keys and reporting-server crates)
+- **Async Runtime**: tokio for async operations (keys and reporting-server crates), mio for the server (server crate)
 - **Web Framework**: axum and tower for HTTP server (reporting-server)
 - **HTTP Client**: ureq for reporting feature (client crate, optional)
 - **Cloud Providers**: aws-sdk-kms, aws-sdk-secretsmanager, google-cloud-kms-v1, google-cloud-secretmanager-v1 for cloud key management (keys crate, optional)
@@ -300,9 +338,6 @@ Dependencies for optional features:
 - Ask clarifying questions whenever my request is ambiguous or unclear
   - Bad: Guessing what I mean 
   - Good: “Are you asking about X or Y specifically?”
-- When I make obvious mistakes, point them out with gentle humor or playful teasing
-  - Bad: Ignoring errors
-  - Good: "This seems incorrect, 2+2 isn’t 5. You finished kindergarten, right? ;)”
 - Never generate unicode or emojis comments, strings, or commit messages. USE ASCII FOR **ALL** COMMUNICATION.
 
 # Project Management Instructions 
