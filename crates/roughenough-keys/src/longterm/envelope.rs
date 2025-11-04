@@ -22,8 +22,6 @@ pub struct SeedEnvelope {
 
 #[allow(dead_code)] // uses are behind cargo features
 pub(crate) fn seal_seed(dek: [u8; 32], seed: &Seed, aad: &[u8]) -> Vec<u8> {
-    assert!(aad.len() < 1024, "AAD must be less than 1024 bytes");
-
     let key = RandomizedNonceKey::new(&AES_256_GCM, &dek).unwrap();
     let mut in_out = seed.expose().to_vec();
 
@@ -39,14 +37,13 @@ pub(crate) fn seal_seed(dek: [u8; 32], seed: &Seed, aad: &[u8]) -> Vec<u8> {
     in_out
 }
 
+
 #[allow(dead_code)] // uses are behind cargo features
 pub(crate) fn open_seed(
     dek: [u8; 32],
     encrypted_seed: &[u8],
     aad: &[u8],
 ) -> Result<Seed, Unspecified> {
-    assert!(aad.len() < 1024, "AAD must be less than 1024 bytes");
-
     // encrypted_seed is (encrypted_seed || tag || nonce)
     let ciphertext_len = encrypted_seed.len() - AES_256_GCM.nonce_len();
 
