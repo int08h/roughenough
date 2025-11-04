@@ -1,4 +1,4 @@
-use aws_lc_rs::aead::{Aad, Nonce, RandomizedNonceKey, AES_256_GCM_SIV};
+use aws_lc_rs::aead::{AES_256_GCM_SIV, Aad, Nonce, RandomizedNonceKey};
 use aws_lc_rs::error::Unspecified;
 use serde::{Deserialize, Serialize};
 
@@ -27,13 +27,15 @@ pub(crate) fn seal_seed(dek: [u8; 32], seed: &Seed, aad: &[u8]) -> Vec<u8> {
     let key = RandomizedNonceKey::new(&AES_256_GCM_SIV, &dek).unwrap();
     let mut in_out = seed.expose().to_vec();
 
-    key
-        .seal_in_place_append_tag(Aad::from(aad), &mut in_out)
+    key.seal_in_place_append_tag(Aad::from(aad), &mut in_out)
         .map(|nonce| in_out.extend(nonce.as_ref()))
         .unwrap();
 
     // in_out is now (encrypted_seed || tag || nonce)
-    assert_eq!(in_out.len(), seed.len() + AES_256_GCM_SIV.tag_len() + AES_256_GCM_SIV.nonce_len());
+    assert_eq!(
+        in_out.len(),
+        seed.len() + AES_256_GCM_SIV.tag_len() + AES_256_GCM_SIV.nonce_len()
+    );
     in_out
 }
 
