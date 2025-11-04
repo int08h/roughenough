@@ -1,4 +1,4 @@
-use aws_lc_rs::aead::{AES_256_GCM_SIV, Aad, Nonce, RandomizedNonceKey};
+use aws_lc_rs::aead::{AES_256_GCM, Aad, Nonce, RandomizedNonceKey};
 use aws_lc_rs::error::Unspecified;
 use serde::{Deserialize, Serialize};
 
@@ -24,7 +24,7 @@ pub struct SeedEnvelope {
 pub(crate) fn seal_seed(dek: [u8; 32], seed: &Seed, aad: &[u8]) -> Vec<u8> {
     assert!(aad.len() < 1024, "AAD must be less than 1024 bytes");
 
-    let key = RandomizedNonceKey::new(&AES_256_GCM_SIV, &dek).unwrap();
+    let key = RandomizedNonceKey::new(&AES_256_GCM, &dek).unwrap();
     let mut in_out = seed.expose().to_vec();
 
     key.seal_in_place_append_tag(Aad::from(aad), &mut in_out)
@@ -34,7 +34,7 @@ pub(crate) fn seal_seed(dek: [u8; 32], seed: &Seed, aad: &[u8]) -> Vec<u8> {
     // in_out is now (encrypted_seed || tag || nonce)
     assert_eq!(
         in_out.len(),
-        seed.len() + AES_256_GCM_SIV.tag_len() + AES_256_GCM_SIV.nonce_len()
+        seed.len() + AES_256_GCM.tag_len() + AES_256_GCM.nonce_len()
     );
     in_out
 }
@@ -48,10 +48,10 @@ pub(crate) fn open_seed(
     assert!(aad.len() < 1024, "AAD must be less than 1024 bytes");
 
     // encrypted_seed is (encrypted_seed || tag || nonce)
-    let ciphertext_len = encrypted_seed.len() - AES_256_GCM_SIV.nonce_len();
+    let ciphertext_len = encrypted_seed.len() - AES_256_GCM.nonce_len();
 
     let nonce = Nonce::try_assume_unique_for_key(&encrypted_seed[ciphertext_len..])?;
-    let key = RandomizedNonceKey::new(&AES_256_GCM_SIV, &dek)?;
+    let key = RandomizedNonceKey::new(&AES_256_GCM, &dek)?;
 
     let mut in_out = encrypted_seed[..ciphertext_len].to_vec();
     let plaintext = key.open_in_place(nonce, Aad::from(aad), &mut in_out)?;
