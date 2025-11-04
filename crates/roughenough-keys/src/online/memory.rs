@@ -18,7 +18,7 @@ impl MemoryBackend {
     }
 
     pub fn from_value(value: &[u8]) -> MemoryBackend {
-        let seed = Seed::new(value);
+        let seed = Seed::new_ed25519(value);
         let mut backend = MemoryBackend::default();
         backend.store_seed(seed).expect("bug: seed is valid");
 
@@ -26,7 +26,7 @@ impl MemoryBackend {
     }
 
     pub fn from_random() -> MemoryBackend {
-        let seed = Seed::new_random();
+        let seed = Seed::new_random_ed15519();
         let mut backend = MemoryBackend::default();
         backend.store_seed(seed).expect("bug: seed is valid");
 
@@ -50,7 +50,7 @@ impl SeedBackend for MemoryBackend {
             .seed
             .as_ref()
             .unwrap_or_else(|| panic!("bug: no seed?"));
-        Ok(Seed::new(seed.expose()))
+        Ok(Seed::new_ed25519(seed.expose()))
     }
 
     fn sign(&mut self, data: &[u8]) -> Result<[u8; 64], BackendError> {
@@ -88,7 +88,7 @@ mod tests {
     fn sign_verify_roundtrip() {
         // Given a MemoryBackend
         let mut backend = MemoryBackend::new().unwrap();
-        let seed = Seed::new_random();
+        let seed = Seed::new_random_ed15519();
         backend.store_seed(seed).unwrap();
 
         // When the backend signs something

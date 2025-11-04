@@ -122,7 +122,7 @@ mod tests {
         let key_id = "projects/int08h-blog/locations/us-central1/keyRings/roughenough/cryptoKeys/roughenough-int08h";
 
         // Create a test seed
-        let original_seed = Seed::new_random();
+        let original_seed = Seed::new_random_ed15519();
         let original_bytes = original_seed.expose().to_vec();
 
         // Encrypt the seed

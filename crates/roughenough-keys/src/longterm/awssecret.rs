@@ -40,7 +40,7 @@ impl AwsSecretManager {
         let value = try_decode(&encoded_str).expect("failed to decode secret value");
         debug!("Decoded a {}-byte value", value.len());
 
-        Seed::new(&value)
+        Seed::new_ed25519(&value)
     }
 
     pub async fn store_seed(resource: &str, seed: &Seed) -> Result<(), String> {

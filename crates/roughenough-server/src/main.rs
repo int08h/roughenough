@@ -96,7 +96,7 @@ fn main() {
 fn load_seed(args: &Args) -> Box<dyn SeedBackend> {
     let seed = if args.seed.is_empty() {
         warn!("--seed is empty, using all zero seed");
-        Seed::new(&[0u8; 32])
+        Seed::new_ed25519(&[0u8; 32])
     } else {
         try_load_seed_sync(&args.seed).unwrap_or_else(|e| panic!("loading seed: {e}"))
     };

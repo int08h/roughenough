@@ -205,7 +205,7 @@ pub mod krs_backend {
                         )));
                     }
 
-                    let seed = Seed::new(&buf);
+                    let seed = Seed::new_ed25519(&buf);
                     buf.zeroize();
 
                     debug!(

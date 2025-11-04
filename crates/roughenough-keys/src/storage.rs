@@ -134,7 +134,7 @@ impl Protection {
             let msg = format!("need 32 bytes, found: {0}", data.len());
             return Err(StorageError::InvalidSeed(msg));
         }
-        Ok(Seed::new(&data))
+        Ok(Seed::new_ed25519(&data))
     }
 
     #[cfg(feature = "longterm-aws-kms")]

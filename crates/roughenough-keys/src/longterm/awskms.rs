@@ -138,7 +138,7 @@ mod tests {
         let key_id = "arn:aws:kms:us-east-2:382045063468:key/84e7ff78-7f16-4716-a300-a86c6efd6837";
 
         // Create a test seed
-        let original_seed = Seed::new_random();
+        let original_seed = Seed::new_random_ed15519();
         let original_bytes = original_seed.expose().to_vec();
 
         // Encrypt the seed

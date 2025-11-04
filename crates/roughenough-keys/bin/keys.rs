@@ -167,7 +167,7 @@ async fn handle_generate(mut output: OutFile, key: Option<String>, secret: Optio
     }
 
     let resource = key.or(secret).unwrap();
-    let seed = Seed::new_random();
+    let seed = Seed::new_random_ed15519();
 
     match storage::try_store_seed(&seed, &resource).await {
         Ok(envelope) => {
@@ -210,7 +210,7 @@ async fn handle_store(mut input: InFile, mut output: OutFile, secret: String) {
         return;
     }
 
-    let seed = Seed::new(&seed_bytes);
+    let seed = Seed::new_ed25519(&seed_bytes);
 
     // TODO(stuart) need to encode this output into a format that can be read:
     //    aws-secret://...HEX ENCODED JSON...
@@ -245,7 +245,7 @@ async fn handle_open(mut input: InFile, mut output: OutFile, key: Option<String>
     // compiler and clippy happy
 
     #[allow(unused_mut)]
-    let mut seed: Seed = Seed::new_random();
+    let mut seed: Seed = Seed::new_random_ed15519();
 
     #[cfg(feature = "longterm-gcp-kms")]
     {
@@ -289,7 +289,7 @@ async fn handle_seal(mut input: InFile, mut output: OutFile, key: String) {
         return;
     }
 
-    let seed = Seed::new(&seed_bytes);
+    let seed = Seed::new_ed25519(&seed_bytes);
 
     match storage::try_store_seed(&seed, &key).await {
         Ok(envelope) => {

@@ -52,7 +52,7 @@ pub(crate) fn open_seed(
 
     let mut in_out = encrypted_seed[..ciphertext_len].to_vec();
     let plaintext = key.open_in_place(nonce, Aad::from(aad), &mut in_out)?;
-    let seed = Seed::new(plaintext);
+    let seed = Seed::new_ed25519(plaintext);
 
     Ok(seed)
 }
@@ -87,7 +87,7 @@ mod tests {
             0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
             0x1d, 0x1e, 0x1f, 0x20,
         ];
-        let original_seed = Seed::new(&original_seed_data);
+        let original_seed = Seed::new_ed25519(&original_seed_data);
 
         let dek = [
             0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xab, 0xac, 0xad, 0xae,
@@ -117,7 +117,7 @@ mod tests {
     #[test]
     fn seal_open_seed_wrong_aad_fails() {
         // Test that decryption fails with wrong AAD
-        let original_seed = Seed::new_random();
+        let original_seed = Seed::new_random_ed15519();
         let dek = [0u8; 32];
         let correct_aad = b"correct_aad";
         let wrong_aad = b"wrong_aad";
@@ -132,7 +132,7 @@ mod tests {
     #[test]
     fn seal_open_seed_corrupted_data_fails() {
         // Test that decryption fails with corrupted encrypted data
-        let original_seed = Seed::new_random();
+        let original_seed = Seed::new_random_ed15519();
         let dek = [0u8; 32];
         let aad = b"test_aad";
 

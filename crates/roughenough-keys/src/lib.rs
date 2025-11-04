@@ -58,7 +58,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "32 bytes")]
     fn invalid_seed_length_should_panic() {
-        let _ = Seed::new(b"this won't work");
+        let _ = Seed::new_ed25519(b"this won't work");
     }
 
     #[test]

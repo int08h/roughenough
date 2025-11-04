@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::fmt::{Debug, Formatter};
 
 #[cfg(all(target_os = "linux", feature = "online-linux-krs"))]
@@ -24,37 +25,45 @@ pub trait SeedBackend {
     fn public_key_bytes(&self) -> [u8; 32];
 }
 
-/// Secret value used to derive the keypair of a LongTermIdentity.
+/// Secret value used either as the secret key or to derive a key/keypair of a LongTermIdentity.
 #[derive(ZeroizeOnDrop)]
-pub struct Seed {
-    value: Vec<u8>,
+pub enum Seed {
+    Ed25519(Vec<u8>),
+    Falcon512(Vec<u8>),
 }
 
 #[allow(clippy::len_without_is_empty)]
 impl Seed {
-    pub fn new(value: &[u8]) -> Self {
-        assert_eq!(value.len(), 32, "seed must be 32 bytes");
-        Self {
-            value: Vec::from(value),
+    pub fn new_ed25519(value: &[u8]) -> Self {
+        assert_eq!(value.len(), 32, "value must be 32 bytes");
+        Self::Ed25519(Vec::from(value))
+    }
+
+    pub fn new_random_ed15519() -> Self {
+        Seed::new_ed25519(&random_bytes::<32>())
+    }
+
+    // pub fn new_random_falcon512() -> Self {
+    // }
+
+    pub fn expose(&self) -> &[u8] {
+        match self {
+            Seed::Ed25519(value) => value,
+            Seed::Falcon512(value) => value,
         }
     }
 
-    pub fn new_random() -> Self {
-        Seed::new(&random_bytes::<32>())
-    }
-
-    pub fn expose(&self) -> &[u8] {
-        &self.value
-    }
-
     pub fn len(&self) -> usize {
-        self.value.len()
+        match self {
+            Seed::Ed25519(value) => value.len(),
+            Seed::Falcon512(value) => value.len(),
+        }
     }
 }
 
 impl Debug for Seed {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Seed(len={})", self.len())
+        write!(f, "Seed({:?}, len={})", self.type_id(), self.len())
     }
 }
 
