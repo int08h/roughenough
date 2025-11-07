@@ -37,14 +37,13 @@ pub(crate) fn seal_seed(dek: [u8; 32], seed: &Seed, aad: &[u8]) -> Vec<u8> {
     in_out
 }
 
-
 #[allow(dead_code)] // uses are behind cargo features
 pub(crate) fn open_seed(
     dek: [u8; 32],
     encrypted_seed: &[u8],
     aad: &[u8],
 ) -> Result<Seed, Unspecified> {
-    // encrypted_seed is (encrypted_seed || tag || nonce)
+    // encrypted_seed is (seed_ciphertext || tag || nonce)
     let ciphertext_len = encrypted_seed.len() - AES_256_GCM.nonce_len();
 
     let nonce = Nonce::try_assume_unique_for_key(&encrypted_seed[ciphertext_len..])?;
