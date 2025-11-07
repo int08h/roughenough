@@ -10,6 +10,9 @@ readme = "../../README.md"
 keywords = ["roughtime", "cryptography", "encoding", "utilities", "ed25519"]
 categories = ["cryptography"]
 
+[features]
+pq = []
+
 [dependencies]
 roughenough-protocol = { workspace = true }
 aws-lc-rs = { workspace = true }

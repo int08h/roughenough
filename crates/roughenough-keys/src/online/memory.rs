@@ -36,7 +36,7 @@ impl MemoryBackend {
 
 impl SeedBackend for MemoryBackend {
     fn store_seed(&mut self, seed: Seed) -> Result<(), BackendError> {
-        let keypair = Ed25519KeyPair::from_seed_unchecked(seed.expose()).unwrap();
+        let keypair = Ed25519KeyPair::from_seed_unchecked(&seed.expose()).unwrap();
         let public_key = PublicKey::from(keypair.public_key().as_ref());
 
         self.public_key = Some(public_key);
@@ -50,13 +50,13 @@ impl SeedBackend for MemoryBackend {
             .seed
             .as_ref()
             .unwrap_or_else(|| panic!("bug: no seed?"));
-        Ok(Seed::new_ed25519(seed.expose()))
+        Ok(Seed::new_ed25519(&seed.expose()))
     }
 
     fn sign(&mut self, data: &[u8]) -> Result<[u8; 64], BackendError> {
         let signature = {
             let seed = self.get_seed()?;
-            let keypair = Ed25519KeyPair::from_seed_unchecked(seed.expose()).unwrap();
+            let keypair = Ed25519KeyPair::from_seed_unchecked(&seed.expose()).unwrap();
             keypair.sign(data)
         };
         Ok(signature.as_ref().try_into().expect("infallible"))

@@ -14,6 +14,9 @@ categories = ["network-programming", "cryptography"]
 name = "roughenough_protocol"
 bench = false
 
+[features]
+pq = []
+
 [dependencies]
 thiserror = { workspace = true }
 pastey = { workspace = true }

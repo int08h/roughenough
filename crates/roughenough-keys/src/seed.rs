@@ -1,6 +1,11 @@
 use std::any::Any;
 use std::fmt::{Debug, Formatter};
 
+#[cfg(feature = "pq")]
+use pqcrypto_falcon::{falconpadded512, falconpadded512_keypair};
+#[cfg(feature = "pq")]
+use pqcrypto_traits::sign::{PublicKey as FalconPublicKey, SecretKey as FalconSecretKey};
+
 #[cfg(all(target_os = "linux", feature = "online-linux-krs"))]
 use linux_keyutils::KeyError;
 use roughenough_common::crypto::random_bytes;
@@ -25,38 +30,61 @@ pub trait SeedBackend {
     fn public_key_bytes(&self) -> [u8; 32];
 }
 
+const ED25519_SEED_LEN: usize = 32;
+const FALCON512_SEED_LEN: usize = falconpadded512::public_key_bytes() + falconpadded512::secret_key_bytes();
+
 /// Secret value used either as the secret key or to derive a key/keypair of a LongTermIdentity.
 #[derive(ZeroizeOnDrop)]
 pub enum Seed {
-    Ed25519(Vec<u8>),
-    Falcon512(Vec<u8>),
+    Ed25519 { seed: Vec<u8> },
+    Falcon512 { pk: Vec<u8>, sk: Vec<u8> },
 }
 
 #[allow(clippy::len_without_is_empty)]
 impl Seed {
     pub fn new_ed25519(value: &[u8]) -> Self {
-        assert_eq!(value.len(), 32, "value must be 32 bytes");
-        Self::Ed25519(Vec::from(value))
+        assert_eq!(value.len(), ED25519_SEED_LEN, "value must be 32 bytes");
+        Self::Ed25519 { seed: Vec::from(value) }
     }
 
-    pub fn new_random_ed15519() -> Self {
-        Seed::new_ed25519(&random_bytes::<32>())
-    }
-
-    // pub fn new_random_falcon512() -> Self {
-    // }
-
-    pub fn expose(&self) -> &[u8] {
-        match self {
-            Seed::Ed25519(value) => value,
-            Seed::Falcon512(value) => value,
+    pub fn new_falcon512(value: &[u8]) -> Self {
+        assert_eq!(value.len(), FALCON512_SEED_LEN, "wrong length for falcon512 seed");
+        Self::Falcon512 {
+            pk: Vec::from(&value[..falconpadded512::public_key_bytes()]),
+            sk: Vec::from(&value[falconpadded512::public_key_bytes()..]),
         }
     }
 
-    pub fn len(&self) -> usize {
+    pub fn new_random_ed15519() -> Self {
+        Self::Ed25519 { seed: random_bytes::<32>().to_vec() }
+    }
+
+    #[cfg(feature = "pq")]
+    pub fn new_random_falcon512() -> Self {
+        let (pk, sk) = falconpadded512_keypair();
+
+        Seed::Falcon512 {
+            pk: pk.as_bytes().to_vec(),
+            sk: sk.as_bytes().to_vec(),
+        }
+    }
+
+    pub fn expose(&self) -> Vec<u8> {
         match self {
-            Seed::Ed25519(value) => value.len(),
-            Seed::Falcon512(value) => value.len(),
+            Seed::Ed25519 { seed } => seed.clone(),
+            Seed::Falcon512 { pk, sk } => {
+                let mut buf = Vec::with_capacity(FALCON512_SEED_LEN);
+                buf.extend_from_slice(pk);
+                buf.extend_from_slice(sk);
+                buf
+            }
+        }
+    }
+
+    pub const fn len(&self) -> usize {
+        match self {
+            Seed::Ed25519 { .. } => ED25519_SEED_LEN,
+            Seed::Falcon512 { .. } => FALCON512_SEED_LEN,
         }
     }
 }

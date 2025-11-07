@@ -10,6 +10,9 @@ readme = "../../README.md"
 keywords = ["roughtime", "integration", "testing", "e2e"]
 categories = ["development-tools"]
 
+[features]
+pq = []
+
 [dependencies]
 roughenough-client = { workspace = true }
 roughenough-merkle = { workspace = true }

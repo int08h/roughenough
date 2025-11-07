@@ -54,11 +54,12 @@ impl LongTermIdentity {
         let mut to_sign = RfcDraft14.dele_prefix().to_vec();
         to_sign.extend_from_slice(&dele.as_bytes().expect("DELE serialization should not fail"));
 
-        let dele_sig: [u8; 64] = self
+        let dele_sig = self
             .seed
             .sign(&to_sign)
             .expect("should not fail; can't continue if it does");
-        let sig = Signature::from(dele_sig);
+        let sig = Signature::try_from(dele_sig.as_ref())
+            .expect("infallible");
         let cert = Certificate::new(sig, dele);
         olk.set_cert(cert);
 

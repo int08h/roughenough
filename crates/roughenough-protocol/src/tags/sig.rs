@@ -52,6 +52,19 @@ impl From<[u8; SIZE]> for Signature {
     }
 }
 
+impl TryFrom<&[u8]> for Signature {
+    type Error = Error;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        if value.len() < SIZE {
+            return Err(Error::BufferTooSmall(SIZE, value.len()));
+        }
+        let mut sig = [0u8; SIZE];
+        sig.copy_from_slice(value);
+        Ok(Self(FixedTag::new(sig)))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

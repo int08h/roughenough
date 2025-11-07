@@ -14,6 +14,9 @@ categories = ["network-programming", "web-programming"]
 name = "roughenough_reporting_server"
 path = "src/main.rs"
 
+[features]
+pq = []
+
 [dependencies]
 roughenough-client = { path = "../roughenough-client" }
 roughenough-common = { path = "../roughenough-common" }

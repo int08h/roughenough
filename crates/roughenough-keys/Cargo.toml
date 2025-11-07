@@ -12,6 +12,7 @@ categories = ["cryptography", "authentication"]
 
 [features]
 default = ["online-linux-krs"]
+pq = ["dep:pqcrypto-falcon", "dep:pqcrypto-traits"]
 online-linux-krs = ["dep:linux-keyutils"]
 online-pkcs11 = ["dep:cryptoki"]
 online-ssh-agent = ["dep:ssh-agent-client-rs", "dep:ssh-key"]
@@ -42,6 +43,8 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 zeroize = { workspace = true, features = ["zeroize_derive"] }
 clap = { workspace = true, features = ["derive"] }
+pqcrypto-falcon = { workspace = true, optional = true }
+pqcrypto-traits = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 linux-keyutils = { workspace = true, optional = true }
