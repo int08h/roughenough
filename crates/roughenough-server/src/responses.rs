@@ -1,5 +1,5 @@
 use std::net::SocketAddr;
-
+use std::time::Instant;
 use roughenough_keys::online::onlinekey::OnlineKey;
 use roughenough_merkle::{MerklePath, MerkleTree};
 use roughenough_protocol::cursor::ParseCursor;
@@ -9,7 +9,7 @@ use roughenough_protocol::tags::{MerkleRoot, PublicKey};
 use roughenough_protocol::wire::ToFrame;
 
 use crate::keysource::KeySource;
-use crate::metrics::types::ResponseMetrics;
+use crate::metrics::response::ResponseMetrics;
 
 #[derive(Debug)]
 pub struct PendingRequest {
@@ -69,8 +69,8 @@ impl ResponseHandler {
             return;
         }
 
-        self.response_metrics
-            .add_batch_size(self.requests.len() as u8);
+        // TODO(stuart) this should be a ClockSource, so the system clock is not used directly
+        let timer = Instant::now();
 
         // Tags that are common to all responses in this batch
         // (CERT, SREP, and SIG are the same per-batch)
@@ -106,6 +106,10 @@ impl ResponseHandler {
 
             callback(pending_req.src_addr, &self.response_buf[..frame_size]);
         }
+
+        let batch_size = self.requests.len() as u8;
+        let elapsed = timer.elapsed();
+        self.response_metrics.record_batch(batch_size, elapsed);
     }
 
     pub fn public_key(&self) -> PublicKey {

@@ -8,9 +8,10 @@ use crossbeam_channel::Receiver;
 use roughenough_protocol::util::ClockSource;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
-
+use crate::metrics::network::NetworkMetrics;
+use crate::metrics::request::RequestMetrics;
 use crate::metrics::snapshot::{calc_aggregated_metrics, MetricsSnapshot};
-use crate::metrics::types::{NetworkMetrics, RequestMetrics, ResponseMetrics};
+use crate::metrics::response::ResponseMetrics;
 
 /// Snapshot of worker metrics
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,7 +73,7 @@ impl MetricsAggregator {
             self.reporting_interval.as_secs()
         );
 
-        let mut next_report = self.clock.epoch_seconds() + self.reporting_interval.as_secs();
+        let mut next_report_time = self.clock.epoch_seconds() + self.reporting_interval.as_secs();
         let mut last_report_time = self.clock.epoch_seconds();
 
         while self.keep_running.load(Ordering::Relaxed) {
@@ -89,12 +90,12 @@ impl MetricsAggregator {
 
             let now = self.clock.epoch_seconds();
 
-            if now >= next_report {
+            if now >= next_report_time {
                 let elapsed_secs = (now - last_report_time) as f64;
                 self.report_metrics(elapsed_secs);
 
                 last_report_time = now;
-                next_report = now + self.reporting_interval.as_secs();
+                next_report_time = now + self.reporting_interval.as_secs();
             }
         }
 
@@ -125,11 +126,12 @@ impl MetricsAggregator {
             aggregated.requests.num_jumbo_requests
         );
         info!(
-            "Responses: total={} bytes={:.1}MB, batch sizes={}",
+            "Responses: total={} bytes={:.1}MB",
             aggregated.responses.num_responses,
             aggregated.responses.num_bytes_sent as f64 / (1024.0 * 1024.0),
-            aggregated.responses.size_counts_as_string(),
         );
+
+        // TODO(stuart) print batch metrics
 
         if let Some(ref metrics_path) = self.metrics_path {
             let snapshot = MetricsSnapshot::new(

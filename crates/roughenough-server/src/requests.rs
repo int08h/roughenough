@@ -5,7 +5,7 @@ use roughenough_protocol::request::{REQUEST_SIZE, Request};
 use roughenough_protocol::tags::PublicKey;
 use roughenough_protocol::wire::FromFrame;
 
-use crate::metrics::types::RequestMetrics;
+use crate::metrics::request::RequestMetrics;
 use crate::responses::ResponseHandler;
 
 pub struct RequestHandler {
@@ -71,7 +71,7 @@ impl RequestHandler {
     }
 
     #[allow(dead_code)] // used in worker metrics collection
-    pub fn response_metrics(&self) -> crate::metrics::types::ResponseMetrics {
+    pub fn response_metrics(&self) -> crate::metrics::response::ResponseMetrics {
         self.responder.metrics()
     }
 }

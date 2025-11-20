@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 
 use mio::net::UdpSocket as MioUdpSocket;
 
-use crate::metrics::types::NetworkMetrics;
+use crate::metrics::network::NetworkMetrics;
 use crate::network::CollectResult::{Empty, MoreData};
 
 #[derive(Debug, Default)]

@@ -9,7 +9,9 @@ use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 use crate::metrics::aggregator::WorkerMetrics;
-use crate::metrics::types::{NetworkMetrics, RequestMetrics, ResponseMetrics};
+use crate::metrics::network::NetworkMetrics;
+use crate::metrics::request::RequestMetrics;
+use crate::metrics::response::ResponseMetrics;
 
 /// Complete JSON metrics output structure
 #[derive(Debug, Serialize, Deserialize)]
@@ -152,7 +154,7 @@ mod tests {
 
     use super::*;
     use crate::metrics::aggregator::WorkerMetrics;
-    use crate::metrics::latency::LatencyStats;
+    use crate::metrics::batch::BatchTiming;
 
     // Helper function to create test worker metrics
     fn create_test_worker_metrics(worker_id: usize, multiplier: u32) -> WorkerMetrics {
@@ -170,8 +172,7 @@ mod tests {
             response: ResponseMetrics {
                 num_responses: 48 * multiplier as usize,
                 num_bytes_sent: 512 * 1024 * multiplier as usize,
-                batch_sizes: vec![0; 64],
-                batch_times: LatencyStats::new(16),
+                batch_timing: BatchTiming::new(),
             },
         }
     }
