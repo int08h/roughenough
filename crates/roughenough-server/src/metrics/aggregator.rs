@@ -9,7 +9,7 @@ use roughenough_protocol::util::ClockSource;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
 
-use crate::metrics::snapshot::{MetricsSnapshot, calc_aggregated_metrics};
+use crate::metrics::snapshot::{calc_aggregated_metrics, MetricsSnapshot};
 use crate::metrics::types::{NetworkMetrics, RequestMetrics, ResponseMetrics};
 
 /// Snapshot of worker metrics
@@ -128,7 +128,7 @@ impl MetricsAggregator {
             "Responses: total={} bytes={:.1}MB, batch sizes={}",
             aggregated.responses.num_responses,
             aggregated.responses.num_bytes_sent as f64 / (1024.0 * 1024.0),
-            aggregated.responses.counts_as_string(),
+            aggregated.responses.size_counts_as_string(),
         );
 
         if let Some(ref metrics_path) = self.metrics_path {
@@ -145,3 +145,4 @@ impl MetricsAggregator {
         }
     }
 }
+

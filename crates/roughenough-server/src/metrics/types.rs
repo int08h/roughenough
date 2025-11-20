@@ -3,6 +3,7 @@
 use std::ops::AddAssign;
 
 use serde::{Deserialize, Serialize};
+use crate::metrics::latency::LatencyStats;
 
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
 pub struct NetworkMetrics {
@@ -45,6 +46,7 @@ pub struct ResponseMetrics {
     pub num_responses: usize,
     pub num_bytes_sent: usize,
     pub batch_sizes: Vec<u8>,
+    pub batch_times: LatencyStats,
 }
 
 impl Default for ResponseMetrics {
@@ -53,12 +55,14 @@ impl Default for ResponseMetrics {
             num_responses: 0,
             num_bytes_sent: 0,
             batch_sizes: vec![0; ResponseMetrics::MAX_BATCH_SIZE],
+            batch_times: LatencyStats::new(256),
         }
     }
 }
 
 impl ResponseMetrics {
     const MAX_BATCH_SIZE: usize = 64;
+    const NUM_BATCH_TIMES: usize = u16::MAX as usize;
 
     pub fn add_batch_size(&mut self, batch_size: u8) {
         debug_assert!(
@@ -74,7 +78,7 @@ impl ResponseMetrics {
         self.num_bytes_sent += num_bytes;
     }
 
-    pub fn counts_as_string(&self) -> String {
+    pub fn size_counts_as_string(&self) -> String {
         self.batch_sizes
             .iter()
             .enumerate()
@@ -87,6 +91,7 @@ impl ResponseMetrics {
     pub fn reset_metrics(&mut self) {
         self.num_responses = 0;
         self.num_bytes_sent = 0;
+        self.batch_times.clear();
         self.batch_sizes.clear();
         self.batch_sizes.resize(Self::MAX_BATCH_SIZE, 0);
     }

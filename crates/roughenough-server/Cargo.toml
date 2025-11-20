@@ -41,3 +41,13 @@ divan = { workspace = true }
 name = "server_ops"
 path = "benches/server_ops.rs"
 harness = false
+
+[[bench]]
+name = "server_network"
+path = "benches/server_network.rs"
+harness = false
+
+[[bench]]
+name = "server_metrics"
+path = "benches/server_metrics.rs"
+harness = false

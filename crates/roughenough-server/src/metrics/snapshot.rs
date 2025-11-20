@@ -152,6 +152,7 @@ mod tests {
 
     use super::*;
     use crate::metrics::aggregator::WorkerMetrics;
+    use crate::metrics::latency::LatencyStats;
 
     // Helper function to create test worker metrics
     fn create_test_worker_metrics(worker_id: usize, multiplier: u32) -> WorkerMetrics {
@@ -170,6 +171,7 @@ mod tests {
                 num_responses: 48 * multiplier as usize,
                 num_bytes_sent: 512 * 1024 * multiplier as usize,
                 batch_sizes: vec![0; 64],
+                batch_times: LatencyStats::new(16),
             },
         }
     }
