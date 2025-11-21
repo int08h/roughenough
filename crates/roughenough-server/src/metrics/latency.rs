@@ -2,91 +2,83 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-/// Bucketed histogram for latency measurements.
-/// Uses exponential buckets covering sub-microsecond to multi-second latencies.
-/// Memory: 32 buckets × 8 bytes = 256 bytes (plus min/max/count)
+/// Bucketed histogram for approximate latency measurements.
+///
+/// Uses linear 4.1us-wide buckets for the 0-1000us range, and exponential buckets
+/// for latencies >918us.
+///
+/// Memory: 256 buckets x 8 bytes = 2048 bytes (plus count)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LatencyHistogram {
     /// Count of samples in each bucket
-    buckets: [u64; 32],
+    buckets: Vec<u64>,
     /// Total number of samples recorded
     total_count: usize,
-    /// Minimum observed latency
-    min: Duration,
-    /// Maximum observed latency
-    max: Duration,
 }
 
 impl LatencyHistogram {
-    const NUM_BUCKETS: usize = 32;
+    const NUM_BUCKETS: usize = 256;
+    const NUM_LINEAR_BUCKETS: usize = 224;
 
-    /// Threshold where we switch from linear to exponential buckets (2^15 = 32768ns ~ 32.8us)
-    /// Linear region: 16 buckets of 2^11 ns (~2.05us) each, covering 0-32.8us
-    /// Exponential region: 16 power-of-2 buckets covering 32.8us to 1s+
-    const LINEAR_THRESHOLD_NS: u64 = 1 << 15; // 32768
+    /// Bucket width for linear region: 2^12 = 4096ns (~4.1us)
+    const LINEAR_BUCKET_WIDTH_SHIFT: u32 = 12;
 
-    /// Bucket boundaries in nanoseconds (lower bound of each bucket)
-    /// Hybrid scheme: ~2us linear buckets for 0-32.8us, then power-of-2 above
-    const BUCKET_BOUNDARIES_NS: [u64; Self::NUM_BUCKETS] = [
-        // Linear region: 2048ns (~2us) buckets
-        0,           // [0, 2.05us)
-        1 << 11,     // [2.05us, 4.1us)
-        2 << 11,     // [4.1us, 6.1us)
-        3 << 11,     // [6.1us, 8.2us)
-        4 << 11,     // [8.2us, 10.2us)
-        5 << 11,     // [10.2us, 12.3us)
-        6 << 11,     // [12.3us, 14.3us)
-        7 << 11,     // [14.3us, 16.4us)
-        8 << 11,     // [16.4us, 18.4us)
-        9 << 11,     // [18.4us, 20.5us)
-        10 << 11,    // [20.5us, 22.5us)
-        11 << 11,    // [22.5us, 24.6us)
-        12 << 11,    // [24.6us, 26.6us)
-        13 << 11,    // [26.6us, 28.7us)
-        14 << 11,    // [28.7us, 30.7us)
-        15 << 11,    // [30.7us, 32.8us)
-        // Exponential region: power-of-2 buckets
-        1 << 15,     // [32.8us, 65.5us)
-        1 << 16,     // [65.5us, 131us)
-        1 << 17,     // [131us, 262us)
-        1 << 18,     // [262us, 524us)
-        1 << 19,     // [524us, 1.05ms)
-        1 << 20,     // [1.05ms, 2.1ms)
-        1 << 21,     // [2.1ms, 4.2ms)
-        1 << 22,     // [4.2ms, 8.4ms)
-        1 << 23,     // [8.4ms, 16.8ms)
-        1 << 24,     // [16.8ms, 33.6ms)
-        1 << 25,     // [33.6ms, 67.1ms)
-        1 << 26,     // [67.1ms, 134ms)
-        1 << 27,     // [134ms, 268ms)
-        1 << 28,     // [268ms, 537ms)
-        1 << 29,     // [537ms, 1.07s)
-        1 << 30,     // [1.07s, +inf)
-    ];
+    /// Linear threshold: 224 * 4096 = 917,504ns (~918us)
+    /// Linear region: 224 buckets of ~4.1us each, covering 0-918us
+    /// Exponential region: 32 power-of-2 buckets covering 918us to seconds+
+    const LINEAR_THRESHOLD_NS: u64 =
+        (Self::NUM_LINEAR_BUCKETS as u64) << Self::LINEAR_BUCKET_WIDTH_SHIFT;
+
+    /// First exponential bucket boundary: 2^20 = 1,048,576ns (~1.05ms)
+    const EXPONENTIAL_START_BIT: u32 = 20;
 
     pub fn new() -> Self {
         Self {
-            buckets: [0; Self::NUM_BUCKETS],
+            buckets: vec![0; Self::NUM_BUCKETS],
             total_count: 0,
-            min: Duration::MAX,
-            max: Duration::ZERO,
         }
     }
 
-    /// Maps a duration to its bucket index using hybrid linear/power-of-2 scheme.
-    /// Linear region (0-32.8us): O(1) via integer division
-    /// Exponential region (32.8us+): O(1) via leading_zeros
+    /// Returns the lower bound in nanoseconds for a given bucket index
+    #[inline]
+    fn bucket_lower_bound_ns(bucket_idx: usize) -> u64 {
+        if bucket_idx < Self::NUM_LINEAR_BUCKETS {
+            (bucket_idx as u64) << Self::LINEAR_BUCKET_WIDTH_SHIFT
+        } else if bucket_idx == Self::NUM_LINEAR_BUCKETS {
+            // First exponential bucket starts at linear threshold
+            Self::LINEAR_THRESHOLD_NS
+        } else {
+            let exp_idx = bucket_idx - Self::NUM_LINEAR_BUCKETS;
+            1u64 << (Self::EXPONENTIAL_START_BIT + exp_idx as u32)
+        }
+    }
+
+    /// Returns the upper bound in nanoseconds for a given bucket index
+    #[inline]
+    fn bucket_upper_bound_ns(bucket_idx: usize) -> u64 {
+        if bucket_idx + 1 >= Self::NUM_BUCKETS {
+            u64::MAX
+        } else if bucket_idx < Self::NUM_LINEAR_BUCKETS {
+            ((bucket_idx + 1) as u64) << Self::LINEAR_BUCKET_WIDTH_SHIFT
+        } else {
+            let exp_idx = (bucket_idx + 1) - Self::NUM_LINEAR_BUCKETS;
+            1u64 << (Self::EXPONENTIAL_START_BIT + exp_idx as u32)
+        }
+    }
+
+    /// Maps a duration to its bucket index.
+    #[inline]
     fn duration_to_bucket(&self, duration: Duration) -> usize {
-        let nanos: u64 = duration.as_nanos().try_into().unwrap();
+        let nanos: u64 = duration.as_nanos().try_into().unwrap_or(u64::MAX);
 
         if nanos < Self::LINEAR_THRESHOLD_NS {
-            // Linear region: direct calculation via right shift (division by 2048)
-            (nanos >> 11) as usize
+            // Linear region: direct calculation via right shift
+            (nanos >> Self::LINEAR_BUCKET_WIDTH_SHIFT) as usize
         } else {
             // Exponential region: O(1) via leading_zeros
-            // For nanos >= 2^15: bucket = 64 - leading_zeros(nanos), clamped to 31
-            let bucket = 64 - nanos.leading_zeros();
-            bucket.min(31) as usize
+            let bit_pos = 63u32.saturating_sub(nanos.leading_zeros());
+            let exp_bucket = bit_pos.saturating_sub(Self::EXPONENTIAL_START_BIT) as usize;
+            (Self::NUM_LINEAR_BUCKETS + exp_bucket).min(Self::NUM_BUCKETS - 1)
         }
     }
 
@@ -95,14 +87,6 @@ impl LatencyHistogram {
         let bucket_idx = self.duration_to_bucket(duration);
         self.buckets[bucket_idx] += 1;
         self.total_count += 1;
-
-        if self.total_count == 1 {
-            self.min = duration;
-            self.max = duration;
-        } else {
-            self.min = self.min.min(duration);
-            self.max = self.max.max(duration);
-        }
     }
 
     /// Merges another histogram into this one
@@ -115,22 +99,11 @@ impl LatencyHistogram {
             self.buckets[i] += other.buckets[i];
         }
         self.total_count += other.total_count;
-
-        if self.total_count == other.total_count {
-            // This histogram was empty
-            self.min = other.min;
-            self.max = other.max;
-        } else {
-            self.min = self.min.min(other.min);
-            self.max = self.max.max(other.max);
-        }
     }
 
     pub fn reset(&mut self) {
-        self.buckets = [0; Self::NUM_BUCKETS];
+        self.buckets.fill(0);
         self.total_count = 0;
-        self.min = Duration::MAX;
-        self.max = Duration::ZERO;
     }
 
     pub fn len(&self) -> usize {
@@ -164,14 +137,8 @@ impl LatencyHistogram {
 
             if cumulative >= target_rank {
                 // Target rank is in this bucket
-                // Use midpoint of bucket as estimate
-                let lower_bound_ns = Self::BUCKET_BOUNDARIES_NS[bucket_idx];
-                let upper_bound_ns = if bucket_idx + 1 < Self::NUM_BUCKETS {
-                    Self::BUCKET_BOUNDARIES_NS[bucket_idx + 1]
-                } else {
-                    // Last bucket - use max
-                    return self.max;
-                };
+                let lower_bound_ns = Self::bucket_lower_bound_ns(bucket_idx);
+                let upper_bound_ns = Self::bucket_upper_bound_ns(bucket_idx);
 
                 // Linear interpolation within bucket
                 let bucket_position = if cumulative == count {
@@ -184,7 +151,7 @@ impl LatencyHistogram {
                 };
 
                 let interpolated_ns = lower_bound_ns as f64
-                    + bucket_position * (upper_bound_ns - lower_bound_ns) as f64;
+                    + bucket_position * upper_bound_ns.saturating_sub(lower_bound_ns) as f64;
 
                 return Duration::from_nanos(interpolated_ns as u64);
             }
@@ -193,20 +160,32 @@ impl LatencyHistogram {
         unreachable!("target_rank should always be within histogram bounds");
     }
 
+    /// Returns the lower bound of the first non-empty bucket
     pub fn min(&self) -> Duration {
         if self.total_count == 0 {
-            Duration::ZERO
-        } else {
-            self.min
+            return Duration::ZERO;
         }
+        for (bucket_idx, &count) in self.buckets.iter().enumerate() {
+            if count > 0 {
+                return Duration::from_nanos(Self::bucket_lower_bound_ns(bucket_idx));
+            }
+        }
+        Duration::ZERO
     }
 
+    /// Returns the upper bound of the last non-empty bucket
     pub fn max(&self) -> Duration {
         if self.total_count == 0 {
-            Duration::ZERO
-        } else {
-            self.max
+            return Duration::ZERO;
         }
+        for (bucket_idx, &count) in self.buckets.iter().enumerate().rev() {
+            if count > 0 {
+                let upper = Self::bucket_upper_bound_ns(bucket_idx);
+                // Clamp to avoid overflow when converting u64::MAX
+                return Duration::from_nanos(upper.min(u64::MAX - 1));
+            }
+        }
+        Duration::ZERO
     }
 
     pub fn p25(&self) -> Duration {
@@ -260,15 +239,20 @@ mod histogram_tests {
     }
 
     #[test]
-    fn tracks_min_max() {
+    fn min_max_return_bucket_bounds() {
         let mut hist = LatencyHistogram::new();
 
         hist.record(Duration::from_micros(50));
         hist.record(Duration::from_micros(10));
         hist.record(Duration::from_micros(100));
 
-        assert_eq!(hist.min(), Duration::from_micros(10));
-        assert_eq!(hist.max(), Duration::from_micros(100));
+        // min() returns lower bound of first non-empty bucket
+        // 10us is in bucket 2 [8192ns, 12288ns), so min() = 8192ns
+        assert_eq!(hist.min(), Duration::from_nanos(8192));
+
+        // max() returns upper bound of last non-empty bucket
+        // 100us is in bucket 24 [98304ns, 102400ns), so max() = 102400ns
+        assert_eq!(hist.max(), Duration::from_nanos(102400));
     }
 
     #[test]
@@ -284,8 +268,10 @@ mod histogram_tests {
         hist1.merge_from(&hist2);
 
         assert_eq!(hist1.len(), 4);
-        assert_eq!(hist1.min(), Duration::from_micros(5));
-        assert_eq!(hist1.max(), Duration::from_micros(30));
+        // 5us is in bucket 1 [4096ns, 8192ns), so min() = 4096ns
+        assert_eq!(hist1.min(), Duration::from_nanos(4096));
+        // 30us is in bucket 7 [28672ns, 32768ns), so max() = 32768ns
+        assert_eq!(hist1.max(), Duration::from_nanos(32768));
     }
 
     #[test]
@@ -306,9 +292,10 @@ mod histogram_tests {
         let mut hist = LatencyHistogram::new();
 
         // Add samples in a known distribution
-        // 10us -> bucket 4 [8.2us, 10.2us)
-        // 20us -> bucket 9 [18.4us, 20.5us)
-        // 30us -> bucket 14 [28.7us, 30.7us)
+        // With ~4.1us buckets:
+        // 10us -> bucket 2 [8.2us, 12.3us)
+        // 20us -> bucket 4 [16.4us, 20.5us)
+        // 30us -> bucket 7 [28.7us, 32.8us)
         for _ in 0..50 {
             hist.record(Duration::from_micros(10));
         }
@@ -319,40 +306,133 @@ mod histogram_tests {
             hist.record(Duration::from_micros(30));
         }
 
-        // p50 should be in the 10us bucket [8.2us, 10.2us)
+        // p50 should be in the 10us bucket [8.2us, 12.3us)
         let p50 = hist.median();
         assert!(p50 >= Duration::from_micros(8));
-        assert!(p50 <= Duration::from_micros(11));
+        assert!(p50 <= Duration::from_micros(13));
 
-        // p95 should be in the 30us bucket [28.7us, 30.7us)
+        // p95 should be in the 30us bucket [28.7us, 32.8us)
         let p95 = hist.p95();
         assert!(p95 >= Duration::from_micros(20));
-        assert!(p95 <= Duration::from_micros(32));
+        assert!(p95 <= Duration::from_micros(33));
     }
 
     #[test]
-    fn bucket_mapping_works() {
+    fn bucket_mapping_linear_region() {
         let hist = LatencyHistogram::new();
 
-        // Test linear region (0-32.8us, ~2us buckets via right shift by 11)
-        assert_eq!(hist.duration_to_bucket(Duration::from_nanos(500)), 0); // [0, 2.05us)
-        assert_eq!(hist.duration_to_bucket(Duration::from_nanos(2047)), 0); // [0, 2.05us)
-        assert_eq!(hist.duration_to_bucket(Duration::from_nanos(2048)), 1); // [2.05us, 4.1us)
-        assert_eq!(hist.duration_to_bucket(Duration::from_micros(3)), 1); // [2.05us, 4.1us)
-        assert_eq!(hist.duration_to_bucket(Duration::from_micros(5)), 2); // [4.1us, 6.1us)
-        assert_eq!(hist.duration_to_bucket(Duration::from_micros(11)), 5); // [10.2us, 12.3us)
-        assert_eq!(hist.duration_to_bucket(Duration::from_micros(19)), 9); // [18.4us, 20.5us)
-        assert_eq!(hist.duration_to_bucket(Duration::from_micros(30)), 14); // [28.7us, 30.7us)
-        assert_eq!(hist.duration_to_bucket(Duration::from_micros(32)), 15); // [30.7us, 32.8us)
+        // Linear region: 0-918us with ~4.1us buckets (shift by 12, divide by 4096)
+        // Bucket 0: [0, 4096ns) = [0, 4.1us)
+        assert_eq!(hist.duration_to_bucket(Duration::from_nanos(0)), 0);
+        assert_eq!(hist.duration_to_bucket(Duration::from_nanos(4095)), 0);
 
-        // Test exponential region (32.8us+, power-of-2 via leading_zeros)
-        assert_eq!(hist.duration_to_bucket(Duration::from_nanos(32768)), 16); // [32.8us, 65.5us)
-        assert_eq!(hist.duration_to_bucket(Duration::from_micros(50)), 16); // [32.8us, 65.5us)
-        assert_eq!(hist.duration_to_bucket(Duration::from_nanos(65536)), 17); // [65.5us, 131us)
-        assert_eq!(hist.duration_to_bucket(Duration::from_micros(100)), 17); // [65.5us, 131us)
-        assert_eq!(hist.duration_to_bucket(Duration::from_millis(1)), 20); // [524us, 1.05ms)
-        assert_eq!(hist.duration_to_bucket(Duration::from_millis(3)), 22); // [2.1ms, 4.2ms)
-        assert_eq!(hist.duration_to_bucket(Duration::from_secs(1)), 30); // [537ms, 1.07s)
-        assert_eq!(hist.duration_to_bucket(Duration::from_secs(10)), 31); // [1.07s, +inf) clamped
+        // Bucket 1: [4096, 8192ns) = [4.1us, 8.2us)
+        assert_eq!(hist.duration_to_bucket(Duration::from_nanos(4096)), 1);
+        assert_eq!(hist.duration_to_bucket(Duration::from_micros(5)), 1);
+
+        // Bucket 2: [8192, 12288ns) = [8.2us, 12.3us)
+        assert_eq!(hist.duration_to_bucket(Duration::from_micros(10)), 2);
+
+        // Test various points in the linear region
+        assert_eq!(hist.duration_to_bucket(Duration::from_micros(50)), 12); // 50000/4096 = 12
+        assert_eq!(hist.duration_to_bucket(Duration::from_micros(100)), 24); // 100000/4096 = 24
+        assert_eq!(hist.duration_to_bucket(Duration::from_micros(500)), 122); // 500000/4096 = 122
+        assert_eq!(hist.duration_to_bucket(Duration::from_micros(900)), 219); // 900000/4096 = 219
+
+        // Last linear bucket (223): ends at 917504ns (~918us)
+        assert_eq!(hist.duration_to_bucket(Duration::from_nanos(917503)), 223);
+    }
+
+    #[test]
+    fn bucket_mapping_exponential_region() {
+        let hist = LatencyHistogram::new();
+
+        // Exponential region starts at bucket 224 (>=918us)
+        // Bucket 224: [918us, 2.1ms) - covers gap and first exponential range
+        assert_eq!(hist.duration_to_bucket(Duration::from_nanos(917504)), 224);
+        assert_eq!(hist.duration_to_bucket(Duration::from_micros(950)), 224);
+        assert_eq!(hist.duration_to_bucket(Duration::from_millis(1)), 224);
+
+        // Bucket 225: [2.1ms, 4.2ms) - 2^21 boundary
+        assert_eq!(
+            hist.duration_to_bucket(Duration::from_nanos(2_097_152)),
+            225
+        );
+        assert_eq!(hist.duration_to_bucket(Duration::from_millis(3)), 225);
+
+        // Bucket 226: [4.2ms, 8.4ms) - 2^22 boundary
+        assert_eq!(hist.duration_to_bucket(Duration::from_millis(5)), 226);
+
+        // Higher latencies
+        // 100ms = 100,000,000ns, between 2^26 (67M) and 2^27 (134M), so bit_pos=26, bucket=224+6=230
+        assert_eq!(hist.duration_to_bucket(Duration::from_millis(100)), 230);
+        // 1s = 1,000,000,000ns, between 2^29 (537M) and 2^30 (1.07B), so bit_pos=29, bucket=224+9=233
+        assert_eq!(hist.duration_to_bucket(Duration::from_secs(1)), 233);
+
+        // Very high latencies clamp to bucket 255
+        // Bucket 255 starts at 2^51 ns (~26 days), so need very large values
+        assert_eq!(
+            hist.duration_to_bucket(Duration::from_secs(86400 * 30)),
+            255
+        ); // 30 days
+    }
+
+    #[test]
+    fn bucket_bounds_linear() {
+        // Test linear bucket bounds
+        assert_eq!(LatencyHistogram::bucket_lower_bound_ns(0), 0);
+        assert_eq!(LatencyHistogram::bucket_upper_bound_ns(0), 4096);
+
+        assert_eq!(LatencyHistogram::bucket_lower_bound_ns(1), 4096);
+        assert_eq!(LatencyHistogram::bucket_upper_bound_ns(1), 8192);
+
+        assert_eq!(LatencyHistogram::bucket_lower_bound_ns(223), 223 * 4096);
+        assert_eq!(LatencyHistogram::bucket_upper_bound_ns(223), 224 * 4096);
+    }
+
+    #[test]
+    fn bucket_bounds_exponential() {
+        // First exponential bucket starts at linear threshold
+        assert_eq!(
+            LatencyHistogram::bucket_lower_bound_ns(224),
+            224 * 4096 // 917504
+        );
+        assert_eq!(
+            LatencyHistogram::bucket_upper_bound_ns(224),
+            1 << 21 // 2097152
+        );
+
+        // Subsequent exponential buckets use power-of-2
+        assert_eq!(LatencyHistogram::bucket_lower_bound_ns(225), 1 << 21);
+        assert_eq!(LatencyHistogram::bucket_upper_bound_ns(225), 1 << 22);
+
+        // Last bucket
+        assert_eq!(LatencyHistogram::bucket_lower_bound_ns(255), 1 << 51);
+        assert_eq!(LatencyHistogram::bucket_upper_bound_ns(255), u64::MAX);
+    }
+
+    #[test]
+    fn linear_region_provides_good_precision() {
+        // Verify that the linear region covers 10us-1000us with ~4us precision
+        let hist = LatencyHistogram::new();
+
+        // 10us should map to a specific bucket
+        let bucket_10us = hist.duration_to_bucket(Duration::from_micros(10));
+        let bucket_14us = hist.duration_to_bucket(Duration::from_micros(14));
+        // With ~4us buckets, 10us and 14us should be in different buckets
+        assert_ne!(bucket_10us, bucket_14us);
+
+        // 100us should still be in linear region with good precision
+        let bucket_100us = hist.duration_to_bucket(Duration::from_micros(100));
+        let bucket_104us = hist.duration_to_bucket(Duration::from_micros(104));
+        assert_ne!(bucket_100us, bucket_104us);
+
+        // 500us should still be in linear region
+        let bucket_500us = hist.duration_to_bucket(Duration::from_micros(500));
+        assert!(bucket_500us < 224); // Still in linear region
+
+        // 900us should be near the end of linear region
+        let bucket_900us = hist.duration_to_bucket(Duration::from_micros(900));
+        assert!(bucket_900us < 224); // Still in linear region
     }
 }

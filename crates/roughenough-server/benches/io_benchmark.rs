@@ -38,17 +38,17 @@
 //! Note: Loopback (127.0.0.1) understates io_uring benefits. For realistic
 //! measurements, test on a real network interface.
 
-use std::fs;
-use std::io::{self, ErrorKind};
 use std::net::{SocketAddr, UdpSocket};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::thread;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
+use std::{fs, io, thread};
 
+use roughenough_protocol::ToFrame;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::tags::Nonce;
-use roughenough_protocol::ToFrame;
 use roughenough_server::metrics::snapshot::MetricsSnapshot;
 
 const SERVER_PORT: u16 = 2003;
@@ -146,9 +146,7 @@ fn wait_for_server_ready(timeout: Duration) {
         .set_read_timeout(Some(Duration::from_millis(50)))
         .expect("Failed to set probe timeout");
 
-    let server_addr: SocketAddr = format!("127.0.0.1:{}", SERVER_PORT)
-        .parse()
-        .unwrap();
+    let server_addr: SocketAddr = format!("127.0.0.1:{}", SERVER_PORT).parse().unwrap();
     let mut response_buf = vec![0u8; 2048];
 
     while start.elapsed() < timeout {
@@ -171,63 +169,76 @@ fn kill_server(mut server: Child) {
     let _ = server.wait();
 }
 
-/// Send requests to the server for a specified duration
+/// Send requests to the server for a specified duration using separate threads.
 ///
-/// This function floods the server with as many requests as possible,
-/// allowing the server to batch them naturally according to its configuration.
+/// This function uses two threads:
+/// - Sender thread: blasts requests as fast as possible
+/// - Receiver thread: drains responses independently
+///
+/// This approach maximizes send throughput without being limited by receive latency.
 fn flood_server(duration: Duration) -> usize {
+    let server_addr: SocketAddr = format!("127.0.0.1:{}", SERVER_PORT).parse().unwrap();
+
+    // Shared state
+    let stop_flag = Arc::new(AtomicBool::new(false));
+    let requests_sent = Arc::new(AtomicUsize::new(0));
+    let responses_received = Arc::new(AtomicUsize::new(0));
+
+    // Create a single socket and clone it for the receiver thread.
+    // Both handles share the same underlying socket.
     let socket = UdpSocket::bind("127.0.0.1:0").expect("Failed to bind client socket");
     socket
-        .set_read_timeout(Some(Duration::from_millis(1)))
-        .expect("Failed to set read timeout");
-
-    let server_addr: SocketAddr = format!("127.0.0.1:{}", SERVER_PORT)
-        .parse()
-        .unwrap();
-
-    let start = Instant::now();
-    let mut requests_sent = 0;
-    let mut responses_received = 0;
-    let mut response_buf = vec![0u8; 2048];
-
-    while start.elapsed() < duration {
-        // Send a request
-        let request = create_request();
-        if socket.send_to(&request, server_addr).is_ok() {
-            requests_sent += 1;
-        }
-
-        // Try to receive responses (non-blocking)
-        match socket.recv_from(&mut response_buf) {
-            Ok((_, _)) => {
-                responses_received += 1;
-            }
-            Err(e) if e.kind() == ErrorKind::WouldBlock => {
-                // No response ready, continue sending
-            }
-            Err(e) => {
-                eprintln!("Receive error: {}", e);
-            }
-        }
-    }
-
-    // Drain remaining responses
-    let drain_timeout = Duration::from_millis(500);
+        .connect(server_addr)
+        .expect("Failed to connect to server");
     socket
         .set_read_timeout(Some(Duration::from_millis(10)))
-        .expect("Failed to set drain timeout");
+        .expect("Failed to set read timeout");
 
-    let drain_start = Instant::now();
-    while drain_start.elapsed() < drain_timeout {
-        if socket.recv_from(&mut response_buf).is_ok() {
-            responses_received += 1;
+    let recv_socket = socket.try_clone().expect("Failed to clone socket");
+
+    // Spawn receiver thread
+    let recv_stop = Arc::clone(&stop_flag);
+    let recv_count = Arc::clone(&responses_received);
+    let receiver_handle = thread::spawn(move || {
+        let mut response_buf = vec![0u8; 2048];
+        while !recv_stop.load(Ordering::Relaxed) {
+            if recv_socket.recv(&mut response_buf).is_ok() {
+                recv_count.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+
+        // Drain any remaining responses after stop signal
+        recv_socket
+            .set_read_timeout(Some(Duration::from_millis(5)))
+            .ok();
+        let drain_start = Instant::now();
+        while drain_start.elapsed() < Duration::from_millis(500) {
+            if recv_socket.recv(&mut response_buf).is_ok() {
+                recv_count.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    });
+
+    // Sender runs in main thread
+    let start = Instant::now();
+    while start.elapsed() < duration {
+        let request = create_request();
+        if socket.send(&request).is_ok() {
+            requests_sent.fetch_add(1, Ordering::Relaxed);
         }
     }
 
-    println!("Client sent {} requests", requests_sent);
-    println!("Client received {} responses", responses_received);
+    // Signal receiver to stop and wait for drain
+    stop_flag.store(true, Ordering::Relaxed);
+    receiver_handle.join().expect("Receiver thread panicked");
 
-    responses_received
+    let sent = requests_sent.load(Ordering::Relaxed);
+    let received = responses_received.load(Ordering::Relaxed);
+
+    println!("Client sent {} requests", sent);
+    println!("Client received {} responses", received);
+
+    received
 }
 
 /// Find the most recent metrics file in the directory
@@ -293,18 +304,24 @@ fn display_batch_metrics(snapshot: &MetricsSnapshot) {
         return;
     }
 
-    println!("Batch Size | Count     | P50        | P95        | P99        | P999");
-    println!("-----------|-----------|------------|------------|------------|------------");
+    println!(
+        "Batch Size |     Count |        P50 |        P95 |        P99 |       P999 |   P50/resp"
+    );
+    println!(
+        "-----------|-----------|------------|------------|------------|------------|------------"
+    );
 
     for report in active_reports {
+        let per_response = report.median / report.batch_size as u32;
         println!(
-            "{:10} | {:9} | {:10.3?} | {:10.3?} | {:10.3?} | {:10.3?}",
+            "{:>10} | {:>9} | {:>10.1?} | {:>10.1?} | {:>10.1?} | {:>10.1?} | {:>10.3?}",
             report.batch_size,
             report.count,
             report.median,
             report.p95,
             report.p99,
-            report.p999
+            report.p999,
+            per_response
         );
     }
 }
@@ -358,10 +375,8 @@ fn main() {
     println!("============\n");
 
     // Create temporary directory for metrics
-    let temp_dir = std::env::temp_dir().join(format!(
-        "roughenough-benchmark-{}",
-        std::process::id()
-    ));
+    let temp_dir =
+        std::env::temp_dir().join(format!("roughenough-benchmark-{}", std::process::id()));
     fs::create_dir_all(&temp_dir).expect("Failed to create metrics directory");
     println!("Metrics directory: {}", temp_dir.display());
 
@@ -375,10 +390,7 @@ fn main() {
     println!("Server is ready");
 
     // Warmup period
-    println!(
-        "\nWarming up for {}s...",
-        WARMUP_DURATION_SECS
-    );
+    println!("\nWarming up for {}s...", WARMUP_DURATION_SECS);
     flood_server(Duration::from_secs(WARMUP_DURATION_SECS));
 
     // Wait for one metrics interval to get a clean snapshot
@@ -386,10 +398,7 @@ fn main() {
     thread::sleep(Duration::from_secs(METRICS_INTERVAL_SECS + 1));
 
     // Main benchmark period
-    println!(
-        "\nBenchmarking for {}s...",
-        BENCHMARK_DURATION_SECS
-    );
+    println!("\nBenchmarking for {}s...", BENCHMARK_DURATION_SECS);
     let start = Instant::now();
     flood_server(Duration::from_secs(BENCHMARK_DURATION_SECS));
     let elapsed = start.elapsed();
