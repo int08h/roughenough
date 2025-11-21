@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 use std::time::Instant;
+
 use roughenough_keys::online::onlinekey::OnlineKey;
 use roughenough_merkle::{MerklePath, MerkleTree};
 use roughenough_protocol::cursor::ParseCursor;

@@ -93,7 +93,7 @@ use std::time::{Duration, Instant};
 use roughenough_protocol::ToFrame;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::tags::Nonce;
-use roughenough_server::metrics::latency::LatencyStats;
+use roughenough_server::metrics::latency::LatencyHistogram;
 
 /// Helper to create a random nonce
 fn random_nonce() -> Nonce {
@@ -213,7 +213,7 @@ fn benchmark_latency_distribution() {
 
     let iterations = 50_000;
     let start = Instant::now();
-    let mut stats = LatencyStats::new(iterations as usize);
+    let mut stats = LatencyHistogram::new();
     let mut response_buf = vec![0u8; 2048];
 
     for _ in 0..iterations {
@@ -242,7 +242,6 @@ fn benchmark_latency_distribution() {
 
     println!("Samples collected: {}", iterations);
     println!("Total time: {:?}", total_elapsed);
-    println!("Average RTT: {:?}", stats.mean());
     println!("P50 (median): {:?}", stats.median());
     println!("P90: {:?}", stats.percentile(0.90));
     println!("P95: {:?}", stats.p95());

@@ -8,10 +8,11 @@ use crossbeam_channel::Receiver;
 use roughenough_protocol::util::ClockSource;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
+
 use crate::metrics::network::NetworkMetrics;
 use crate::metrics::request::RequestMetrics;
-use crate::metrics::snapshot::{calc_aggregated_metrics, MetricsSnapshot};
 use crate::metrics::response::ResponseMetrics;
+use crate::metrics::snapshot::{MetricsSnapshot, calc_aggregated_metrics};
 
 /// Snapshot of worker metrics
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,7 +132,13 @@ impl MetricsAggregator {
             aggregated.responses.num_bytes_sent as f64 / (1024.0 * 1024.0),
         );
 
-        // TODO(stuart) print batch metrics
+        aggregated
+            .responses
+            .batch_timing
+            .report()
+            .iter()
+            .filter(|r| r.count > 0)
+            .for_each(|r| info!(" {}", r));
 
         if let Some(ref metrics_path) = self.metrics_path {
             let snapshot = MetricsSnapshot::new(
@@ -147,4 +154,3 @@ impl MetricsAggregator {
         }
     }
 }
-

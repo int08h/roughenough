@@ -88,7 +88,7 @@ pub fn calc_aggregated_metrics(duration_secs: f64, workers: &[WorkerMetrics]) ->
     let mut total_requests = RequestMetrics::default();
     let mut total_responses = ResponseMetrics::default();
 
-    // Calculate totals
+    // Aggregate using AddAssign which merges reservoir samplers properly
     for worker in workers {
         total_network += worker.network;
         total_requests += worker.request;

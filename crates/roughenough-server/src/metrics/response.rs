@@ -1,7 +1,9 @@
-use crate::metrics::batch::BatchTiming;
-use serde::{Deserialize, Serialize};
 use std::ops::AddAssign;
 use std::time::Duration;
+
+use serde::{Deserialize, Serialize};
+
+use crate::metrics::batch::BatchTiming;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResponseMetrics {
@@ -48,15 +50,16 @@ impl AddAssign for ResponseMetrics {
     fn add_assign(&mut self, rhs: Self) {
         self.num_responses += rhs.num_responses;
         self.num_bytes_sent += rhs.num_bytes_sent;
-        self.batch_timing.merge(&rhs.batch_timing);
+
+        self.batch_timing.merge_from(&rhs.batch_timing);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::panic;
     use std::time::Duration;
+
+    use super::*;
 
     fn get_batch_count(metrics: &ResponseMetrics, batch_size: u8) -> usize {
         metrics
@@ -130,17 +133,24 @@ mod tests {
     #[test]
     #[cfg(debug_assertions)]
     fn record_batch_with_invalid_size_panics_in_debug() {
+        use std::panic;
         let mut metrics = ResponseMetrics::default();
 
         // batch_size == 0 should trigger the debug_assert
         let result_zero = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             metrics.record_batch(0, Duration::from_millis(1));
         }));
-        assert!(result_zero.is_err(), "record_batch(0, ..) should panic in debug builds");
+        assert!(
+            result_zero.is_err(),
+            "record_batch(0, ..) should panic in debug builds"
+        );
 
         // batch_size > MAX_BATCH_SIZE should also trigger the debug_assert
         let result_too_large = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-            metrics.record_batch((ResponseMetrics::MAX_BATCH_SIZE + 1) as u8, Duration::from_millis(1));
+            metrics.record_batch(
+                (ResponseMetrics::MAX_BATCH_SIZE + 1) as u8,
+                Duration::from_millis(1),
+            );
         }));
         assert!(
             result_too_large.is_err(),
@@ -188,13 +198,20 @@ mod tests {
         lhs.record_batch(4, Duration::from_millis(5));
         lhs.add_bytes_sent(256);
 
-        let snapshot_before = (lhs.num_responses, lhs.num_bytes_sent, get_batch_count(&lhs, 4));
+        let snapshot_before = (
+            lhs.num_responses,
+            lhs.num_bytes_sent,
+            get_batch_count(&lhs, 4),
+        );
 
         let rhs = ResponseMetrics::default();
         lhs += rhs;
 
-        let snapshot_after = (lhs.num_responses, lhs.num_bytes_sent, get_batch_count(&lhs, 4));
+        let snapshot_after = (
+            lhs.num_responses,
+            lhs.num_bytes_sent,
+            get_batch_count(&lhs, 4),
+        );
         assert_eq!(snapshot_before, snapshot_after);
     }
 }
-

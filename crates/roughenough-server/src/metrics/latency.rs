@@ -1,87 +1,197 @@
-use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-/// Tracks latency measurements, acting as a circular buffer (overwriting prior values)
-/// once more than `capacity` samples are recorded.
+use serde::{Deserialize, Serialize};
+
+/// Bucketed histogram for latency measurements.
+/// Uses exponential buckets covering sub-microsecond to multi-second latencies.
+/// Memory: 32 buckets × 8 bytes = 256 bytes (plus min/max/count)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LatencyStats {
-    samples: Vec<Duration>,
-    index: usize,
-    capacity: usize,
+pub struct LatencyHistogram {
+    /// Count of samples in each bucket
+    buckets: [u64; 32],
+    /// Total number of samples recorded
+    total_count: usize,
+    /// Minimum observed latency
+    min: Duration,
+    /// Maximum observed latency
+    max: Duration,
 }
 
-impl LatencyStats {
-    pub fn new(capacity: usize) -> Self {
-        assert!(capacity > 0, "Capacity must be greater than 0");
+impl LatencyHistogram {
+    const NUM_BUCKETS: usize = 32;
 
+    /// Bucket boundaries in nanoseconds (lower bound of each bucket)
+    /// Exponential scale with 1-2-5 pattern: 1μs, 2μs, 5μs, 10μs, 20μs, ..., 10s
+    const BUCKET_BOUNDARIES_NS: [u64; Self::NUM_BUCKETS] = [
+        0,               // [0, 1μs)
+        1_000,           // [1μs, 2μs)
+        2_000,           // [2μs, 5μs)
+        5_000,           // [5μs, 10μs)
+        10_000,          // [10μs, 20μs)
+        20_000,          // [20μs, 50μs)
+        50_000,          // [50μs, 100μs)
+        100_000,         // [100μs, 200μs)
+        200_000,         // [200μs, 500μs)
+        500_000,         // [500μs, 1ms)
+        1_000_000,       // [1ms, 2ms)
+        2_000_000,       // [2ms, 5ms)
+        5_000_000,       // [5ms, 10ms)
+        10_000_000,      // [10ms, 20ms)
+        20_000_000,      // [20ms, 50ms)
+        50_000_000,      // [50ms, 100ms)
+        100_000_000,     // [100ms, 200ms)
+        200_000_000,     // [200ms, 500ms)
+        500_000_000,     // [500ms, 1s)
+        1_000_000_000,   // [1s, 2s)
+        2_000_000_000,   // [2s, 5s)
+        5_000_000_000,   // [5s, 10s)
+        10_000_000_000,  // [10s, 20s)
+        20_000_000_000,  // [20s, 50s)
+        50_000_000_000,  // [50s, 100s)
+        100_000_000_000, // [100s, ...)
+        200_000_000_000,
+        500_000_000_000,
+        1_000_000_000_000,
+        2_000_000_000_000,
+        5_000_000_000_000,
+        10_000_000_000_000,
+    ];
+
+    pub fn new() -> Self {
         Self {
-            samples: vec![Duration::ZERO; capacity],
-            index: 0,
-            capacity,
+            buckets: [0; Self::NUM_BUCKETS],
+            total_count: 0,
+            min: Duration::MAX,
+            max: Duration::ZERO,
         }
     }
 
-    pub fn record(&mut self, duration: Duration) {
-        self.samples[self.index % self.capacity] = duration;
-        self.index = self.index.wrapping_add(1);
+    /// Maps a duration to its bucket index
+    fn duration_to_bucket(&self, duration: Duration) -> usize {
+        let nanos: u64 = duration.as_nanos().try_into().unwrap();
+
+        Self::BUCKET_BOUNDARIES_NS
+            .binary_search(&nanos)
+            .unwrap_or_else(|idx| if idx == 0 { 0 } else { idx - 1 })
     }
 
-    pub fn merge(&mut self, other: &LatencyStats) {
-        let olen = other.len();
-        for &sample in other.samples[..olen].iter() {
-            self.record(sample);
+    /// Records a latency sample
+    pub fn record(&mut self, duration: Duration) {
+        let bucket_idx = self.duration_to_bucket(duration);
+        self.buckets[bucket_idx] += 1;
+        self.total_count += 1;
+
+        if self.total_count == 1 {
+            self.min = duration;
+            self.max = duration;
+        } else {
+            self.min = self.min.min(duration);
+            self.max = self.max.max(duration);
+        }
+    }
+
+    /// Merges another histogram into this one
+    pub fn merge_from(&mut self, other: &LatencyHistogram) {
+        if other.total_count == 0 {
+            return;
+        }
+
+        for i in 0..Self::NUM_BUCKETS {
+            self.buckets[i] += other.buckets[i];
+        }
+        self.total_count += other.total_count;
+
+        if self.total_count == other.total_count {
+            // This histogram was empty
+            self.min = other.min;
+            self.max = other.max;
+        } else {
+            self.min = self.min.min(other.min);
+            self.max = self.max.max(other.max);
         }
     }
 
     pub fn reset(&mut self) {
-        self.index = 0;
+        self.buckets = [0; Self::NUM_BUCKETS];
+        self.total_count = 0;
+        self.min = Duration::MAX;
+        self.max = Duration::ZERO;
     }
 
     pub fn len(&self) -> usize {
-        self.index.min(self.capacity)
+        self.total_count
     }
 
     pub fn is_empty(&self) -> bool {
-        self.index == 0
+        self.total_count == 0
     }
-    
+
+    /// Estimates a percentile using linear interpolation within buckets
     pub fn percentile(&self, p: f64) -> Duration {
         assert!(
             p > 0.0 && p <= 1.0,
             "percentile must be between 0.0 and 1.0"
         );
 
-        if self.index == 0 {
+        if self.total_count == 0 {
             return Duration::ZERO;
         }
 
-        let len = self.len();
-        let mut copy = self.samples[..len].to_vec();
-        copy.sort_unstable();
+        let target_rank = (p * self.total_count as f64) as u64;
+        let mut cumulative = 0u64;
 
-        // rank in [0, end]
-        let rank = p * (len as f64 - 1.0);
-        let idx = rank.round() as usize;
-        copy[idx]
-    }
+        for (bucket_idx, &count) in self.buckets.iter().enumerate() {
+            if count == 0 {
+                continue;
+            }
 
-    pub fn mean(&self) -> Duration {
-        if self.index == 0 {
-            return Duration::ZERO;
+            cumulative += count;
+
+            if cumulative >= target_rank {
+                // Target rank is in this bucket
+                // Use midpoint of bucket as estimate
+                let lower_bound_ns = Self::BUCKET_BOUNDARIES_NS[bucket_idx];
+                let upper_bound_ns = if bucket_idx + 1 < Self::NUM_BUCKETS {
+                    Self::BUCKET_BOUNDARIES_NS[bucket_idx + 1]
+                } else {
+                    // Last bucket - use max
+                    return self.max;
+                };
+
+                // Linear interpolation within bucket
+                let bucket_position = if cumulative == count {
+                    // First samples in this bucket
+                    0.5
+                } else {
+                    let samples_before = cumulative - count;
+                    let rank_within_bucket = target_rank.saturating_sub(samples_before);
+                    rank_within_bucket as f64 / count as f64
+                };
+
+                let interpolated_ns = lower_bound_ns as f64
+                    + bucket_position * (upper_bound_ns - lower_bound_ns) as f64;
+
+                return Duration::from_nanos(interpolated_ns as u64);
+            }
         }
-        let slice = &self.samples[..self.len()];
-        let len: u32 = slice.len().try_into().unwrap();
-        slice.iter().sum::<Duration>() / len
+
+        unreachable!("target_rank should always be within histogram bounds");
     }
 
     pub fn min(&self) -> Duration {
-        let slice = &self.samples[..self.len()];
-        *slice.iter().min().unwrap_or(&Duration::ZERO)
+        if self.total_count == 0 {
+            Duration::ZERO
+        } else {
+            self.min
+        }
     }
 
     pub fn max(&self) -> Duration {
-        let slice = &self.samples[..self.len()];
-        *slice.iter().max().unwrap_or(&Duration::MAX)
+        if self.total_count == 0 {
+            Duration::ZERO
+        } else {
+            self.max
+        }
     }
 
     pub fn p25(&self) -> Duration {
@@ -105,137 +215,115 @@ impl LatencyStats {
     }
 }
 
+impl Default for LatencyHistogram {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
-mod tests {
+mod histogram_tests {
     use super::*;
-    use std::time::Duration;
 
     #[test]
-    fn new_initializes_with_zero_durations() {
-        let cap = 7;
-        let stats = LatencyStats::new(cap);
-
-        assert_eq!(stats.len(), 0);
-        assert_eq!(stats.samples.len(), cap);
-        assert!(stats.samples.iter().all(|d| *d == Duration::ZERO));
+    fn new_initializes_empty() {
+        let hist = LatencyHistogram::new();
+        assert_eq!(hist.len(), 0);
+        assert!(hist.is_empty());
     }
 
     #[test]
-    fn record_wraps_around_as_circular_buffer() {
-        let mut stats = LatencyStats::new(3);
+    fn records_samples_correctly() {
+        let mut hist = LatencyHistogram::new();
 
-        stats.record(Duration::from_millis(10)); // index 0
-        stats.record(Duration::from_millis(20)); // index 1
-        stats.record(Duration::from_millis(30)); // index 2
-        //
-        // Next writes should wrap and overwrite from index 0
-        //
-        stats.record(Duration::from_millis(40)); // overwrites index 0
-        stats.record(Duration::from_millis(50)); // overwrites index 1
+        hist.record(Duration::from_micros(10));
+        hist.record(Duration::from_millis(5));
+        hist.record(Duration::from_millis(100));
 
-        // The buffer should now contain the last 3 values: 40, 50, 30
-        let mut values = stats.samples.clone();
-        values.sort_unstable();
-
-        assert_eq!(
-            values,
-            vec![
-                Duration::from_millis(30),
-                Duration::from_millis(40),
-                Duration::from_millis(50)
-            ]
-        );
+        assert_eq!(hist.len(), 3);
+        assert!(!hist.is_empty());
     }
 
     #[test]
-    fn reset_sets_all_durations_to_zero() {
-        let mut stats = LatencyStats::new(3);
-        stats.record(Duration::from_millis(10));
-        stats.record(Duration::from_millis(20));
-        stats.record(Duration::from_millis(30));
+    fn tracks_min_max() {
+        let mut hist = LatencyHistogram::new();
 
-        assert!(stats.samples.iter().all(|d| *d != Duration::ZERO));
-        assert_eq!(stats.mean(), Duration::from_millis(20));
+        hist.record(Duration::from_micros(50));
+        hist.record(Duration::from_micros(10));
+        hist.record(Duration::from_micros(100));
 
-        stats.reset();
-
-        assert_eq!(stats.len(), 0);
-        assert_eq!(stats.mean(), Duration::from_nanos(0));
+        assert_eq!(hist.min(), Duration::from_micros(10));
+        assert_eq!(hist.max(), Duration::from_micros(100));
     }
 
     #[test]
-    fn percentile_uses_sorted_copy_and_bounds() {
-        let mut stats = LatencyStats::new(5);
+    fn merge_combines_histograms() {
+        let mut hist1 = LatencyHistogram::new();
+        hist1.record(Duration::from_micros(10));
+        hist1.record(Duration::from_micros(20));
 
-        // Order is intentionally shuffled
-        let values = [
-            Duration::from_millis(50),
-            Duration::from_millis(10),
-            Duration::from_millis(30),
-            Duration::from_millis(40),
-            Duration::from_millis(20),
-        ];
+        let mut hist2 = LatencyHistogram::new();
+        hist2.record(Duration::from_micros(30));
+        hist2.record(Duration::from_micros(5));
 
-        for v in values {
-            stats.record(v);
+        hist1.merge_from(&hist2);
+
+        assert_eq!(hist1.len(), 4);
+        assert_eq!(hist1.min(), Duration::from_micros(5));
+        assert_eq!(hist1.max(), Duration::from_micros(30));
+    }
+
+    #[test]
+    fn reset_clears_state() {
+        let mut hist = LatencyHistogram::new();
+
+        hist.record(Duration::from_millis(10));
+        hist.record(Duration::from_millis(20));
+
+        hist.reset();
+
+        assert_eq!(hist.len(), 0);
+        assert!(hist.is_empty());
+    }
+
+    #[test]
+    fn percentile_estimates_correctly() {
+        let mut hist = LatencyHistogram::new();
+
+        // Add samples in a known distribution
+        for _ in 0..50 {
+            hist.record(Duration::from_micros(10));
+        }
+        for _ in 0..30 {
+            hist.record(Duration::from_micros(20));
+        }
+        for _ in 0..20 {
+            hist.record(Duration::from_micros(30));
         }
 
-        // Sorted: [10, 20, 30, 40, 50]
-        assert_eq!(stats.percentile(0.21), Duration::from_millis(20));
-        assert_eq!(stats.percentile(0.5), Duration::from_millis(30));
-        assert_eq!(stats.percentile(1.0), Duration::from_millis(50));
+        // p50 should be around 10-20μs (50th sample is in first group)
+        let p50 = hist.median();
+        assert!(p50 >= Duration::from_micros(10));
+        assert!(p50 <= Duration::from_micros(20));
+
+        // p95 should be in the 30μs bucket
+        let p95 = hist.p95();
+        assert!(p95 >= Duration::from_micros(20));
+        assert!(p95 <= Duration::from_micros(50));
     }
 
     #[test]
-    #[should_panic(expected = "percentile must be between 0.0 and 1.0")]
-    fn percentile_panics_on_zero() {
-        let stats = LatencyStats::new(1);
-        stats.percentile(0.0);
-    }
+    fn bucket_mapping_works() {
+        let hist = LatencyHistogram::new();
 
-    #[test]
-    #[should_panic(expected = "percentile must be between 0.0 and 1.0")]
-    fn percentile_panics_above_one() {
-        let stats = LatencyStats::new(1);
-        stats.percentile(1.000_000_1);
-    }
-
-    #[test]
-    fn mean_is_average_of_samples() {
-        let mut stats = LatencyStats::new(4);
-
-        stats.record(Duration::from_millis(10));
-        stats.record(Duration::from_millis(20));
-        stats.record(Duration::from_millis(30));
-        stats.record(Duration::from_millis(40));
-
-        // Mean = (10 + 20 + 30 + 40) / 4 = 25
-        assert_eq!(stats.mean(), Duration::from_millis(25));
-    }
-
-    #[test]
-    fn high_percentile_helpers_delegate_to_percentile() {
-        let mut stats = LatencyStats::new(5);
-
-        // Sorted: [10, 20, 30, 40, 50]
-        let values = [
-            Duration::from_millis(50),
-            Duration::from_millis(10),
-            Duration::from_millis(20),
-            Duration::from_millis(30),
-            Duration::from_millis(40),
-        ];
-        for v in values {
-            stats.record(v);
-        }
-
-        // For 5 elements:
-        // idx = round(5 * p), clamped to 0..=4
-        // p95  -> round(4.75) = 5 -> 50
-        // p99  -> round(4.95) = 5 -> 50
-        // p999 -> round(4.995) = 5 -> 50
-        assert_eq!(stats.p95(), Duration::from_millis(50));
-        assert_eq!(stats.p99(), Duration::from_millis(50));
-        assert_eq!(stats.p999(), Duration::from_millis(50));
+        // Test various durations map to expected buckets
+        assert_eq!(hist.duration_to_bucket(Duration::from_nanos(500)), 0); // [0, 1μs)
+        assert_eq!(hist.duration_to_bucket(Duration::from_micros(1)), 1); // [1μs, 2μs)
+        assert_eq!(hist.duration_to_bucket(Duration::from_micros(3)), 2); // [2μs, 5μs)
+        assert_eq!(hist.duration_to_bucket(Duration::from_micros(7)), 3); // [5μs, 10μs)
+        assert_eq!(hist.duration_to_bucket(Duration::from_micros(15)), 4); // [10μs, 20μs)
+        assert_eq!(hist.duration_to_bucket(Duration::from_millis(1)), 10); // [1ms, 2ms)
+        assert_eq!(hist.duration_to_bucket(Duration::from_millis(3)), 11); // [2ms, 5ms)
+        assert_eq!(hist.duration_to_bucket(Duration::from_secs(1)), 19); // [1s, 2s)
     }
 }
