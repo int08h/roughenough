@@ -298,7 +298,7 @@ fn display_batch_metrics(snapshot: &MetricsSnapshot) {
 
     for report in active_reports {
         println!(
-            "{:10} | {:9} | {:10.2?} | {:10.2?} | {:10.2?} | {:10.2?}",
+            "{:10} | {:9} | {:10.3?} | {:10.3?} | {:10.3?} | {:10.3?}",
             report.batch_size,
             report.count,
             report.median,
