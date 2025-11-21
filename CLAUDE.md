@@ -64,6 +64,13 @@ target/debug/roughenough_integration_test
 ```bash
 cargo bench                     # Run all benchmarks
 cargo bench -p merkle          # Run benchmarks for specific crate
+
+# Network I/O benchmark (uses server-side metrics)
+cargo build --release --bin roughenough_server  # Build server first
+cargo bench -p roughenough-server --bench io_benchmark
+
+# Save baseline before I/O implementation changes
+cargo bench -p roughenough-server --bench io_benchmark | tee baseline-io.txt
 ```
 
 ### Fuzzing
@@ -296,7 +303,7 @@ Dependencies for optional features:
 - **NEVER** ignore or disable tests to get tests to pass
 - **ALWAYS** use benchmarks to test before and after changes to ensure expected performance gains are realized
 - For performance-critical changes in merkle tree operations, run `cargo bench -p merkle`
-- For server performance, run `cargo bench -p server`
+- For server network I/O performance, run `cargo bench -p roughenough-server --bench io_benchmark`
 - Compare benchmark results before and after changes using the output metrics
 - Review code as a Rust expert, thinking carefully about how to make the implementation idiomatic and simple
 - Create a todo list when working on complex tasks to track progress and remain on track
