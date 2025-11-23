@@ -9,6 +9,10 @@ pub struct NetworkMetrics {
     pub num_failed_sends: usize,
     pub num_failed_polls: usize,
     pub num_failed_recvs: usize,
+    /// Number of recv syscalls made (for backend comparison)
+    pub num_recv_syscalls: usize,
+    /// Number of send syscalls made (for backend comparison)
+    pub num_send_syscalls: usize,
 }
 
 impl AddAssign for NetworkMetrics {
@@ -18,6 +22,8 @@ impl AddAssign for NetworkMetrics {
         self.num_failed_sends += rhs.num_failed_sends;
         self.num_failed_polls += rhs.num_failed_polls;
         self.num_failed_recvs += rhs.num_failed_recvs;
+        self.num_recv_syscalls += rhs.num_recv_syscalls;
+        self.num_send_syscalls += rhs.num_send_syscalls;
     }
 }
 
@@ -29,6 +35,8 @@ fn test_network_metrics_add_assign() {
         num_failed_sends: 5,
         num_failed_polls: 2,
         num_failed_recvs: 3,
+        num_recv_syscalls: 100,
+        num_send_syscalls: 50,
     };
 
     let metrics2 = NetworkMetrics {
@@ -37,6 +45,8 @@ fn test_network_metrics_add_assign() {
         num_failed_sends: 3,
         num_failed_polls: 1,
         num_failed_recvs: 2,
+        num_recv_syscalls: 80,
+        num_send_syscalls: 40,
     };
 
     metrics1 += metrics2;
@@ -46,4 +56,6 @@ fn test_network_metrics_add_assign() {
     assert_eq!(metrics1.num_failed_sends, 8);
     assert_eq!(metrics1.num_failed_polls, 3);
     assert_eq!(metrics1.num_failed_recvs, 5);
+    assert_eq!(metrics1.num_recv_syscalls, 180);
+    assert_eq!(metrics1.num_send_syscalls, 90);
 }

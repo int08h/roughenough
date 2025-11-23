@@ -8,7 +8,7 @@ use roughenough_protocol::ToFrame;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::tags::{Nonce, Version};
 use roughenough_protocol::util::ClockSource;
-use roughenough_server::args::{Args, ProtocolVersionArg, SeedBackendArg};
+use roughenough_server::args::{Args, IoBackend, ProtocolVersionArg, SeedBackendArg};
 use roughenough_server::keysource::KeySource;
 use roughenough_server::requests::RequestHandler;
 use roughenough_server::responses::ResponseHandler;
@@ -42,6 +42,7 @@ fn create_request_handler() -> RequestHandler {
         seed_backend: SeedBackendArg::Memory,
         verbose: 0,
         metrics_output: None,
+        io_backend: IoBackend::Mio,
     };
 
     let seed = Box::new(MemoryBackend::from_random());

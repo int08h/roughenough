@@ -3,21 +3,22 @@ use std::sync::atomic::Ordering::Relaxed;
 use std::time::Duration;
 
 use crossbeam_channel::Sender;
-use mio::net::UdpSocket as MioUdpSocket;
-use mio::{Events, Poll, Token};
 use roughenough_protocol::util::ClockSource;
 use roughenough_server::args::Args;
+use roughenough_server::backend::{CollectResult, NetworkBackend};
 use roughenough_server::metrics::aggregator::WorkerMetrics;
-use roughenough_server::network::CollectResult::Empty;
-use roughenough_server::network::{CollectResult, NetworkHandler};
 use roughenough_server::requests::RequestHandler;
 use roughenough_server::responses::ResponseHandler;
 use tracing::info;
 
-pub struct Worker {
+/// Worker thread that processes Roughtime requests using a pluggable network backend.
+///
+/// Each worker owns its own backend instance and operates independently.
+/// The backend abstracts the network I/O strategy (mio, recvmmsg, etc.).
+pub struct Worker<B: NetworkBackend> {
     worker_id: usize,
     clock: ClockSource,
-    net_handler: NetworkHandler,
+    backend: B,
     req_handler: RequestHandler,
     metrics_channel: Sender<WorkerMetrics>,
     key_replacement_interval: Duration,
@@ -26,7 +27,10 @@ pub struct Worker {
     next_metrics_publication: u64,
 }
 
-impl Worker {
+impl<B: NetworkBackend> Worker<B> {
+    /// Create a new Worker with the given backend.
+    ///
+    /// The backend should already be initialized with a bound socket.
     pub fn new(
         worker_id: usize,
         args: Args,
@@ -34,15 +38,15 @@ impl Worker {
         clock: ClockSource,
         metrics_channel: Sender<WorkerMetrics>,
         metrics_interval: Duration,
+        backend: B,
     ) -> Self {
-        let batch_size = args.batch_size as usize;
         let now = clock.epoch_seconds();
 
         Self {
             worker_id,
             clock,
+            backend,
             metrics_channel,
-            net_handler: NetworkHandler::new(batch_size),
             req_handler: RequestHandler::new(responder),
             key_replacement_interval: args.rotation_interval(),
             metrics_publish_interval: metrics_interval,
@@ -51,16 +55,10 @@ impl Worker {
         }
     }
 
-    pub fn run(&mut self, mut sock: MioUdpSocket, keep_running: &AtomicBool) {
-        const READER: Token = Token(0);
-
-        let mut poll = Poll::new().expect("failed to create poll");
-
-        poll.registry()
-            .register(&mut sock, READER, mio::Interest::READABLE)
-            .expect("failed to register socket");
-
-        let mut events = Events::with_capacity(1024);
+    /// Run the worker's main event loop.
+    ///
+    /// Processes requests until `keep_running` becomes false.
+    pub fn run(&mut self, keep_running: &AtomicBool) {
         let poll_duration = Duration::from_millis(350);
 
         while keep_running.load(Relaxed) {
@@ -74,34 +72,26 @@ impl Worker {
                 self.replace_online_key();
             }
 
-            if poll.poll(&mut events, Some(poll_duration)).is_err() {
-                self.net_handler.record_failed_poll();
-            }
-
-            for event in &events {
-                match event.token() {
-                    READER => loop {
-                        let collect_result = self.collect_requests(&mut sock);
-
-                        self.req_handler.generate_responses(|addr, bytes| {
-                            self.net_handler.send_response(&mut sock, bytes, addr);
+            if self.backend.wait_for_events(poll_duration) {
+                loop {
+                    let collect_result =
+                        self.backend.collect_requests(|request_bytes, src_addr| {
+                            self.req_handler.collect_request(request_bytes, src_addr);
                         });
 
-                        if collect_result == Empty {
-                            break;
-                        }
-                    },
-                    _ => unreachable!(),
+                    self.req_handler.generate_responses(|addr, bytes| {
+                        self.backend.send_response(bytes, addr);
+                    });
+
+                    // Flush any pending sends after response generation
+                    self.backend.flush();
+
+                    if collect_result == CollectResult::Empty {
+                        break;
+                    }
                 }
             }
         }
-    }
-
-    fn collect_requests(&mut self, sock: &mut MioUdpSocket) -> CollectResult {
-        self.net_handler
-            .collect_requests(sock, |request_bytes, src_addr| {
-                self.req_handler.collect_request(request_bytes, src_addr);
-            })
     }
 
     fn replace_online_key(&mut self) {
@@ -122,7 +112,7 @@ impl Worker {
     fn publish_metrics(&mut self) {
         let snapshot = WorkerMetrics {
             worker_id: self.worker_id,
-            network: self.net_handler.metrics(),
+            network: self.backend.metrics(),
             request: self.req_handler.metrics(),
             response: self.req_handler.response_metrics(),
         };
@@ -131,7 +121,7 @@ impl Worker {
         let _ = self.metrics_channel.try_send(snapshot);
 
         // Reset metrics after sending
-        self.net_handler.reset_metrics();
+        self.backend.reset_metrics();
         self.req_handler.reset_metrics();
 
         // Schedule next publication

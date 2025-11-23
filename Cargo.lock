@@ -2904,6 +2904,7 @@ dependencies = [
  "ctrlc",
  "divan",
  "fastrand",
+ "libc",
  "mio",
  "roughenough-keys",
  "roughenough-merkle",

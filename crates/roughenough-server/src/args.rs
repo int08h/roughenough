@@ -112,6 +112,17 @@ pub struct Args {
     )]
     pub metrics_output: Option<String>,
 
+    /// Network I/O backend to use
+    #[clap(
+        value_enum,
+        long,
+        value_name = "BACKEND",
+        env = "ROUGHENOUGH_IO_BACKEND",
+        default_value_t = IoBackend::default(),
+        help = "Network I/O backend: 'mio' (portable) or 'recvmmsg' (Linux only, batched syscalls)"
+    )]
+    pub io_backend: IoBackend,
+
     #[clap(
         short = 'v',
         long,
@@ -136,6 +147,31 @@ pub enum SeedBackendArg {
     Krs,
     #[value(name = "ssh-agent")]
     SshAgent,
+}
+
+/// Network I/O backend selection.
+///
+/// Different backends provide different tradeoffs between portability and
+/// performance. The `mio` backend is portable and works everywhere. The
+/// `recvmmsg` backend uses Linux-specific syscalls for improved performance.
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum IoBackend {
+    /// Poll-based I/O using the mio crate (portable, works on all platforms)
+    #[default]
+    #[value(name = "mio")]
+    Mio,
+
+    /// Batched syscalls using recvmmsg/sendmmsg (Linux only, requires 2.6.33+)
+    #[cfg(target_os = "linux")]
+    #[value(name = "recvmmsg")]
+    Recvmmsg,
+}
+
+impl Display for IoBackend {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let value = self.to_possible_value().unwrap();
+        f.write_str(value.get_name())
+    }
 }
 
 impl Display for SeedBackendArg {

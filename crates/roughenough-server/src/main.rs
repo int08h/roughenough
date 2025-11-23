@@ -33,7 +33,10 @@ use mio::net::UdpSocket as MioUdpSocket;
 use roughenough_keys::seed::{Seed, SeedBackend, try_choose_backend};
 use roughenough_keys::storage::try_load_seed_sync;
 use roughenough_protocol::util::ClockSource;
-use roughenough_server::args::Args;
+use roughenough_server::args::{Args, IoBackend};
+use roughenough_server::backend::MioBackend;
+#[cfg(target_os = "linux")]
+use roughenough_server::backend::RecvmmsgBackend;
 use roughenough_server::keysource::KeySource;
 use roughenough_server::metrics::aggregator::{MetricsAggregator, WorkerMetrics};
 use roughenough_server::metrics::snapshot::validate_metrics_directory;
@@ -132,16 +135,38 @@ fn worker_task(
     let responder = ResponseHandler::new(args.batch_size, key_source);
     let metrics_interval = Duration::from_secs(args.metrics_interval);
     let idx = idx as usize;
+    let batch_size = args.batch_size as usize;
 
-    let mut worker = Worker::new(
-        idx,
-        args,
-        responder,
-        clock,
-        metrics_channel,
-        metrics_interval,
-    );
-    worker.run(sock, &KEEP_RUNNING);
+    match args.io_backend {
+        IoBackend::Mio => {
+            let backend = MioBackend::new(sock, batch_size).expect("Failed to create mio backend");
+            let mut worker = Worker::new(
+                idx,
+                args,
+                responder,
+                clock,
+                metrics_channel,
+                metrics_interval,
+                backend,
+            );
+            worker.run(&KEEP_RUNNING);
+        }
+        #[cfg(target_os = "linux")]
+        IoBackend::Recvmmsg => {
+            let backend =
+                RecvmmsgBackend::new(sock, batch_size).expect("Failed to create recvmmsg backend");
+            let mut worker = Worker::new(
+                idx,
+                args,
+                responder,
+                clock,
+                metrics_channel,
+                metrics_interval,
+                backend,
+            );
+            worker.run(&KEEP_RUNNING);
+        }
+    }
 }
 
 // Bind to the server port using SO_REUSEPORT and SO_REUSEADDR so the kernel will fairly
