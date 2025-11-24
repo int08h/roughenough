@@ -44,6 +44,7 @@ use std::{fs, io, thread};
 use roughenough_protocol::ToFrame;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::tags::Nonce;
+use roughenough_server::metrics::batch::TimingReport;
 use roughenough_server::metrics::snapshot::MetricsSnapshot;
 
 const SERVER_PORT: u16 = 2003;
@@ -59,17 +60,18 @@ const BACKENDS: &[&str] = &["mio", "recvmmsg"];
 const BACKENDS: &[&str] = &["mio"];
 
 /// Results from benchmarking a single backend
-#[derive(Debug)]
 struct BenchmarkResult {
     backend: String,
     responses_per_second: f64,
     mbytes_per_second: f64,
     recv_syscalls: usize,
-    send_syscalls: usize,
     messages_per_recv_syscall: f64,
-    batch_p50: Duration,
-    batch_p99: Duration,
+    /// The batch size with the most samples (effective batch size)
+    dominant_batch_size: u8,
+    /// P50 latency for the dominant batch size
+    dominant_p50: Duration,
     total_responses: usize,
+    batch_timing: Vec<TimingReport>,
 }
 
 /// Generate a random nonce for a Roughtime request
@@ -280,27 +282,18 @@ fn load_metrics_snapshot(metrics_dir: &Path) -> io::Result<MetricsSnapshot> {
     Ok(snapshot)
 }
 
-/// Extract P50 latency from batch timing
-fn extract_p50(snapshot: &MetricsSnapshot) -> Duration {
+/// Extract the dominant batch size and its P50 latency from batch timing.
+///
+/// Returns (batch_size, p50) for the batch size with the most samples.
+fn extract_dominant_batch(snapshot: &MetricsSnapshot) -> (u8, Duration) {
     let reports = snapshot.totals.responses.batch_timing.report();
-    // Find the batch size with the most samples for representative P50
+    // Find the batch size with the most samples for representative metrics
     reports
         .iter()
         .filter(|r| r.count > 0)
         .max_by_key(|r| r.count)
-        .map(|r| r.median)
-        .unwrap_or(Duration::ZERO)
-}
-
-/// Extract P99 latency from batch timing
-fn extract_p99(snapshot: &MetricsSnapshot) -> Duration {
-    let reports = snapshot.totals.responses.batch_timing.report();
-    reports
-        .iter()
-        .filter(|r| r.count > 0)
-        .max_by_key(|r| r.count)
-        .map(|r| r.p99)
-        .unwrap_or(Duration::ZERO)
+        .map(|r| (r.batch_size, r.median))
+        .unwrap_or((0, Duration::ZERO))
 }
 
 /// Run benchmark for a single backend
@@ -342,21 +335,36 @@ fn run_benchmark_for_backend(backend: &str) -> io::Result<BenchmarkResult> {
         0.0
     };
 
+    let batch_timing: Vec<TimingReport> = snapshot
+        .totals
+        .responses
+        .batch_timing
+        .report()
+        .into_iter()
+        .filter(|r| r.count > 0)
+        .collect();
+
+    let (dominant_batch_size, dominant_p50) = extract_dominant_batch(&snapshot);
+
     Ok(BenchmarkResult {
         backend: backend.to_string(),
         responses_per_second: snapshot.totals.responses_per_second,
         mbytes_per_second: snapshot.totals.mbytes_per_second,
         recv_syscalls,
-        send_syscalls: snapshot.totals.network.num_send_syscalls,
         messages_per_recv_syscall: messages_per_recv,
-        batch_p50: extract_p50(&snapshot),
-        batch_p99: extract_p99(&snapshot),
+        dominant_batch_size,
+        dominant_p50,
         total_responses,
+        batch_timing,
     })
 }
 
 /// Display batch timing details for a single backend
-fn display_batch_metrics(snapshot: &MetricsSnapshot) {
+fn display_batch_metrics(result: &BenchmarkResult) {
+    if result.batch_timing.is_empty() {
+        return;
+    }
+
     println!("\n  Batch Processing Latency:");
     println!(
         "  {:>10} | {:>9} | {:>10} | {:>10} | {:>10} | {:>10}",
@@ -364,8 +372,7 @@ fn display_batch_metrics(snapshot: &MetricsSnapshot) {
     );
     println!("  {}", "-".repeat(70));
 
-    let reports = snapshot.totals.responses.batch_timing.report();
-    for report in reports.iter().filter(|r| r.count > 0) {
+    for report in &result.batch_timing {
         println!(
             "  {:>10} | {:>9} | {:>10.1?} | {:>10.1?} | {:>10.1?} | {:>10.1?}",
             report.batch_size, report.count, report.median, report.p95, report.p99, report.p999
@@ -378,10 +385,10 @@ fn display_comparison(results: &[BenchmarkResult]) {
     println!("\n=== Backend Comparison ===\n");
 
     println!(
-        "{:<10} | {:>10} | {:>8} | {:>12} | {:>10} | {:>10} | {:>8}",
-        "Backend", "Resp/sec", "MB/sec", "Msg/RecvCall", "RecvCalls", "P50", "vs mio"
+        "{:<10} | {:>10} | {:>8} | {:>12} | {:>10} | {:>10} | {:>10} | {:>8}",
+        "Backend", "Resp/sec", "MB/sec", "Msg/RecvCall", "RecvCalls", "BatchSize", "P50", "vs mio"
     );
-    println!("{}", "-".repeat(85));
+    println!("{}", "-".repeat(97));
 
     let mio_result = results.iter().find(|r| r.backend == "mio");
 
@@ -391,13 +398,14 @@ fn display_comparison(results: &[BenchmarkResult]) {
             .unwrap_or(1.0);
 
         println!(
-            "{:<10} | {:>10.0} | {:>8.2} | {:>12.1} | {:>10} | {:>10.1?} | {:>7.2}x",
+            "{:<10} | {:>10.0} | {:>8.2} | {:>12.1} | {:>10} | {:>10} | {:>10.1?} | {:>7.2}x",
             result.backend,
             result.responses_per_second,
             result.mbytes_per_second,
             result.messages_per_recv_syscall,
             result.recv_syscalls,
-            result.batch_p50,
+            result.dominant_batch_size,
+            result.dominant_p50,
             speedup
         );
     }
@@ -441,6 +449,7 @@ fn main() {
                     "  Messages per recv syscall: {:.1}",
                     result.messages_per_recv_syscall
                 );
+                display_batch_metrics(&result);
                 results.push(result);
             }
             Err(e) => {

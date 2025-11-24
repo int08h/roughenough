@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use roughenough_protocol::cursor::ParseCursor;
 use roughenough_protocol::request::{REQUEST_SIZE, Request};
@@ -43,12 +44,22 @@ impl RequestHandler {
         }
     }
 
-    pub fn generate_responses<F>(&mut self, callback: F)
+    /// Generate responses for all collected requests.
+    ///
+    /// Returns the batch size if there were requests to process, or None if empty.
+    /// The caller should record batch timing via `record_batch_timing` after flushing I/O.
+    pub fn generate_responses<F>(&mut self, callback: F) -> Option<u8>
     where
         F: FnMut(SocketAddr, &[u8]),
     {
-        self.responder.process_responses(callback);
+        let batch_size = self.responder.process_responses(callback);
         self.responder.clear();
+        batch_size
+    }
+
+    /// Record batch timing after all I/O operations (including flush) are complete.
+    pub fn record_batch_timing(&mut self, batch_size: u8, elapsed: Duration) {
+        self.responder.record_batch_timing(batch_size, elapsed);
     }
 
     pub fn replace_online_key(&mut self) {

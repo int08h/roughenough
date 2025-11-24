@@ -1,6 +1,6 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossbeam_channel::Sender;
 use roughenough_protocol::util::ClockSource;
@@ -79,12 +79,21 @@ impl<B: NetworkBackend> Worker<B> {
                             self.req_handler.collect_request(request_bytes, src_addr);
                         });
 
-                    self.req_handler.generate_responses(|addr, bytes| {
+                    // Time the full batch processing including all I/O
+                    let timer = Instant::now();
+
+                    let batch_size = self.req_handler.generate_responses(|addr, bytes| {
                         self.backend.send_response(bytes, addr);
                     });
 
                     // Flush any pending sends after response generation
                     self.backend.flush();
+
+                    // Record timing for the complete batch (CPU + send I/O)
+                    if let Some(batch_size) = batch_size {
+                        self.req_handler
+                            .record_batch_timing(batch_size, timer.elapsed());
+                    }
 
                     if collect_result == CollectResult::Empty {
                         break;

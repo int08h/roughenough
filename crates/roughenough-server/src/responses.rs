@@ -1,5 +1,5 @@
 use std::net::SocketAddr;
-use std::time::Instant;
+use std::time::Duration;
 
 use roughenough_keys::online::onlinekey::OnlineKey;
 use roughenough_merkle::{MerklePath, MerkleTree};
@@ -62,16 +62,16 @@ impl ResponseHandler {
 
     /// Process all responses. `callback` receives each response as a borrowed slice that's
     /// valid only during the callback.
-    pub fn process_responses<F>(&mut self, mut callback: F)
+    ///
+    /// Returns the batch size if there were requests to process, or None if empty.
+    /// The caller is responsible for recording batch timing via `record_batch_timing`.
+    pub fn process_responses<F>(&mut self, mut callback: F) -> Option<u8>
     where
         F: FnMut(SocketAddr, &[u8]),
     {
         if self.requests.is_empty() {
-            return;
+            return None;
         }
-
-        // TODO(stuart) this should be a ClockSource, so the system clock is not used directly
-        let timer = Instant::now();
 
         // Tags that are common to all responses in this batch
         // (CERT, SREP, and SIG are the same per-batch)
@@ -108,8 +108,11 @@ impl ResponseHandler {
             callback(pending_req.src_addr, &self.response_buf[..frame_size]);
         }
 
-        let batch_size = self.requests.len() as u8;
-        let elapsed = timer.elapsed();
+        Some(self.requests.len() as u8)
+    }
+
+    /// Record batch timing after all I/O (including flush) is complete.
+    pub fn record_batch_timing(&mut self, batch_size: u8, elapsed: Duration) {
         self.response_metrics.record_batch(batch_size, elapsed);
     }
 
