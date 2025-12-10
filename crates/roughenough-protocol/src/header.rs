@@ -97,8 +97,8 @@ fn check_offset_bounds_inner<H: Header>(header: &H, total_len: usize) -> Result<
     Ok(())
 }
 
-// Frustratingly, we can't use a generic Header<N> yet because Rust does not currently permit a
-// const generic to be used in a concrete expression. We can't do this yet:
+// Frustratingly, we can't use a generic Header<const N: usize> yet because Rust does not
+// currently permit a const generic to be used in a concrete expression. We can't do this yet:
 //
 //     struct Header<const N: usize> {
 //         offsets: [u32; N - 1] // `N - 1` not allowed
