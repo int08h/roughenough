@@ -1,5 +1,5 @@
 use roughenough_common::encoding;
-use tracing::{debug, error, trace};
+use tracing::{debug, trace};
 
 use crate::longterm::envelope::SeedEnvelope;
 use crate::seed::Seed;

@@ -4,7 +4,7 @@ use ReportingError::HttpError;
 use data_encoding::BASE64;
 use roughenough_protocol::ToFrame;
 use serde::{Deserialize, Serialize};
-use tracing::{error, info};
+use tracing::info;
 
 use crate::CausalityViolation;
 use crate::measurement::Measurement;
