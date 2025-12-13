@@ -1,30 +1,42 @@
-FROM rust:1.88-slim-bookworm AS builder
+FROM rust:1.92-slim-trixie AS builder
 
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Create app directory
 WORKDIR /app
 
-# Copy all source files
-COPY . .
+# Copy dependency manifests first for better caching
+COPY Cargo.toml Cargo.lock ./
+COPY crates/roughenough-client/Cargo.toml crates/roughenough-client/
+COPY crates/roughenough-common/Cargo.toml crates/roughenough-common/
+COPY crates/roughenough-integration/Cargo.toml crates/roughenough-integration/
+COPY crates/roughenough-keys/Cargo.toml crates/roughenough-keys/
+COPY crates/roughenough-merkle/Cargo.toml crates/roughenough-merkle/
+COPY crates/roughenough-protocol/Cargo.toml crates/roughenough-protocol/
+COPY crates/roughenough-server/Cargo.toml crates/roughenough-server/
 
-# Build the server in release mode with all features enabled
-RUN cargo build --release --bin roughenough_server --all-features
+# Create stub lib.rs files to satisfy cargo
+RUN for crate in roughenough-client roughenough-common roughenough-integration \
+    roughenough-keys roughenough-merkle roughenough-protocol roughenough-server; do \
+    mkdir -p crates/$crate/src && touch crates/$crate/src/lib.rs; \
+    done
 
-# Runtime stage - using distroless with shell
-FROM gcr.io/distroless/cc-debian12:debug
+# Build dependencies only (cached unless Cargo.toml changes)
+RUN cargo build --profile release-lto --bin roughenough_server --all-features 2>/dev/null || true
 
-# Copy the binary from builder
-COPY --from=builder /app/target/release/roughenough_server /roughenough_server
+# Copy actual source and build
+COPY crates crates
+RUN cargo build --profile release-lto --bin roughenough_server --all-features
 
-# Expose the default Roughenough port
+# Runtime stage - minimal distroless (no shell)
+FROM gcr.io/distroless/cc-debian13
+
+# Copy binary from correct profile path
+COPY --from=builder /app/target/release-lto/roughenough_server /roughenough_server
+
 EXPOSE 2003/udp
 
-# Set the entrypoint
 ENTRYPOINT ["/roughenough_server"]
-
-# Args for testing, need to set real args for prod
 CMD ["--interface", "0.0.0.0", "--port", "2003"]

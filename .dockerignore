@@ -1,0 +1,13 @@
+target/
+.git/
+.gitignore
+*.md
+doc/
+fuzz/
+tasks/
+foo
+coverage.sh
+Dockerfile
+.dockerignore
+.idea/
+*.log
