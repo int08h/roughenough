@@ -1,56 +1,40 @@
 FROM rust:1.92-slim-trixie AS builder
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy dependency manifests first for caching
+# Copy dependency manifests first for better caching
 COPY Cargo.toml Cargo.lock ./
-COPY crates/roughenough-protocol/Cargo.toml crates/roughenough-protocol/
-COPY crates/roughenough-server/Cargo.toml crates/roughenough-server/
 COPY crates/roughenough-client/Cargo.toml crates/roughenough-client/
 COPY crates/roughenough-common/Cargo.toml crates/roughenough-common/
-COPY crates/roughenough-merkle/Cargo.toml crates/roughenough-merkle/
-COPY crates/roughenough-keys/Cargo.toml crates/roughenough-keys/
 COPY crates/roughenough-integration/Cargo.toml crates/roughenough-integration/
+COPY crates/roughenough-keys/Cargo.toml crates/roughenough-keys/
+COPY crates/roughenough-merkle/Cargo.toml crates/roughenough-merkle/
+COPY crates/roughenough-protocol/Cargo.toml crates/roughenough-protocol/
+COPY crates/roughenough-server/Cargo.toml crates/roughenough-server/
 
-# Create dummy source files to build dependencies
-RUN mkdir -p src crates/roughenough-protocol/src crates/roughenough-protocol/benches \
-    crates/roughenough-server/src crates/roughenough-client/src \
-    crates/roughenough-common/src crates/roughenough-merkle/src crates/roughenough-merkle/benches \
-    crates/roughenough-keys/src crates/roughenough-integration/src \
-    && echo "fn main() {}" > src/main.rs \
-    && echo "" > crates/roughenough-protocol/src/lib.rs \
-    && echo "fn main() {}" > crates/roughenough-protocol/benches/message_ops.rs \
-    && echo "fn main() {}" > crates/roughenough-server/src/main.rs \
-    && echo "fn main() {}" > crates/roughenough-client/src/main.rs \
-    && echo "" > crates/roughenough-common/src/lib.rs \
-    && echo "fn main() {}" > crates/roughenough-merkle/benches/get_paths.rs \
-    && echo "" > crates/roughenough-merkle/src/lib.rs \
-    && echo "" > crates/roughenough-keys/src/lib.rs \
-    && echo "" > crates/roughenough-integration/src/lib.rs
+# Create stub lib.rs files to satisfy cargo
+RUN for crate in roughenough-client roughenough-common roughenough-integration \
+    roughenough-keys roughenough-merkle roughenough-protocol roughenough-server; do \
+    mkdir -p crates/$crate/src && touch crates/$crate/src/lib.rs; \
+    done
 
-# Build dependencies only
-ENV RUSTFLAGS="-C target-cpu=x86-64-v4"
-RUN cargo build --profile release-lto --locked --bin roughenough_server --all-features
+# Build dependencies only (cached unless Cargo.toml changes)
+RUN cargo build --profile release-lto --bin roughenough_server --all-features 2>/dev/null || true
 
-# Copy actual source and rebuild
-COPY . .
-RUN touch crates/*/src/*.rs src/main.rs \
-    && cargo build --profile release-lto --locked --bin roughenough_server --all-features
+# Copy actual source and build
+COPY crates crates
+RUN cargo build --profile release-lto --bin roughenough_server --all-features
 
-# Runtime stage
-FROM gcr.io/distroless/cc-debian13:debug
+# Runtime stage - minimal distroless (no shell)
+FROM gcr.io/distroless/cc-debian13
 
-LABEL org.opencontainers.image.source="https://github.com/int08h/roughenough"
-LABEL org.opencontainers.image.description="Roughtime protocol server"
-
+# Copy binary from correct profile path
 COPY --from=builder /app/target/release-lto/roughenough_server /roughenough_server
-
-USER nonroot:nonroot
 
 EXPOSE 2003/udp
 
