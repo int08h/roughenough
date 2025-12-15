@@ -59,7 +59,7 @@ jobs:
           toolchain: ${{ env.RUST_VERSION }}
 
       - name: Cache cargo-audit
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cargo/bin/cargo-audit
           key: ${{ runner.os }}-cargo-audit
@@ -85,7 +85,7 @@ jobs:
           toolchain: ${{ env.RUST_VERSION }}
 
       - name: Cache cargo-deny
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cargo/bin/cargo-deny
           key: ${{ runner.os }}-cargo-deny
@@ -112,7 +112,7 @@ jobs:
         components: llvm-tools-preview
 
     - name: Cache Cargo tools
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       id: cache
       with:
         path: |
@@ -174,7 +174,7 @@ jobs:
         toolchain: ${{ env.RUST_VERSION }}
 
     - name: Cache Cargo auditable
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       id: cache-auditable
       with:
         path: ~/.cargo/bin/cargo-auditable
