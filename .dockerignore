@@ -1,0 +1,6 @@
+target/
+.git/
+*.md
+fuzz/
+tasks/
+.claude/
