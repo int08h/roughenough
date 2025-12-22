@@ -1,6 +1,6 @@
 FROM rust:1.92-slim-trixie AS builder
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -18,24 +18,28 @@ COPY crates/roughenough-keys/Cargo.toml crates/roughenough-keys/
 COPY crates/roughenough-integration/Cargo.toml crates/roughenough-integration/
 
 # Create dummy source files to build dependencies
-RUN mkdir -p src crates/roughenough-protocol/src crates/roughenough-server/src crates/roughenough-client/src \
-    crates/roughenough-common/src crates/roughenough-merkle/src crates/roughenough-keys/src crates/roughenough-integration/src \
+RUN mkdir -p src crates/roughenough-protocol/src crates/roughenough-protocol/benches \
+    crates/roughenough-server/src crates/roughenough-client/src \
+    crates/roughenough-common/src crates/roughenough-merkle/src crates/roughenough-merkle/benches \
+    crates/roughenough-keys/src crates/roughenough-integration/src \
     && echo "fn main() {}" > src/main.rs \
     && echo "" > crates/roughenough-protocol/src/lib.rs \
+    && echo "fn main() {}" > crates/roughenough-protocol/benches/message_ops.rs \
     && echo "fn main() {}" > crates/roughenough-server/src/main.rs \
     && echo "fn main() {}" > crates/roughenough-client/src/main.rs \
     && echo "" > crates/roughenough-common/src/lib.rs \
+    && echo "fn main() {}" > crates/roughenough-merkle/benches/get_paths.rs \
     && echo "" > crates/roughenough-merkle/src/lib.rs \
     && echo "" > crates/roughenough-keys/src/lib.rs \
     && echo "" > crates/roughenough-integration/src/lib.rs
 
 # Build dependencies only
-RUN cargo build --profile release-lto --bin roughenough_server --all-features 2>/dev/null || true
+RUN cargo build --profile release-lto --locked --bin roughenough_server --all-features
 
 # Copy actual source and rebuild
 COPY . .
 RUN touch crates/*/src/*.rs src/main.rs \
-    && cargo build --release --bin roughenough_server --all-features
+    && cargo build --profile release-lto --locked --bin roughenough_server --all-features
 
 # Runtime stage
 FROM gcr.io/distroless/cc-debian13:debug
@@ -43,7 +47,7 @@ FROM gcr.io/distroless/cc-debian13:debug
 LABEL org.opencontainers.image.source="https://github.com/int08h/roughenough"
 LABEL org.opencontainers.image.description="Roughtime protocol server"
 
-COPY --from=builder /app/target/release/roughenough_server /roughenough_server
+COPY --from=builder /app/target/release-lto/roughenough_server /roughenough_server
 
 USER nonroot:nonroot
 
