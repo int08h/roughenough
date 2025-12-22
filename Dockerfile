@@ -34,6 +34,7 @@ RUN mkdir -p src crates/roughenough-protocol/src crates/roughenough-protocol/ben
     && echo "" > crates/roughenough-integration/src/lib.rs
 
 # Build dependencies only
+ENV RUSTFLAGS="-C target-cpu=x86-64-v4"
 RUN cargo build --profile release-lto --locked --bin roughenough_server --all-features
 
 # Copy actual source and rebuild
