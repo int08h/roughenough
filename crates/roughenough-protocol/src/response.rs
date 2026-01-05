@@ -210,7 +210,7 @@ mod tests {
     use crate::header::Header;
     use crate::response::Response;
     use crate::tag::Tag;
-    use crate::tags::Version::{Google, RfcDraft14};
+    use crate::tags::ProtocolVersion::{Google, RfcDraft14};
     use crate::tags::{MerklePath, MessageType, SignedResponse, SupportedVersions};
     use crate::wire::FromFrame;
 

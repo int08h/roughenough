@@ -3,14 +3,14 @@ use crate::error::Error;
 use crate::error::Error::{NoSupportedVersions, UnexpectedOffsets, UnexpectedTags};
 use crate::header::{Header, Header5};
 use crate::tag::Tag;
-use crate::tags::{MerkleRoot, SupportedVersions, Version};
+use crate::tags::{MerkleRoot, ProtocolVersion, SupportedVersions};
 use crate::wire::{FromWire, FromWireN, ToWire};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SignedResponse {
     header: Header5,
-    version: Version,
+    version: ProtocolVersion,
     radius: u32,
     midpoint: u64,
     supported_versions: SupportedVersions,
@@ -29,7 +29,7 @@ impl SignedResponse {
     /// to account for potential system latency and clock uncertainty. Also leap seconds suck.
     pub const DEFAULT_RADI_SECONDS: u32 = 5;
 
-    const RADI_OFFSET: u32 = size_of::<Version>() as u32;
+    const RADI_OFFSET: u32 = size_of::<ProtocolVersion>() as u32;
     const MIDP_OFFSET: u32 = Self::RADI_OFFSET + (size_of::<u32>() as u32);
     const VERS_OFFSET: u32 = Self::MIDP_OFFSET + (size_of::<u64>() as u32);
 
@@ -42,7 +42,7 @@ impl SignedResponse {
         &self.header
     }
 
-    pub fn ver(&self) -> &Version {
+    pub fn ver(&self) -> &ProtocolVersion {
         &self.version
     }
 
@@ -62,7 +62,7 @@ impl SignedResponse {
         &self.merkle_root
     }
 
-    pub fn set_ver(&mut self, version: Version) {
+    pub fn set_ver(&mut self, version: ProtocolVersion) {
         self.version = version;
     }
 
@@ -90,7 +90,7 @@ impl Default for SignedResponse {
     fn default() -> Self {
         let mut srep = Self {
             header: Header5::default(),
-            version: Version::Invalid,
+            version: ProtocolVersion::Invalid,
             radius: 0,
             midpoint: 0,
             supported_versions: SupportedVersions::default(),
@@ -151,7 +151,7 @@ impl FromWire for SignedResponse {
             return Err(NoSupportedVersions);
         }
 
-        srep.version = Version::from_wire(cursor)?;
+        srep.version = ProtocolVersion::from_wire(cursor)?;
         srep.radius = cursor.try_get_u32_le()?;
         srep.midpoint = cursor.try_get_u64_le()?;
 
@@ -168,16 +168,16 @@ impl FromWire for SignedResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tags::{MerkleRoot, SupportedVersions, Version};
+    use crate::tags::{MerkleRoot, ProtocolVersion, SupportedVersions};
 
     fn create_valid_signed_response() -> SignedResponse {
         let mut srep = SignedResponse::default();
-        srep.set_ver(Version::RfcDraft14);
+        srep.set_ver(ProtocolVersion::RfcDraft14);
         srep.set_radi(5);
         srep.set_midp(1234567);
         srep.set_vers(&SupportedVersions::new(&[
-            Version::Google,
-            Version::RfcDraft14,
+            ProtocolVersion::Google,
+            ProtocolVersion::RfcDraft14,
         ]));
         srep.set_root(&MerkleRoot::from([0x2e; 32]));
 
@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn default_value() {
         let srep = SignedResponse::default();
-        assert_eq!(srep.ver(), &Version::Invalid);
+        assert_eq!(srep.ver(), &ProtocolVersion::Invalid);
         assert_eq!(srep.radi(), 0);
         assert_eq!(srep.midp(), 0);
         assert_eq!(srep.vers(), &SupportedVersions::default());

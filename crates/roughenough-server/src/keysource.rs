@@ -4,7 +4,7 @@ use std::time::Duration;
 use roughenough_keys::longterm::LongTermIdentity;
 use roughenough_keys::online::onlinekey::OnlineKey;
 use roughenough_keys::seed::SeedBackend;
-use roughenough_protocol::tags::{PublicKey, Version};
+use roughenough_protocol::tags::{ProtocolVersion, PublicKey};
 use roughenough_protocol::util::ClockSource;
 
 /// A thread-safe source of `OnlineKey`s for Workers. All generated `OnlineKey`s share a clock,
@@ -27,7 +27,7 @@ unsafe impl Sync for KeySource {}
 impl KeySource {
     #[allow(clippy::arc_with_non_send_sync)]
     pub fn new(
-        version: Version,
+        version: ProtocolVersion,
         seed: Box<dyn SeedBackend>,
         clock_source: ClockSource,
         validity_length: Duration,
@@ -72,7 +72,7 @@ mod tests {
     use std::time::Duration;
 
     use roughenough_keys::seed::MemoryBackend;
-    use roughenough_protocol::tags::Version;
+    use roughenough_protocol::tags::ProtocolVersion;
     use roughenough_protocol::util::ClockSource;
 
     use crate::keysource::KeySource;
@@ -81,7 +81,7 @@ mod tests {
     #[should_panic]
     fn zero_validity_duration_panics() {
         // Given an attempt to create a KeySource
-        let version = roughenough_protocol::tags::Version::RfcDraft14;
+        let version = roughenough_protocol::tags::ProtocolVersion::RfcDraft14;
         let seed: Box<dyn roughenough_keys::seed::SeedBackend> =
             Box::new(MemoryBackend::from_random());
         let clock = ClockSource::System;
@@ -102,7 +102,7 @@ mod tests {
 
         let backend = Box::new(MemoryBackend::from_random());
         let key_source = KeySource::new(
-            Version::RfcDraft14,
+            ProtocolVersion::RfcDraft14,
             backend,
             clock.clone(),
             validity_duration,
@@ -136,7 +136,7 @@ mod tests {
 
         let backend = Box::new(MemoryBackend::from_random());
         let key_source = Arc::new(KeySource::new(
-            Version::RfcDraft14,
+            ProtocolVersion::RfcDraft14,
             backend,
             clock.clone(),
             validity_duration,
@@ -217,7 +217,7 @@ mod tests {
 
         let backend = Box::new(MemoryBackend::from_random());
         let key_source = KeySource::new(
-            Version::RfcDraft14,
+            ProtocolVersion::RfcDraft14,
             backend,
             clock.clone(),
             validity_duration,

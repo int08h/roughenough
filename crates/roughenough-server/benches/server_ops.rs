@@ -6,7 +6,7 @@ use divan::{AllocProfiler, Bencher};
 use roughenough_keys::seed::MemoryBackend;
 use roughenough_protocol::ToFrame;
 use roughenough_protocol::request::Request;
-use roughenough_protocol::tags::{Nonce, Version};
+use roughenough_protocol::tags::{Nonce, ProtocolVersion};
 use roughenough_protocol::util::ClockSource;
 use roughenough_server::args::{Args, ProtocolVersionArg, SeedBackendArg};
 use roughenough_server::keysource::KeySource;
@@ -46,7 +46,7 @@ fn create_request_handler() -> RequestHandler {
 
     let seed = Box::new(MemoryBackend::from_random());
     let ks = KeySource::new(
-        Version::RfcDraft14,
+        ProtocolVersion::RfcDraft14,
         seed,
         ClockSource::System,
         Duration::from_secs(60),

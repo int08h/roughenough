@@ -10,7 +10,7 @@ mod tests {
     use std::time::Duration;
 
     use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
-    use roughenough_protocol::tags::Version::RfcDraft14;
+    use roughenough_protocol::tags::ProtocolVersion::RfcDraft14;
     use roughenough_protocol::tags::{MerkleRoot, PublicKey, SupportedVersions};
     use roughenough_protocol::util::ClockSource;
     use roughenough_protocol::wire::ToWire;

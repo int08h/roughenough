@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use clap::{Parser, ValueEnum};
-use roughenough_protocol::tags::Version;
+use roughenough_protocol::tags::ProtocolVersion;
 
 #[derive(Parser, Debug, Clone)]
 #[command(version = "2.0.0", about = "Roughenough roughtime server")]
@@ -155,9 +155,9 @@ impl Args {
         SocketAddr::new(addr, self.port)
     }
 
-    pub fn version(&self) -> Version {
+    pub fn version(&self) -> ProtocolVersion {
         match self.protocol {
-            ProtocolVersionArg::V14 => Version::RfcDraft14,
+            ProtocolVersionArg::V14 => ProtocolVersion::RfcDraft14,
         }
     }
 

@@ -4,11 +4,13 @@
 pub mod cursor;
 pub mod error;
 pub mod header;
+pub mod protocol_ver;
 pub mod request;
 pub mod response;
 pub mod tag;
 pub mod tags;
 pub mod util;
+pub mod version_list;
 pub mod wire;
 
 // Re-export commonly used types
