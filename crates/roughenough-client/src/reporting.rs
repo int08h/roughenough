@@ -4,7 +4,9 @@ use ReportingError::HttpError;
 use data_encoding::BASE64;
 use roughenough_protocol::ToFrame;
 use serde::{Deserialize, Serialize};
-use tracing::{info};
+use tracing::info;
+#[cfg(feature = "reporting")]
+use tracing::error;
 
 use crate::CausalityViolation;
 use crate::measurement::Measurement;
