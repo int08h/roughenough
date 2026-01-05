@@ -37,7 +37,6 @@ pub(crate) fn seal_seed(dek: [u8; 32], seed: &Seed, aad: &[u8]) -> Vec<u8> {
     in_out
 }
 
-
 #[allow(dead_code)] // uses are behind cargo features
 pub(crate) fn open_seed(
     dek: [u8; 32],
