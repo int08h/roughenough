@@ -57,6 +57,7 @@ resolver = "3"
 members = [
     "crates/roughenough-client",
     "crates/roughenough-common",
+    "crates/roughenough-embedded",
     "crates/roughenough-integration",
     "crates/roughenough-merkle",
     "crates/roughenough-protocol",
@@ -66,6 +67,7 @@ members = [
 default-members = [
     "crates/roughenough-client",
     "crates/roughenough-common",
+    "crates/roughenough-embedded",
     "crates/roughenough-integration",
     "crates/roughenough-merkle",
     "crates/roughenough-protocol",

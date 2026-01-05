@@ -1,16 +1,15 @@
 use std::fmt::Debug;
-use std::mem::size_of;
 
-use Error::{
-    BadRequestSize, BufferTooSmall, InvalidMessageType, UnexpectedOffsets, UnexpectedTags,
-};
+use Error::{BadRequestSize, BufferTooSmall, InvalidMessageType, UnexpectedTags};
 use Request::{Plain, Srv};
 
+use crate::FromWireN;
 use crate::cursor::ParseCursor;
 use crate::error::Error;
-use crate::header::{Header4, Header5};
+use crate::header::{Header, Header4, Header5};
 use crate::tag::Tag;
-use crate::tags::{MessageType, Nonce, SrvCommitment, Version};
+use crate::tags::ver::RequestedVersions;
+use crate::tags::{MessageType, Nonce, SrvCommitment};
 use crate::util::as_hex;
 use crate::wire::{FromFrame, FromWire, ToFrame, ToWire};
 
@@ -22,7 +21,9 @@ pub const REQUEST_SIZE: usize = 1024;
 
 #[derive(Clone, Eq, PartialEq)]
 pub enum Request {
+    /// A `Plain` request has VER, NONC, TYPE, and ZZZZ tags (missing an SRV tag)
     Plain(RequestPlain),
+    /// An `Srv` request has VER, NONC, SRV, TYPE, and ZZZZ tags
     Srv(RequestSrv),
 }
 
@@ -40,7 +41,7 @@ impl Request {
         Srv(RequestSrv::new(nonce, server))
     }
 
-    pub fn ver(&self) -> &Version {
+    pub fn ver(&self) -> &RequestedVersions {
         match self {
             Plain(req) => req.ver(),
             Srv(req) => req.ver(),
@@ -124,21 +125,13 @@ impl Debug for Request {
 #[derive(Clone, Eq, PartialEq)]
 pub struct RequestPlain {
     header: Header4,
-    version: Version,
+    version: RequestedVersions,
     nonce: Nonce,
     msg_type: MessageType,
     padding: [u8; 940],
 }
 
 impl RequestPlain {
-    const NONCE_OFFSET: u32 = size_of::<Version>() as u32;
-    const MSG_TYPE_OFFSET: u32 = Self::NONCE_OFFSET + (size_of::<Nonce>() as u32);
-    const PADDING_OFFSET: u32 = Self::MSG_TYPE_OFFSET + (size_of::<MessageType>() as u32);
-    const OFFSETS: [u32; 3] = [
-        Self::NONCE_OFFSET,
-        Self::MSG_TYPE_OFFSET,
-        Self::PADDING_OFFSET,
-    ];
     const TAGS: [Tag; 4] = [Tag::VER, Tag::NONC, Tag::TYPE, Tag::ZZZZ];
 
     pub fn new(nonce: &Nonce) -> Self {
@@ -148,7 +141,7 @@ impl RequestPlain {
         }
     }
 
-    pub fn ver(&self) -> &Version {
+    pub fn ver(&self) -> &RequestedVersions {
         &self.version
     }
 
@@ -163,28 +156,28 @@ impl RequestPlain {
 
 impl FromWire for RequestPlain {
     fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
-        if cursor.remaining() < size_of::<Self>() {
-            return Err(BufferTooSmall(size_of::<Self>(), cursor.remaining()));
+        let header = Header4::from_wire(cursor)?;
+        header.check_offset_bounds(cursor.remaining())?;
+
+        if header.tags() != Self::TAGS {
+            return Err(UnexpectedTags);
         }
 
-        let req = RequestPlain {
-            header: Header4::from_wire(cursor)?,
-            version: Version::from_wire(cursor)?,
-            nonce: Nonce::from_wire(cursor)?,
-            msg_type: MessageType::from_wire(cursor)?,
+        let mut req = RequestPlain {
+            header,
             ..Self::default()
         };
 
+        // Offsets are positive, monotonic, and 4-byte aligned. Verified by
+        // Header::from_wire() and Header::check_offset_bounds()
+        let ver_len = req.header.offsets[0] as usize;
+        req.version = RequestedVersions::from_wire_n(cursor, ver_len)?;
+
+        req.nonce = Nonce::from_wire(cursor)?;
+        req.msg_type = MessageType::from_wire(cursor)?;
+
         if req.msg_type != MessageType::Request {
             return Err(InvalidMessageType(req.msg_type as u32));
-        }
-
-        if req.header.offsets != Self::OFFSETS {
-            return Err(UnexpectedOffsets);
-        }
-
-        if req.header.tags != Self::TAGS {
-            return Err(UnexpectedTags);
         }
 
         Ok(req)
@@ -193,7 +186,11 @@ impl FromWire for RequestPlain {
 
 impl ToWire for RequestPlain {
     fn wire_size(&self) -> usize {
-        size_of::<Self>()
+        self.header.wire_size()
+            + self.version.wire_size()
+            + self.nonce.wire_size()
+            + self.msg_type.wire_size()
+            + self.padding.len()
     }
 
     fn to_wire(&self, cursor: &mut ParseCursor) -> Result<(), Error> {
@@ -215,14 +212,18 @@ impl Default for RequestPlain {
     fn default() -> Self {
         let mut request = Self {
             header: Header4::default(),
-            version: Version::RfcDraft14,
+            version: RequestedVersions::default(),
             nonce: Nonce::default(),
             msg_type: MessageType::Request,
             padding: [0; 940],
         };
 
-        request.header.offsets = Self::OFFSETS;
         request.header.tags = Self::TAGS;
+
+        request.header.offsets[0] = request.version.wire_size() as u32;
+        request.header.offsets[1] = request.header.offsets[0] + request.nonce.wire_size() as u32;
+        request.header.offsets[2] = request.header.offsets[1] + request.msg_type.wire_size() as u32;
+
         request
     }
 }
@@ -241,7 +242,7 @@ impl Debug for RequestPlain {
 #[derive(Clone, Eq, PartialEq)]
 pub struct RequestSrv {
     header: Header5,
-    version: Version,
+    version: RequestedVersions,
     server: SrvCommitment,
     nonce: Nonce,
     msg_type: MessageType,
@@ -249,16 +250,6 @@ pub struct RequestSrv {
 }
 
 impl RequestSrv {
-    const SERVER_OFFSET: u32 = size_of::<Version>() as u32;
-    const NONCE_OFFSET: u32 = Self::SERVER_OFFSET + (size_of::<SrvCommitment>() as u32);
-    const MSG_TYPE_OFFSET: u32 = Self::NONCE_OFFSET + (size_of::<Nonce>() as u32);
-    const PADDING_OFFSET: u32 = Self::MSG_TYPE_OFFSET + (size_of::<MessageType>() as u32);
-    const OFFSETS: [u32; 4] = [
-        Self::SERVER_OFFSET,
-        Self::NONCE_OFFSET,
-        Self::MSG_TYPE_OFFSET,
-        Self::PADDING_OFFSET,
-    ];
     const TAGS: [Tag; 5] = [Tag::VER, Tag::SRV, Tag::NONC, Tag::TYPE, Tag::ZZZZ];
 
     pub fn new(nonce: &Nonce, server: &SrvCommitment) -> Self {
@@ -269,7 +260,7 @@ impl RequestSrv {
         }
     }
 
-    pub fn ver(&self) -> &Version {
+    pub fn ver(&self) -> &RequestedVersions {
         &self.version
     }
 
@@ -290,44 +281,49 @@ impl Default for RequestSrv {
     fn default() -> Self {
         let mut request = Self {
             header: Header5::default(),
-            version: Version::RfcDraft14,
+            version: RequestedVersions::default(),
             server: SrvCommitment::default(),
             nonce: Nonce::default(),
             msg_type: MessageType::Request,
             padding: [0; 900],
         };
 
-        request.header.offsets = Self::OFFSETS;
         request.header.tags = Self::TAGS;
+
+        request.header.offsets[0] = request.version.wire_size() as u32;
+        request.header.offsets[1] = request.header.offsets[0] + request.server.wire_size() as u32;
+        request.header.offsets[2] = request.header.offsets[1] + request.nonce.wire_size() as u32;
+        request.header.offsets[3] = request.header.offsets[2] + request.msg_type.wire_size() as u32;
+
         request
     }
 }
 
 impl FromWire for RequestSrv {
     fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
-        if cursor.remaining() < size_of::<Self>() {
-            return Err(BufferTooSmall(size_of::<Self>(), cursor.remaining()));
+        let header = Header5::from_wire(cursor)?;
+        header.check_offset_bounds(cursor.remaining())?;
+
+        if header.tags != Self::TAGS {
+            return Err(UnexpectedTags);
         }
 
-        let req = RequestSrv {
-            header: Header5::from_wire(cursor)?,
-            version: Version::from_wire(cursor)?,
-            server: SrvCommitment::from_wire(cursor)?,
-            nonce: Nonce::from_wire(cursor)?,
-            msg_type: MessageType::from_wire(cursor)?,
+        let mut req = RequestSrv {
+            header,
             ..Self::default()
         };
 
+        // Offsets are positive, monotonic, and 4-byte aligned. Verified by
+        // Header::from_wire() and Header::check_offset_bounds()
+        let ver_len = req.header.offsets[0] as usize;
+        req.version = RequestedVersions::from_wire_n(cursor, ver_len)?;
+
+        req.server = SrvCommitment::from_wire(cursor)?;
+        req.nonce = Nonce::from_wire(cursor)?;
+        req.msg_type = MessageType::from_wire(cursor)?;
+
         if req.msg_type != MessageType::Request {
             return Err(InvalidMessageType(req.msg_type as u32));
-        }
-
-        if req.header.offsets != Self::OFFSETS {
-            return Err(UnexpectedOffsets);
-        }
-
-        if req.header.tags != Self::TAGS {
-            return Err(UnexpectedTags);
         }
 
         Ok(req)
@@ -336,7 +332,12 @@ impl FromWire for RequestSrv {
 
 impl ToWire for RequestSrv {
     fn wire_size(&self) -> usize {
-        size_of::<Self>()
+        self.header.wire_size()
+            + self.version.wire_size()
+            + self.server.wire_size()
+            + self.nonce.wire_size()
+            + self.msg_type.wire_size()
+            + self.padding.len()
     }
 
     fn to_wire(&self, cursor: &mut ParseCursor) -> Result<(), Error> {
@@ -372,6 +373,7 @@ mod tests {
     use std::mem::size_of;
 
     use super::*;
+    use crate::protocol_ver::ProtocolVersion;
 
     #[test]
     fn request_plain_wire_roundtrip() {
@@ -407,16 +409,16 @@ mod tests {
     #[test]
     fn request_plain_defaults() {
         let req = RequestPlain::default();
-        assert_eq!(req.version, Version::RfcDraft14);
+        assert_eq!(req.version, RequestedVersions::default());
         assert_eq!(req.msg_type, MessageType::Request);
         assert_eq!(req.nonce, Nonce::from([0u8; 32]));
         assert_eq!(req.padding, [0u8; 940]);
 
         // Verify offsets and tags
-        assert_eq!(req.header.offsets[0], size_of::<Version>() as u32);
+        assert_eq!(req.header.offsets[0], size_of::<ProtocolVersion>() as u32);
         assert_eq!(
             req.header.offsets[1],
-            size_of::<Version>() as u32 + size_of::<Nonce>() as u32
+            size_of::<ProtocolVersion>() as u32 + size_of::<Nonce>() as u32
         );
         assert_eq!(req.header.tags, [Tag::VER, Tag::NONC, Tag::TYPE, Tag::ZZZZ]);
     }
@@ -426,26 +428,26 @@ mod tests {
         let nonce = Nonce::from([0x42; 32]);
         let req = RequestPlain::new(&nonce);
 
-        let mut buf = vec![0u8; size_of::<RequestPlain>()];
+        let mut buf = vec![0u8; req.wire_size()];
         let mut cursor = ParseCursor::new(&mut buf);
         req.to_wire(&mut cursor).unwrap();
-        assert_eq!(cursor.position(), size_of::<RequestPlain>());
+        assert_eq!(cursor.position(), req.wire_size());
         assert_eq!(&buf[36..68], nonce.as_ref());
     }
 
     #[test]
     fn request_srv_defaults() {
         let req = RequestSrv::default();
-        assert_eq!(req.ver(), &Version::RfcDraft14);
+        assert_eq!(req.ver(), &RequestedVersions::default());
         assert_eq!(req.msg_type(), MessageType::Request);
         assert_eq!(req.srv(), &SrvCommitment::from([0u8; 32]));
         assert_eq!(req.nonc(), &Nonce::from([0u8; 32]));
         assert_eq!(req.padding, [0u8; 900]);
 
-        assert_eq!(req.header.offsets[0], size_of::<Version>() as u32);
+        assert_eq!(req.header.offsets[0], req.ver().wire_size() as u32);
         assert_eq!(
             req.header.offsets[1],
-            size_of::<Version>() as u32 + size_of::<SrvCommitment>() as u32
+            req.ver().wire_size() as u32 + req.srv().wire_size() as u32
         );
         assert_eq!(
             req.header.tags,
@@ -459,10 +461,10 @@ mod tests {
         let server = SrvCommitment::from([0xbb; 32]);
         let req = RequestSrv::new(&nonce, &server);
 
-        let mut buf = vec![0u8; size_of::<RequestSrv>()];
+        let mut buf = vec![0u8; req.wire_size()];
         let mut cursor = ParseCursor::new(&mut buf);
         req.to_wire(&mut cursor).unwrap();
-        assert_eq!(cursor.position(), size_of::<RequestSrv>());
+        assert_eq!(cursor.position(), req.wire_size());
         assert_eq!(&buf[44..76], server.as_ref());
         assert_eq!(&buf[76..108], nonce.as_ref());
     }
@@ -483,7 +485,7 @@ mod tests {
 
         let request = RequestPlain::from_wire(&mut cursor).unwrap();
 
-        assert_eq!(request.version, Version::RfcDraft14);
+        assert_eq!(request.version, RequestedVersions::default());
         assert_eq!(
             request.nonce.as_ref()[..8],
             [0x07, 0x10, 0x39, 0xe5, 0x72, 0x33, 0x23, 0x19]
@@ -498,10 +500,7 @@ mod tests {
         let mut data = raw.to_vec();
         let mut cursor = ParseCursor::new(&mut data);
 
-        let result = Request::from_frame(&mut cursor);
-        assert!(result.is_ok());
-
-        match result {
+        match Request::from_frame(&mut cursor) {
             Ok(Srv(req)) => {
                 assert_eq!(
                     req.nonc().as_ref()[..8],
@@ -521,7 +520,7 @@ mod tests {
     fn wrong_msg_type_is_detected() {
         let mut raw = include_bytes!("../testdata/rfc-request.071039e5").to_vec();
         // 12 bytes framing + 32 bytes nonce = 44 = offset to message_type; set it to an invalid value
-        raw[RequestPlain::MSG_TYPE_OFFSET as usize + 44] = 0xaa;
+        raw[80] = 0xaa;
 
         let result = Request::from_frame(&mut ParseCursor::new(&mut raw));
         match result {

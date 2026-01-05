@@ -1,70 +1,132 @@
 use std::fmt::Debug;
-use std::mem::size_of;
-use std::str::FromStr;
-
-use Version::{Google, Invalid, RfcDraft14};
 
 use crate::cursor::ParseCursor;
 use crate::error::Error;
-use crate::error::Error::InvalidVersion;
-use crate::wire::{FromWire, ToWire};
+use crate::protocol_ver::ProtocolVersion;
+use crate::version_list::VersionList;
+use crate::wire::{FromWire, FromWireN, ToWire};
 
-#[repr(u32)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Version {
-    Google = 0x00000000,
-    RfcDraft14 = 0x8000000c,
-    Invalid = 0xffffffff,
+/// The `VER` tag contains a list of uint32 Roughtime protocol version numbers.
+///
+/// ```text
+/// 5.1.1.  VER
+/// In a request, the VER tag contains a list of uint32 version numbers.
+/// The VER tag MUST include at least one Roughtime version supported by
+/// the client and MUST NOT contain more than 32 version numbers.  The
+/// client MUST ensure that the version numbers and tags included in the
+/// request are not incompatible with each other or the packet contents.
+///
+/// The version numbers MUST NOT repeat and MUST be sorted in ascending
+/// numerical order.
+/// ```
+#[derive(Clone, PartialEq, Eq)]
+pub struct RequestedVersions {
+    versions: VersionList,
 }
 
-impl Version {
-    pub fn dele_prefix(&self) -> &'static [u8] {
-        match self {
-            Google => b"RoughTime v1 delegation signature--\x00",
-            RfcDraft14 => b"RoughTime v1 delegation signature\x00",
-            Invalid => panic!("invalid version"),
-        }
-    }
-
-    pub fn srep_prefix(&self) -> &'static [u8] {
-        match self {
-            Google | RfcDraft14 => b"RoughTime v1 response signature\x00",
-            Invalid => panic!("invalid version"),
+impl Default for RequestedVersions {
+    fn default() -> Self {
+        Self {
+            versions: VersionList::new(&[ProtocolVersion::RfcDraft14]),
         }
     }
 }
 
-impl ToWire for Version {
+impl Debug for RequestedVersions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VER")
+            .field("versions", &self.versions())
+            .finish()
+    }
+}
+
+impl RequestedVersions {
+    pub fn new(versions: &[ProtocolVersion]) -> Self {
+        let versions = VersionList::new(versions);
+        Self { versions }
+    }
+
+    pub fn versions(&self) -> &[ProtocolVersion] {
+        self.versions.versions()
+    }
+
+    pub fn is_supported(&self, version: ProtocolVersion) -> bool {
+        self.versions().contains(&version)
+    }
+}
+
+impl ToWire for RequestedVersions {
     fn wire_size(&self) -> usize {
-        size_of::<Self>()
+        self.versions.wire_size()
     }
 
     fn to_wire(&self, cursor: &mut ParseCursor) -> Result<(), Error> {
-        let value = *self as u32;
-        cursor.put_u32_le(value);
+        self.versions.to_wire(cursor)?;
         Ok(())
     }
 }
 
-impl FromWire for Version {
+impl FromWire for RequestedVersions {
     fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
-        let value = cursor.try_get_u32_le()?;
-        match value {
-            0x00000000 => Ok(Google),
-            0x8000000c => Ok(RfcDraft14),
-            _ => Err(InvalidVersion(value)),
-        }
+        RequestedVersions::from_wire_n(cursor, cursor.remaining())
     }
 }
 
-impl FromStr for Version {
-    type Err = Error;
+impl FromWireN for RequestedVersions {
+    fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error> {
+        let versions = VersionList::from_wire_n(cursor, n)?;
+        Ok(Self { versions })
+    }
+}
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_ascii_lowercase().as_str() {
-            "0" | "google-roughtime" => Ok(Google),
-            "1" | "14" | "ietf-roughtime" => Ok(RfcDraft14),
-            _ => Err(InvalidVersion(u32::MAX)),
+impl From<&[ProtocolVersion]> for RequestedVersions {
+    fn from(versions: &[ProtocolVersion]) -> Self {
+        RequestedVersions::new(versions)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wire_roundtrip() {
+        let versions =
+            RequestedVersions::new(&[ProtocolVersion::Google, ProtocolVersion::RfcDraft14]);
+
+        let wire_size = versions.wire_size();
+        let mut buf = vec![0u8; wire_size];
+        {
+            let mut cursor = ParseCursor::new(&mut buf);
+            versions.to_wire(&mut cursor).unwrap();
         }
+
+        let mut cursor = ParseCursor::new(&mut buf);
+        let versions2 = RequestedVersions::from_wire(&mut cursor).unwrap();
+
+        assert_eq!(versions, versions2);
+        assert_eq!(cursor.remaining(), 0);
+    }
+
+    #[test]
+    fn default() {
+        let versions = RequestedVersions::default();
+        assert_eq!(versions.versions(), &[ProtocolVersion::RfcDraft14]);
+    }
+
+    #[test]
+    fn new() {
+        let versions = RequestedVersions::new(&[ProtocolVersion::Google]);
+        assert_eq!(versions.versions(), &[ProtocolVersion::Google]);
+        assert!(versions.is_supported(ProtocolVersion::Google));
+        assert!(!versions.is_supported(ProtocolVersion::RfcDraft14));
+    }
+
+    #[test]
+    fn zero_versions() {
+        let versions = RequestedVersions::new(&[]);
+        assert!(versions.versions().is_empty());
+        assert!(!versions.is_supported(ProtocolVersion::Google));
+        assert!(!versions.is_supported(ProtocolVersion::RfcDraft14));
     }
 }

@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use roughenough_protocol::ToWire;
-use roughenough_protocol::tags::Version::RfcDraft14;
-use roughenough_protocol::tags::{Certificate, Delegation, PublicKey, Signature, Version};
+use roughenough_protocol::tags::ProtocolVersion::RfcDraft14;
+use roughenough_protocol::tags::{Certificate, Delegation, ProtocolVersion, PublicKey, Signature};
 use roughenough_protocol::util::ClockSource;
 
 use crate::online::onlinekey::OnlineKey;
@@ -11,11 +11,11 @@ use crate::seed::SeedBackend;
 /// The server's long-term Ed25519 identity.
 pub struct LongTermIdentity {
     seed: Box<dyn SeedBackend>,
-    version: Version,
+    version: ProtocolVersion,
 }
 
 impl LongTermIdentity {
-    pub fn new(version: Version, seed: Box<dyn SeedBackend>) -> LongTermIdentity {
+    pub fn new(version: ProtocolVersion, seed: Box<dyn SeedBackend>) -> LongTermIdentity {
         assert_eq!(seed.seed_len(), 32, "seed must be 32 bytes long");
 
         LongTermIdentity { seed, version }

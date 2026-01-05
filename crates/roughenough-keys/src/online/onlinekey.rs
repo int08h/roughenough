@@ -2,7 +2,8 @@ use aws_lc_rs::signature::{Ed25519KeyPair, KeyPair};
 use roughenough_protocol::ToWire;
 use roughenough_protocol::cursor::ParseCursor;
 use roughenough_protocol::tags::{
-    Certificate, MerkleRoot, PublicKey, Signature, SignedResponse, SupportedVersions, Version,
+    Certificate, MerkleRoot, ProtocolVersion, PublicKey, Signature, SignedResponse,
+    SupportedVersions,
 };
 use roughenough_protocol::util::ClockSource;
 
@@ -17,14 +18,14 @@ use roughenough_protocol::util::ClockSource;
 pub struct OnlineKey {
     signer: OnlineSigner,
     cert: Certificate,
-    version: Version,
+    version: ProtocolVersion,
     clock_source: ClockSource,
     template_srep: SignedResponse,
     signing_buf: Vec<u8>,
 }
 
 impl OnlineKey {
-    pub fn new(version: Version, clock_source: ClockSource) -> OnlineKey {
+    pub fn new(version: ProtocolVersion, clock_source: ClockSource) -> OnlineKey {
         let mut srep = SignedResponse::default();
         srep.set_radi(SignedResponse::DEFAULT_RADI_SECONDS);
         srep.set_vers(&SupportedVersions::from([version].as_ref()));

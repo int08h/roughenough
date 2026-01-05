@@ -8,7 +8,7 @@ use roughenough_keys::seed::MemoryBackend;
 use roughenough_protocol::cursor::ParseCursor;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::response::Response;
-use roughenough_protocol::tags::{Nonce, Version};
+use roughenough_protocol::tags::{Nonce, ProtocolVersion};
 use roughenough_protocol::util::ClockSource;
 use roughenough_protocol::{FromFrame, ToFrame};
 
@@ -35,7 +35,12 @@ impl TestContext {
         let clock = ClockSource::new_mock(now);
         let seed = Box::new(MemoryBackend::from_value(&[42u8; 32]));
         let approx_90_days = Duration::from_secs(8_000_000);
-        let key_source = KeySource::new(Version::RfcDraft14, seed, clock.clone(), approx_90_days);
+        let key_source = KeySource::new(
+            ProtocolVersion::RfcDraft14,
+            seed,
+            clock.clone(),
+            approx_90_days,
+        );
         let response_handler = ResponseHandler::new(batch_size, key_source.clone());
 
         TestContext {

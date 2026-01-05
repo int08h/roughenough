@@ -22,5 +22,6 @@ pub use root::*;
 pub use sig::*;
 pub use srep::*;
 pub use srv::*;
-pub use ver::*;
 pub use vers::*;
+
+pub use crate::protocol_ver::*;

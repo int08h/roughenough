@@ -2,7 +2,7 @@
 mod tests {
     use std::time::Duration;
 
-    use roughenough_protocol::tags::Version;
+    use roughenough_protocol::tags::ProtocolVersion;
     use roughenough_protocol::util::ClockSource;
 
     use crate::longterm::LongTermIdentity;
@@ -31,7 +31,7 @@ mod tests {
         let validity_duration = Duration::from_secs(3600); // 1 hour
 
         let backend = Box::new(MemoryBackend::from_random());
-        let mut identity = LongTermIdentity::new(Version::RfcDraft14, backend);
+        let mut identity = LongTermIdentity::new(ProtocolVersion::RfcDraft14, backend);
 
         // When: An online key is created
         let online_key = identity.make_online_key(&clock, validity_duration);
@@ -48,7 +48,7 @@ mod tests {
         let validity_duration = Duration::from_secs(3600);
 
         let backend = Box::new(MemoryBackend::from_random());
-        let mut identity = LongTermIdentity::new(Version::RfcDraft14, backend);
+        let mut identity = LongTermIdentity::new(ProtocolVersion::RfcDraft14, backend);
         let online_key = identity.make_online_key(&clock, validity_duration);
 
         // Initially, key should not be expired
@@ -78,7 +78,7 @@ mod tests {
         let rotation_interval = 50u64; // Rotate every 50 seconds
 
         let backend = Box::new(MemoryBackend::from_random());
-        let mut identity = LongTermIdentity::new(Version::RfcDraft14, backend);
+        let mut identity = LongTermIdentity::new(ProtocolVersion::RfcDraft14, backend);
 
         let mut keys = Vec::new();
         let mut current_time = start_time;
@@ -123,7 +123,7 @@ mod tests {
         let validity_duration = Duration::from_secs(3600);
 
         let backend = Box::new(MemoryBackend::from_random());
-        let mut identity = LongTermIdentity::new(Version::RfcDraft14, backend);
+        let mut identity = LongTermIdentity::new(ProtocolVersion::RfcDraft14, backend);
         let mut online_key = identity.make_online_key(&clock, validity_duration);
 
         // Advance to 1 second before expiration
@@ -148,7 +148,7 @@ mod tests {
         let rotation_interval = 1800u64; // 30 minute rotation
 
         let backend = Box::new(MemoryBackend::from_random());
-        let mut identity = LongTermIdentity::new(Version::RfcDraft14, backend);
+        let mut identity = LongTermIdentity::new(ProtocolVersion::RfcDraft14, backend);
 
         // Create first key
         let first_key = identity.make_online_key(&clock, validity_duration);
@@ -186,7 +186,7 @@ mod tests {
         let validity_duration = Duration::from_secs(3600);
 
         let backend = Box::new(MemoryBackend::from_random());
-        let mut identity = LongTermIdentity::new(Version::RfcDraft14, backend);
+        let mut identity = LongTermIdentity::new(ProtocolVersion::RfcDraft14, backend);
         let mut online_key = identity.make_online_key(&clock, validity_duration);
 
         // Create SREP and verify it has correct properties
@@ -194,7 +194,7 @@ mod tests {
         let (srep, _) = online_key.make_srep(&merkle_root);
 
         assert_eq!(srep.midp(), start_time);
-        assert_eq!(*srep.ver(), Version::RfcDraft14);
+        assert_eq!(*srep.ver(), ProtocolVersion::RfcDraft14);
         assert_eq!(srep.root(), &merkle_root);
     }
 }
