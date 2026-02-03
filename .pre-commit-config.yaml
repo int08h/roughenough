@@ -1,0 +1,16 @@
+repos:
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        language: system
+        entry: cargo +nightly fmt --check
+        pass_filenames: false
+        files: '\.rs$'
+
+      - id: cargo-clippy
+        name: cargo clippy
+        language: system
+        entry: cargo clippy -- -D warnings
+        pass_filenames: false
+        files: '\.rs$'
