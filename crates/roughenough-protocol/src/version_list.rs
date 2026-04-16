@@ -44,7 +44,7 @@ impl Default for VersionList {
     fn default() -> Self {
         Self {
             num_versions: 0,
-            versions: [ProtocolVersion::Invalid; Self::MAX_VERSIONS],
+            versions: [ProtocolVersion::INVALID; Self::MAX_VERSIONS],
         }
     }
 }
@@ -103,7 +103,7 @@ impl FromWireN for VersionList {
     fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error> {
         let mut remaining = n;
         let mut vers = VersionList::default();
-        let mut prior_version = ProtocolVersion::Google;
+        let mut prior_version = ProtocolVersion::GOOGLE;
         let mut index = 0;
 
         while remaining > 0 && index < Self::MAX_VERSIONS {
@@ -112,7 +112,7 @@ impl FromWireN for VersionList {
             // This implementation verifies that the versions are in ascending order,
             // but does not consider duplicates an error. That might change in the future.
             if version < prior_version {
-                return Err(UnorderedVersion(index as u32, version as u32));
+                return Err(UnorderedVersion(index as u32, version.0));
             }
 
             vers.versions[index] = version;
@@ -138,7 +138,7 @@ mod tests {
 
     #[test]
     fn wire_roundtrip() {
-        let versions = VersionList::new(&[ProtocolVersion::Google, ProtocolVersion::RfcDraft14]);
+        let versions = VersionList::new(&[ProtocolVersion::GOOGLE, ProtocolVersion::DRAFT_14]);
 
         let wire_size = versions.wire_size();
         let mut buf = vec![0u8; wire_size];
@@ -162,24 +162,24 @@ mod tests {
 
     #[test]
     fn new() {
-        let versions = VersionList::new(&[ProtocolVersion::Google]);
-        assert_eq!(versions.versions(), &[ProtocolVersion::Google]);
-        assert!(versions.is_supported(ProtocolVersion::Google));
-        assert!(!versions.is_supported(ProtocolVersion::RfcDraft14));
+        let versions = VersionList::new(&[ProtocolVersion::GOOGLE]);
+        assert_eq!(versions.versions(), &[ProtocolVersion::GOOGLE]);
+        assert!(versions.is_supported(ProtocolVersion::GOOGLE));
+        assert!(!versions.is_supported(ProtocolVersion::DRAFT_14));
     }
 
     #[test]
     fn zero_versions() {
         let versions = VersionList::new(&[]);
         assert!(versions.versions().is_empty());
-        assert!(!versions.is_supported(ProtocolVersion::Google));
-        assert!(!versions.is_supported(ProtocolVersion::RfcDraft14));
+        assert!(!versions.is_supported(ProtocolVersion::GOOGLE));
+        assert!(!versions.is_supported(ProtocolVersion::DRAFT_14));
     }
 
     #[test]
     fn max_versions() {
         let tmp = (0..VersionList::MAX_VERSIONS * 2)
-            .map(|_| ProtocolVersion::RfcDraft14)
+            .map(|_| ProtocolVersion::DRAFT_14)
             .collect::<Vec<_>>();
 
         let versions = VersionList::new(&tmp);
@@ -190,8 +190,8 @@ mod tests {
 
     #[test]
     fn versions_out_of_order() {
-        // Create a VersionList with versions in descending order (RfcDraft14 > Google)
-        let versions = VersionList::new(&[ProtocolVersion::RfcDraft14, ProtocolVersion::Google]);
+        // Create a VersionList with versions in descending order (DRAFT_14 > Google)
+        let versions = VersionList::new(&[ProtocolVersion::DRAFT_14, ProtocolVersion::GOOGLE]);
 
         // Serialize to wire format
         let mut buf = vec![0u8; versions.wire_size()];

@@ -81,7 +81,7 @@ mod tests {
     #[should_panic]
     fn zero_validity_duration_panics() {
         // Given an attempt to create a KeySource
-        let version = roughenough_protocol::tags::ProtocolVersion::RfcDraft14;
+        let version = roughenough_protocol::tags::ProtocolVersion::DRAFT_14;
         let seed: Box<dyn roughenough_keys::seed::SeedBackend> =
             Box::new(MemoryBackend::from_random());
         let clock = ClockSource::System;
@@ -102,7 +102,7 @@ mod tests {
 
         let backend = Box::new(MemoryBackend::from_random());
         let key_source = KeySource::new(
-            ProtocolVersion::RfcDraft14,
+            ProtocolVersion::DRAFT_14,
             backend,
             clock.clone(),
             validity_duration,
@@ -136,7 +136,7 @@ mod tests {
 
         let backend = Box::new(MemoryBackend::from_random());
         let key_source = Arc::new(KeySource::new(
-            ProtocolVersion::RfcDraft14,
+            ProtocolVersion::DRAFT_14,
             backend,
             clock.clone(),
             validity_duration,
@@ -217,7 +217,7 @@ mod tests {
 
         let backend = Box::new(MemoryBackend::from_random());
         let key_source = KeySource::new(
-            ProtocolVersion::RfcDraft14,
+            ProtocolVersion::DRAFT_14,
             backend,
             clock.clone(),
             validity_duration,

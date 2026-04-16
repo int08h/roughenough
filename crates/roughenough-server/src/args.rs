@@ -157,7 +157,7 @@ impl Args {
 
     pub fn version(&self) -> ProtocolVersion {
         match self.protocol {
-            ProtocolVersionArg::V14 => ProtocolVersion::RfcDraft14,
+            ProtocolVersionArg::V14 => ProtocolVersion::DRAFT_14,
         }
     }
 

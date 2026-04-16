@@ -21,9 +21,9 @@ struct FuzzVersion {
 impl From<FuzzVersion> for Version {
     fn from(fuzz: FuzzVersion) -> Self {
         match fuzz.version % 3 {
-            0 => Version::Google,
-            1 => Version::RfcDraft14,
-            _ => Version::Invalid,
+            0 => Version::GOOGLE,
+            1 => Version::DRAFT_14,
+            _ => Version::INVALID,
         }
     }
 }
@@ -106,11 +106,11 @@ impl FuzzSupportedVersions {
             .iter()
             .take(SupportedVersions::MAX_VERSIONS) // Limit number of versions
             .map(|v| Version::from(v.clone()))
-            .filter(|v| *v != Version::Invalid)
+            .filter(|v| *v != Version::INVALID)
             .collect();
         
         if versions.is_empty() {
-            SupportedVersions::from(&[Version::RfcDraft14][..])
+            SupportedVersions::from(&[Version::DRAFT_14][..])
         } else {
             SupportedVersions::from(&versions[..])
         }

@@ -46,7 +46,7 @@ fn create_request_handler() -> RequestHandler {
 
     let seed = Box::new(MemoryBackend::from_random());
     let ks = KeySource::new(
-        ProtocolVersion::RfcDraft14,
+        ProtocolVersion::DRAFT_14,
         seed,
         ClockSource::System,
         Duration::from_secs(60),

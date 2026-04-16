@@ -90,7 +90,7 @@ impl Default for SignedResponse {
     fn default() -> Self {
         let mut srep = Self {
             header: Header5::default(),
-            version: ProtocolVersion::Invalid,
+            version: ProtocolVersion::INVALID,
             radius: 0,
             midpoint: 0,
             supported_versions: SupportedVersions::default(),
@@ -172,12 +172,12 @@ mod tests {
 
     fn create_valid_signed_response() -> SignedResponse {
         let mut srep = SignedResponse::default();
-        srep.set_ver(ProtocolVersion::RfcDraft14);
+        srep.set_ver(ProtocolVersion::DRAFT_14);
         srep.set_radi(5);
         srep.set_midp(1234567);
         srep.set_vers(&SupportedVersions::new(&[
-            ProtocolVersion::Google,
-            ProtocolVersion::RfcDraft14,
+            ProtocolVersion::GOOGLE,
+            ProtocolVersion::DRAFT_14,
         ]));
         srep.set_root(&MerkleRoot::from([0x2e; 32]));
 
@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn default_value() {
         let srep = SignedResponse::default();
-        assert_eq!(srep.ver(), &ProtocolVersion::Invalid);
+        assert_eq!(srep.ver(), &ProtocolVersion::INVALID);
         assert_eq!(srep.radi(), 0);
         assert_eq!(srep.midp(), 0);
         assert_eq!(srep.vers(), &SupportedVersions::default());

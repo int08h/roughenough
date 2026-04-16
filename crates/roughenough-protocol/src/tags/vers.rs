@@ -71,7 +71,7 @@ mod tests {
     #[test]
     fn wire_roundtrip() {
         let versions =
-            SupportedVersions::new(&[ProtocolVersion::Google, ProtocolVersion::RfcDraft14]);
+            SupportedVersions::new(&[ProtocolVersion::GOOGLE, ProtocolVersion::DRAFT_14]);
 
         let wire_size = versions.wire_size();
         let mut buf = vec![0u8; wire_size];
@@ -95,17 +95,17 @@ mod tests {
 
     #[test]
     fn new() {
-        let versions = SupportedVersions::new(&[ProtocolVersion::Google]);
-        assert_eq!(versions.versions(), &[ProtocolVersion::Google]);
-        assert!(versions.is_supported(ProtocolVersion::Google));
-        assert!(!versions.is_supported(ProtocolVersion::RfcDraft14));
+        let versions = SupportedVersions::new(&[ProtocolVersion::GOOGLE]);
+        assert_eq!(versions.versions(), &[ProtocolVersion::GOOGLE]);
+        assert!(versions.is_supported(ProtocolVersion::GOOGLE));
+        assert!(!versions.is_supported(ProtocolVersion::DRAFT_14));
     }
 
     #[test]
     fn zero_versions() {
         let versions = SupportedVersions::new(&[]);
         assert!(versions.versions().is_empty());
-        assert!(!versions.is_supported(ProtocolVersion::Google));
-        assert!(!versions.is_supported(ProtocolVersion::RfcDraft14));
+        assert!(!versions.is_supported(ProtocolVersion::GOOGLE));
+        assert!(!versions.is_supported(ProtocolVersion::DRAFT_14));
     }
 }

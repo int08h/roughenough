@@ -36,7 +36,7 @@ impl TestContext {
         let seed = Box::new(MemoryBackend::from_value(&[42u8; 32]));
         let approx_90_days = Duration::from_secs(8_000_000);
         let key_source = KeySource::new(
-            ProtocolVersion::RfcDraft14,
+            ProtocolVersion::DRAFT_14,
             seed,
             clock.clone(),
             approx_90_days,

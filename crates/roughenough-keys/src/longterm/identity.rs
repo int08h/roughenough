@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use roughenough_protocol::ToWire;
-use roughenough_protocol::tags::ProtocolVersion::RfcDraft14;
 use roughenough_protocol::tags::{Certificate, Delegation, ProtocolVersion, PublicKey, Signature};
 use roughenough_protocol::util::ClockSource;
 
@@ -51,7 +50,7 @@ impl LongTermIdentity {
         let pubkey = PublicKey::from(olk.public_key_bytes());
         let dele = Delegation::new(pubkey, now, validity_length);
 
-        let mut to_sign = RfcDraft14.dele_prefix().to_vec();
+        let mut to_sign = ProtocolVersion::DRAFT_14.dele_prefix().to_vec();
         to_sign.extend_from_slice(&dele.as_bytes().expect("DELE serialization should not fail"));
 
         let dele_sig: [u8; 64] = self

@@ -210,8 +210,9 @@ mod tests {
     use crate::header::Header;
     use crate::response::Response;
     use crate::tag::Tag;
-    use crate::tags::ProtocolVersion::{Google, RfcDraft14};
-    use crate::tags::{MerklePath, MessageType, SignedResponse, SupportedVersions};
+    use crate::tags::{
+        MerklePath, MessageType, ProtocolVersion, SignedResponse, SupportedVersions,
+    };
     use crate::wire::FromFrame;
 
     #[test]
@@ -237,12 +238,12 @@ mod tests {
         //             offsets: [ 4, 8, 16, 24, ],
         //             tags: [ VER, RADI, MIDP, VERS, ROOT, ],
         //         },
-        //         version: RfcDraft14,
+        //         version: ProtocolVersion::DRAFT_14,
         //         radius: 5,
         //         midpoint: 1748359193,
         //         supported_versions: VERS {
         //             num_versions: 2,
-        //             versions: [ Google, RfcDraft14, ],
+        //             versions: [ Google, ProtocolVersion::DRAFT_14, ],
         //         },
         //         merkle_root: ROOT(1ecf2ead5837a00dc01d2875bdb16c2be094da36115dce7966e320e31345bb97),
         //     },
@@ -303,10 +304,13 @@ mod tests {
             srep.header().tags(),
             [Tag::VER, Tag::RADI, Tag::MIDP, Tag::VERS, Tag::ROOT]
         );
-        assert_eq!(*srep.ver(), RfcDraft14);
+        assert_eq!(*srep.ver(), ProtocolVersion::DRAFT_14);
         assert_eq!(srep.radi(), 5);
         assert_eq!(srep.midp(), 1748359193);
-        assert_eq!(srep.vers().versions(), &[Google, RfcDraft14]);
+        assert_eq!(
+            srep.vers().versions(),
+            &[ProtocolVersion::GOOGLE, ProtocolVersion::DRAFT_14]
+        );
         assert_eq!(srep.root().as_ref().len(), 32);
         assert_eq!(
             srep.root().as_ref()[..8],
@@ -344,12 +348,15 @@ mod tests {
         assert_eq!(response.header.offsets, [64, 96, 100, 292, 380, 532]);
 
         let mut srep = SignedResponse::default();
-        srep.set_vers(&SupportedVersions::new(&[Google, RfcDraft14]));
+        srep.set_vers(&SupportedVersions::new(&[
+            ProtocolVersion::GOOGLE,
+            ProtocolVersion::DRAFT_14,
+        ]));
         response.set_srep(srep);
         assert_eq!(response.header.offsets, [64, 96, 100, 292, 388, 540]);
 
         let mut srep = SignedResponse::default();
-        srep.set_vers(&SupportedVersions::new(&[RfcDraft14]));
+        srep.set_vers(&SupportedVersions::new(&[ProtocolVersion::DRAFT_14]));
         response.set_srep(srep);
         assert_eq!(response.header.offsets, [64, 96, 100, 292, 384, 536]);
     }
