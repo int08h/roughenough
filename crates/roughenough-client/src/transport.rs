@@ -25,8 +25,14 @@ pub struct UdpTransport {
 }
 
 impl UdpTransport {
-    pub fn new(timeout: Duration) -> Self {
-        let socket = UdpSocket::bind("0.0.0.0:0").unwrap();
+    pub fn new(addr: SocketAddr, timeout: Duration) -> Self {
+        let bind_addr: SocketAddr = if addr.is_ipv6() {
+            "[::]:0".parse().unwrap()
+        } else {
+            "0.0.0.0:0".parse().unwrap()
+        };
+
+        let socket = UdpSocket::bind(bind_addr).unwrap();
         socket.set_read_timeout(Some(timeout)).unwrap();
         socket.set_write_timeout(Some(timeout)).unwrap();
 
