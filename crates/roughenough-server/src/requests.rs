@@ -22,12 +22,9 @@ impl RequestHandler {
     }
 
     pub fn collect_request(&mut self, request_bytes: &mut [u8], src_addr: SocketAddr) {
-        // Reject requests != 1024 bytes
+        // RFC 5.1: request size SHOULD be at least 1024 bytes for UDP
         if request_bytes.len() < REQUEST_SIZE {
             self.metrics.num_runt_requests += 1;
-            return;
-        } else if request_bytes.len() > REQUEST_SIZE {
-            self.metrics.num_jumbo_requests += 1;
             return;
         }
 
@@ -127,16 +124,18 @@ mod tests {
     }
 
     #[test]
-    fn test_process_jumbo_request() {
+    fn test_oversized_request_is_accepted() {
         let mut handler = create_request_handler();
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-        let mut large_request = vec![0u8; REQUEST_SIZE + 1];
 
-        handler.collect_request(&mut large_request, addr);
+        // Build a valid request, then extend it with extra padding
+        let mut request_bytes = create_test_request_bytes(42);
+        request_bytes.extend_from_slice(&[0u8; 12]);
+
+        handler.collect_request(&mut request_bytes, addr);
 
         let metrics = handler.metrics();
-        assert_eq!(metrics.num_ok_requests, 0);
-        assert_eq!(metrics.num_jumbo_requests, 1);
+        assert_eq!(metrics.num_ok_requests, 1);
     }
 
     #[test]

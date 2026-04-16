@@ -90,7 +90,7 @@ impl ToFrame for Request {}
 
 impl FromWire for Request {
     fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
-        if cursor.remaining() != 1012 {
+        if cursor.remaining() < 1012 {
             return Err(BadRequestSize(cursor.remaining()));
         }
 

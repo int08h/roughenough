@@ -21,7 +21,8 @@ pub enum CollectResult {
 }
 
 impl NetworkHandler {
-    const RECV_BUFFER_SIZE: usize = 1024;
+    // Large enough to receive any non-fragmented UDP payload (1500 MTU - 20 IP - 8 UDP)
+    const RECV_BUFFER_SIZE: usize = 1472;
 
     pub fn new(batch_size: usize) -> Self {
         Self {
