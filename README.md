@@ -150,10 +150,11 @@ Thank you to all past and present contributors:
 * Greg at Unrelenting Tech (github.com/unrelentingtech)
 * Eric Swanson (github.com/lachesis)
 * Marcus Dansarie (github.com/dansarie)
+* Marco Davids (github.com/mdavids)
 
 ## License
 
-Copyright (c) 2025 the Roughenough Project Contributors.
+Copyright (c) 2025-2026 the Roughenough Project Contributors.
 
 Roughenough is licensed under either of
 
