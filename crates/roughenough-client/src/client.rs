@@ -158,7 +158,7 @@ impl ClientBuilder {
 
         let transport = self
             .transport
-            .unwrap_or_else(|| Box::new(UdpTransport::new(timeout)));
+            .unwrap_or_else(|| Box::new(UdpTransport::new(&self.server, timeout)));
 
         let srv_commit = self
             .public_key
