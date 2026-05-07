@@ -15,7 +15,7 @@ I'll respond when I can and work on a fix as time permits.
 
 ### Cryptography
 - Uses aws-lc-rs for Ed25519 signatures and SHA-512 hashing
-- Follows Roughtime RFC specification (draft-ietf-ntp-roughtime-14)
+- Follows Roughtime RFC specification (draft-ietf-ntp-roughtime-19)
 
 ### Key Protection
 Online keys have multiple options for secure storage:

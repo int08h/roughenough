@@ -53,8 +53,8 @@ pub struct Args {
         short = 'P',
         long,
         value_name = "PROTOCOL",
-        help = "Roughtime version to send; 0 = Google, 14 = RFC draft 14",
-        default_value_t = 14
+        help = "Roughtime version to send; 0 = Google, 19 = RFC draft 19",
+        default_value_t = 19
     )]
     pub protocol: usize,
 
