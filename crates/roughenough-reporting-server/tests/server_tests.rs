@@ -102,7 +102,7 @@ fn create_test_malfeasance_report() -> MalfeasanceReport {
     let measurement1 = MeasurementBuilder::new()
         .server("127.0.0.1:8080".parse().unwrap())
         .hostname("test-server".to_string())
-        .public_key(Some(public_key.clone()))
+        .public_key(Some(public_key))
         .request(request1)
         .response(response1.clone())
         .rand_value(None)
