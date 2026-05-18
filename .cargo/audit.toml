@@ -3,6 +3,12 @@ ignore = [
     # Advisory on private key recovery via RSA side-channels. Irrelevant because we don't
     # use RSA keys at all.
     "RUSTSEC-2023-0071",
+
     # paste crate is unmaintained, it's a 3rd-party dependency via cryptoki.
     "RUSTSEC-2024-0436",
+
+    # these 3 are for rustls-webpki, AWS crates pull this specific (vulnerable) version in
+    "RUSTSEC-2026-0098",
+    "RUSTSEC-2026-0099",
+    "RUSTSEC-2026-0104",
 ]
