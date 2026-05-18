@@ -1,4 +1,4 @@
-use cryptoki::context::{CInitializeArgs, Pkcs11};
+use cryptoki::context::{CInitializeArgs, CInitializeFlags, Pkcs11};
 use cryptoki::mechanism::Mechanism;
 use cryptoki::mechanism::eddsa::EddsaParams;
 use cryptoki::mechanism::eddsa::EddsaSignatureScheme::Ed25519;
@@ -24,7 +24,8 @@ impl Pkcs11Backend {
     ) -> Result<Pkcs11Backend, BackendError> {
         debug!("Opening PKCS11 library: {}", lib_path);
         let library = Pkcs11::new(lib_path)?;
-        library.initialize(CInitializeArgs::OsThreads)?;
+        let args = CInitializeArgs::new(CInitializeFlags::OS_LOCKING_OK);
+        library.initialize(args)?;
 
         let info = library.get_library_info()?;
         debug!(
