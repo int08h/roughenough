@@ -15,12 +15,15 @@ roughenough-keys = { path = "crates/roughenough-keys", version = "2.0.0" }
 roughenough-merkle = { path = "crates/roughenough-merkle", version = "2.0.0" }
 roughenough-protocol = { path = "crates/roughenough-protocol", version = "2.0.0" }
 roughenough-server = { path = "crates/roughenough-server", version = "2.0.0" }
+roughenough-reporting-server = { path = "crates/roughenough-reporting-server", version = "2.0.0" }
 
 # External dependencies
 aws-config = "1.8"
 aws-lc-rs = "1.17"
 aws-sdk-kms = "1.106"
 aws-sdk-secretsmanager = "1.104"
+axum = "0.8"
+async-trait = "0.1"
 jiff = { version = "0.2", features = ["serde"] }
 clap = "4.6"
 crc32c = "0.6"
@@ -35,6 +38,7 @@ google-cloud-secretmanager-v1 = "1.9"
 libc = "0.2.177"
 mio = "1.2"
 pastey = "0.2"
+reqwest = "0.13"
 serde = "1.0"
 serde_json = "1.0"
 socket2 = "0.6"
@@ -43,8 +47,10 @@ ssh-key = "0.6"
 thiserror = "2.0"
 time-format = "1.2"
 tokio = "1"
+tower = "0.5"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+ulid = "1.2"
 ureq = "3.3"
 zeroize = "1.8"
 
@@ -62,6 +68,7 @@ members = [
     "crates/roughenough-protocol",
     "crates/roughenough-keys",
     "crates/roughenough-server",
+    "crates/roughenough-reporting-server"
 ]
 default-members = [
     "crates/roughenough-client",
@@ -71,10 +78,10 @@ default-members = [
     "crates/roughenough-protocol",
     "crates/roughenough-keys",
     "crates/roughenough-server",
+    "crates/roughenough-reporting-server"
 ]
 exclude = [
     "fuzz",
-    "crates/roughenough-reporting-server"
 ]
 
 [profile.release]

@@ -18,25 +18,25 @@ path = "src/main.rs"
 roughenough-client = { path = "../roughenough-client" }
 roughenough-common = { path = "../roughenough-common" }
 roughenough-protocol = { path = "../roughenough-protocol" }
-async-trait = "0.1"
-aws-lc-rs = "1"
-axum = "0.8"
-jiff = { version = "0.1", features = ["serde"] }
-data-encoding = "2"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-thiserror = "2"
-tokio = { version = "1", features = ["full"] }
-tower = "0.5"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-ulid = "1"
+async-trait = { workspace = true }
+aws-lc-rs = { workspace = true }
+axum = { workspace = true }
+jiff = { workspace = true, features = ["serde"] }
+data-encoding = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tower = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+ulid = { workspace = true }
 
 [dev-dependencies]
 roughenough-common = { path = "../roughenough-common" }
 roughenough-server = { path = "../roughenough-server", features = ["test-utils"] }
 roughenough-keys = { path = "../roughenough-keys" }
 roughenough-merkle = { path = "../roughenough-merkle" }
-aws-lc-rs = "1"
-reqwest = { version = "0.12", features = ["json"] }
-tower = { version = "0.5", features = ["util"] }
+aws-lc-rs = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+tower = { workspace = true, features = ["util"] }
