@@ -76,28 +76,23 @@ impl Drop for TestServer {
 
 /// Create a test malfeasance report with proper chaining
 fn create_test_malfeasance_report() -> MalfeasanceReport {
-    // Create first context and request/response pair
     let mut ctx1 = TestContext::new(1);
+    let mut ctx2 = TestContext::new(1);
+    let current_time = ctx2.clock.epoch_seconds();
+
     let nonce1 = Nonce::from([0x11u8; 32]);
-    // Use current time for valid delegation
-    let current_time = ctx1.clock.epoch_seconds();
-    // First measurement will have a later time (measurement_i)
+    // First measurement (measurement_i) will have a later time
     let (request1, response1) =
         ctx1.create_interaction_pair_with_nonce(current_time + 2_000_000, &nonce1);
 
-    // rand value for chaining
     let rand_value = [0x22u8; 32];
-
-    // Calculate nonce for second request: SHA512(response1 || rand)[0:32]
     let nonce2 = calculate_chained_nonce(&response1, &rand_value);
 
-    // Create second context with same seed for same keys
-    let mut ctx2 = TestContext::new(1);
-    // Second measurement will have an earlier time (measurement_j) - this creates the causality violation
+    // Second measurement (measurement_j) uses the earlier time - this creates the causality violation
     let (request2, response2) = ctx2.create_interaction_pair_with_nonce(current_time, &nonce2);
 
-    // Get the public key from the long-term key (same for both contexts due to same seed)
-    let public_key = ctx1.key_source.public_key();
+    // Get the public key from the long-term key (ctx1 and ctx2 have same seed, so same pubkey)
+    let public_key = ctx2.key_source.public_key();
 
     let measurement1 = MeasurementBuilder::new()
         .server("127.0.0.1:8080".parse().unwrap())
