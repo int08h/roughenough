@@ -9,11 +9,11 @@ verifiable time synchronization.
 
 ## Features
 
-- **RFC Compliant**: Full implementation of the Roughtime RFC specification
-- **High Performance Server**: Performance oriented asynchronous UDP server 
-- **Flexible Client**: Command-line client with multiple output formats and server validation
-- **Malfeasance Reporting**: Clients can (optionally) report malfeasance to a remote server for analysis
-- **Key Management**: Multiple backends for secure key and identity protection (KMS, Secret Manager, Linux KRS, 
+- Full implementation of the (draft) Roughtime RFC specification
+- Command-line client with multiple output formats and server validation
+- Performance oriented asynchronous UDP server 
+- Clients can (optionally) report malfeasance to a remote server for analysis
+- Multiple backends for secure key and identity protection (KMS, Secret Manager, Linux KRS, 
   SSH agent, PKCS#11)
 
 ## Quick Start
@@ -99,21 +99,21 @@ target/debug/roughenough_integration_test
 
 Roughtime is structured as a Cargo workspace with multiple crates:
 
-- **protocol**: Core wire format handling, request/response types, data structures
-- **merkle**: Merkle tree implementation with Roughtime-specific tweaks
-- **server**: High-performance UDP server with async I/O and batching
-- **client**: Command-line client for querying Roughtime servers
-- **common**: Shared cryptography and encoding utilities
-- **keys**: Key material handling with multiple secure storage backends
-- **reporting-server**: Web server for collecting malfeasance reports
-- **integration**: End-to-end integration tests
-- **fuzz**: Fuzzing harness
+- **protocol** - Core wire format handling, request/response types, data structures
+- **merkle** - Merkle tree implementation with Roughtime-specific tweaks
+- **server** - High-performance UDP server with async I/O and batching
+- **client** - Command-line client for querying Roughtime servers
+- **common** - Shared cryptography and encoding utilities
+- **keys** - Key material handling with multiple secure storage backends
+- **reporting-server** - Web server for collecting malfeasance reports
+- **integration** - End-to-end integration tests
+- **fuzz** - Fuzzing harness
 
 ## Optional Features
 
 ### Client Features
 
-- **reporting**: Enable clients to report malfeasance to a remote server
+- **reporting** - Enables clients to report malfeasance to a remote server
   ```bash
   cargo build -p client --features reporting
   cargo run --bin roughenough_client -- hostname.com 2002 --report
