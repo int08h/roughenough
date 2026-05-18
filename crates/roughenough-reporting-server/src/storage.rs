@@ -59,7 +59,7 @@ impl ReportStorage for InMemoryStorage {
     async fn list(&self, limit: usize) -> Result<Vec<StoredReport>, StorageError> {
         let reports = self.reports.lock().unwrap();
         let mut items: Vec<_> = reports.values().cloned().collect();
-        items.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        items.sort_by_key(|a| a.timestamp);
         items.truncate(limit);
         Ok(items)
     }
