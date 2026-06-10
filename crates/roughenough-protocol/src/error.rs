@@ -2,7 +2,7 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("request size is not 1012 bytes: {0} bytes")]
+    #[error("request is smaller than 1012 bytes: {0} bytes")]
     BadRequestSize(usize),
 
     #[error("buffer too small: {0} bytes needed, {1} bytes available")]

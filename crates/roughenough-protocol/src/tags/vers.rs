@@ -70,7 +70,7 @@ mod tests {
 
     #[test]
     fn wire_roundtrip() {
-        let versions = SupportedVersions::new(&[ProtocolVersion::RfcDraft19]);
+        let versions = SupportedVersions::new(&[ProtocolVersion::DRAFT]);
 
         let wire_size = versions.wire_size();
         let mut buf = vec![0u8; wire_size];
@@ -94,15 +94,15 @@ mod tests {
 
     #[test]
     fn new() {
-        let versions = SupportedVersions::new(&[ProtocolVersion::RfcDraft19]);
-        assert_eq!(versions.versions(), &[ProtocolVersion::RfcDraft19]);
-        assert!(versions.is_supported(ProtocolVersion::RfcDraft19));
+        let versions = SupportedVersions::new(&[ProtocolVersion::DRAFT]);
+        assert_eq!(versions.versions(), &[ProtocolVersion::DRAFT]);
+        assert!(versions.is_supported(ProtocolVersion::DRAFT));
     }
 
     #[test]
     fn zero_versions() {
         let versions = SupportedVersions::new(&[]);
         assert!(versions.versions().is_empty());
-        assert!(!versions.is_supported(ProtocolVersion::RfcDraft19));
+        assert!(!versions.is_supported(ProtocolVersion::DRAFT));
     }
 }

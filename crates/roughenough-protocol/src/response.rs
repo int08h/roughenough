@@ -241,8 +241,9 @@ mod tests {
     use crate::header::Header;
     use crate::response::Response;
     use crate::tag::Tag;
-    use crate::tags::ProtocolVersion::RfcDraft19;
-    use crate::tags::{MerklePath, MessageType, SignedResponse, SupportedVersions};
+    use crate::tags::{
+        MerklePath, MessageType, ProtocolVersion, SignedResponse, SupportedVersions,
+    };
     use crate::util::test_utils::{frame, insert_tag, replace_value, value_range};
     use crate::wire::FromFrame;
 
@@ -265,7 +266,7 @@ mod tests {
             response.nonc().as_ref()[..8],
             [0x4c, 0x16, 0xc6, 0x19, 0xd7, 0x71, 0x6f, 0xae]
         );
-        assert_eq!(*response.srep().ver(), RfcDraft19);
+        assert_eq!(*response.srep().ver(), ProtocolVersion::DRAFT);
     }
 
     #[test]
@@ -286,7 +287,7 @@ mod tests {
         let mut cursor = ParseCursor::new(&mut framed);
         let response = Response::from_frame(&mut cursor).unwrap();
 
-        assert_eq!(*response.srep().ver(), RfcDraft19);
+        assert_eq!(*response.srep().ver(), ProtocolVersion::DRAFT);
         assert_eq!(response.srep().radi(), 5);
         assert_eq!(response.srep().midp(), 1748359193);
     }
@@ -314,14 +315,14 @@ mod tests {
         //             offsets: [ 4, 8, 16, 24, ],
         //             tags: [ VER, RADI, MIDP, VERS, ROOT, ],
         //         },
-        //         version: RfcDraft19,
+        //         version: Draft(0x8000000c),
         //         radius: 5,
         //         midpoint: 1748359193,
         //         supported_versions: VERS {
         //             // on the wire: [0x00000000, 0x8000000c]; 0x00000000 is
         //             // unknown to this implementation and ignored when parsing
         //             num_versions: 1,
-        //             versions: [ RfcDraft19, ],
+        //             versions: [ Draft(0x8000000c), ],
         //         },
         //         merkle_root: ROOT(1ecf2ead5837a00dc01d2875bdb16c2be094da36115dce7966e320e31345bb97),
         //     },
@@ -387,10 +388,10 @@ mod tests {
             srep.header().tags(),
             [Tag::VER, Tag::RADI, Tag::MIDP, Tag::VERS, Tag::ROOT]
         );
-        assert_eq!(*srep.ver(), RfcDraft19);
+        assert_eq!(*srep.ver(), ProtocolVersion::DRAFT);
         assert_eq!(srep.radi(), 5);
         assert_eq!(srep.midp(), 1748359193);
-        assert_eq!(srep.vers().versions(), &[RfcDraft19]);
+        assert_eq!(srep.vers().versions(), &[ProtocolVersion::DRAFT]);
         assert_eq!(srep.root().as_ref().len(), 32);
         assert_eq!(
             srep.root().as_ref()[..8],
@@ -430,12 +431,15 @@ mod tests {
         // Only the VERS wire size matters here; duplicate the entry to test the
         // two-version offsets
         let mut srep = SignedResponse::default();
-        srep.set_vers(&SupportedVersions::new(&[RfcDraft19, RfcDraft19]));
+        srep.set_vers(&SupportedVersions::new(&[
+            ProtocolVersion::DRAFT,
+            ProtocolVersion::DRAFT,
+        ]));
         response.set_srep(srep);
         assert_eq!(response.header.offsets, [64, 96, 100, 292, 388, 540]);
 
         let mut srep = SignedResponse::default();
-        srep.set_vers(&SupportedVersions::new(&[RfcDraft19]));
+        srep.set_vers(&SupportedVersions::new(&[ProtocolVersion::DRAFT]));
         response.set_srep(srep);
         assert_eq!(response.header.offsets, [64, 96, 100, 292, 384, 536]);
     }

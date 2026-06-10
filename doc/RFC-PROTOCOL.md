@@ -7,7 +7,7 @@ Roughtime is a cryptographic time synchronization protocol providing authenticat
 Wire Format
 
 - Packets: 8-byte magic 0x524f55474854494d ("ROUGHTIM" in ASCII), 4-byte length (LE), message body
-- Requests: Must be exactly 1024 bytes total (pad with ZZZZ tag containing zeros)
+- Requests: Must be at least 1024 bytes (pad with ZZZZ tag containing zeros); this server accepts up to 1472 bytes (a full Ethernet-MTU UDP payload)
 - Responses: Variable size based on Merkle path length and VERS length
 - Transport: UDP (single datagram) or TCP (multiple messages per connection)
 

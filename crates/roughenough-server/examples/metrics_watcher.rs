@@ -93,7 +93,14 @@ fn display_metrics(filename: &str, metrics: &MetricsSnapshot) {
     println!("  - OK: {}", metrics.totals.requests.num_ok_requests);
     println!("  - Bad: {}", metrics.totals.requests.num_bad_requests);
     println!("  - Runt: {}", metrics.totals.requests.num_runt_requests);
-    println!("  - Jumbo: {}", metrics.totals.requests.num_jumbo_requests);
+    println!(
+        "  - Oversized: {}",
+        metrics.totals.requests.num_oversized_requests
+    );
+    println!(
+        "  - Version overflow: {}",
+        metrics.totals.requests.num_version_overflow
+    );
     println!();
 
     println!("  Responses: {}", metrics.totals.responses.num_responses);
@@ -133,8 +140,7 @@ fn display_metrics(filename: &str, metrics: &MetricsSnapshot) {
         for worker in &metrics.workers {
             let worker_total = worker.request.num_ok_requests
                 + worker.request.num_bad_requests
-                + worker.request.num_runt_requests
-                + worker.request.num_jumbo_requests;
+                + worker.request.num_runt_requests;
 
             if worker_total > 0 || worker.response.num_responses > 0 {
                 println!(

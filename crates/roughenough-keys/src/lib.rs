@@ -10,7 +10,6 @@ mod tests {
     use std::time::Duration;
 
     use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
-    use roughenough_protocol::tags::ProtocolVersion::RfcDraft19;
     use roughenough_protocol::tags::{MerkleRoot, ProtocolVersion, PublicKey, SupportedVersions};
     use roughenough_protocol::util::ClockSource;
     use roughenough_protocol::wire::ToWire;
@@ -83,7 +82,7 @@ mod tests {
 
         let dele = olk.cert().dele();
         let sig = olk.cert().sig();
-        let mut to_verify = RfcDraft19.dele_prefix().to_vec();
+        let mut to_verify = ProtocolVersion::DRAFT.dele_prefix().to_vec();
         to_verify.extend_from_slice(&dele.as_bytes().expect("DELE serialization should not fail"));
 
         assert!(
@@ -110,18 +109,46 @@ mod tests {
         let mut olk = ltk.make_online_key(&clock, Duration::from_secs(60));
 
         let merkle_root = MerkleRoot::default();
-        let (srep, sig) = olk.make_srep(RfcDraft19, &merkle_root);
+        let (srep, sig) = olk.make_srep(ProtocolVersion::DRAFT, &merkle_root);
 
         assert_eq!(srep.root(), &merkle_root);
         assert_eq!(srep.midp(), clock.epoch_seconds());
         assert_eq!(srep.radi(), 5);
-        assert_eq!(srep.ver(), &RfcDraft19);
-        // RFC 5.2.5: VERS lists every version the server supports
-        let expected_vers = SupportedVersions::from(ProtocolVersion::SUPPORTED.as_ref());
+        assert_eq!(srep.ver(), &ProtocolVersion::DRAFT);
+        // RFC 5.2.5: VERS lists the versions the server advertises
+        let expected_vers = SupportedVersions::from(ProtocolVersion::ADVERTISED.as_ref());
         assert_eq!(srep.vers(), &expected_vers);
 
         let verifier = Verifier::from(&olk.public_key());
-        let mut to_verify = RfcDraft19.srep_prefix().to_vec();
+        let mut to_verify = ProtocolVersion::DRAFT.srep_prefix().to_vec();
+        to_verify.extend_from_slice(&srep.as_bytes().expect("SREP serialization should not fail"));
+        assert!(verifier.verify(to_verify.as_ref(), sig.as_ref()));
+    }
+
+    #[test]
+    fn online_key_generates_valid_srep_for_draft_versions() {
+        let mut ltk = generate_ltk();
+        let now = ClockSource::System.epoch_seconds();
+        let clock = ClockSource::new_mock(now);
+        let mut olk = ltk.make_online_key(&clock, Duration::from_secs(60));
+
+        // A draft revision outside ADVERTISED
+        let draft = ProtocolVersion::from_u32(0x8000000b).unwrap();
+
+        let merkle_root = MerkleRoot::default();
+        let (srep, sig) = olk.make_srep(draft, &merkle_root);
+
+        assert_eq!(srep.ver(), &draft);
+        // RFC 5.2.5: VERS MUST contain the version in the response's VER tag
+        let expected_vers = SupportedVersions::new(&[ProtocolVersion::RFC, draft]);
+        assert_eq!(srep.vers(), &expected_vers);
+
+        // The off-list VERS keeps the SREP wire size identical to the template's
+        let (baseline, _) = olk.make_srep(ProtocolVersion::DRAFT, &merkle_root);
+        assert_eq!(srep.wire_size(), baseline.wire_size());
+
+        let verifier = Verifier::from(&olk.public_key());
+        let mut to_verify = draft.srep_prefix().to_vec();
         to_verify.extend_from_slice(&srep.as_bytes().expect("SREP serialization should not fail"));
         assert!(verifier.verify(to_verify.as_ref(), sig.as_ref()));
     }

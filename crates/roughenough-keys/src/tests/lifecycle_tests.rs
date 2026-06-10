@@ -131,7 +131,7 @@ mod tests {
 
         // When: A request is processed (simulate by creating SREP)
         let merkle_root = roughenough_protocol::tags::MerkleRoot::from([0x42; 32]);
-        let (srep, sig) = online_key.make_srep(ProtocolVersion::RfcDraft19, &merkle_root);
+        let (srep, sig) = online_key.make_srep(ProtocolVersion::DRAFT, &merkle_root);
 
         // Then: Response should still be signed successfully
         assert_eq!(srep.root(), &merkle_root);
@@ -191,10 +191,10 @@ mod tests {
 
         // Create SREP and verify it has correct properties
         let merkle_root = roughenough_protocol::tags::MerkleRoot::from([0x77; 32]);
-        let (srep, _) = online_key.make_srep(ProtocolVersion::RfcDraft19, &merkle_root);
+        let (srep, _) = online_key.make_srep(ProtocolVersion::DRAFT, &merkle_root);
 
         assert_eq!(srep.midp(), start_time);
-        assert_eq!(*srep.ver(), ProtocolVersion::RfcDraft19);
+        assert_eq!(*srep.ver(), ProtocolVersion::DRAFT);
         assert_eq!(srep.root(), &merkle_root);
     }
 }

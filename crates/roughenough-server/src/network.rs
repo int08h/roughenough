@@ -2,6 +2,7 @@ use std::io;
 use std::net::SocketAddr;
 
 use mio::net::UdpSocket as MioUdpSocket;
+use roughenough_protocol::request;
 
 use crate::metrics::types::NetworkMetrics;
 use crate::network::CollectResult::{Empty, MoreData};
@@ -21,8 +22,6 @@ pub enum CollectResult {
 }
 
 impl NetworkHandler {
-    const RECV_BUFFER_SIZE: usize = 1024;
-
     pub fn new(batch_size: usize) -> Self {
         Self {
             batch_size,
@@ -34,7 +33,8 @@ impl NetworkHandler {
     where
         F: FnMut(&mut [u8], SocketAddr),
     {
-        let mut buf = [0u8; Self::RECV_BUFFER_SIZE];
+        // Read up to a full UDP packet's worth of data
+        let mut buf = [0u8; request::MAX_REQUEST_SIZE];
 
         for _ in 0..self.batch_size {
             match sock.recv_from(&mut buf) {

@@ -93,10 +93,11 @@ pub fn calc_aggregated_metrics(duration_secs: f64, workers: &[WorkerMetrics]) ->
         total_responses += worker.response.clone();
     }
 
+    // Oversized requests are not added: they proceed to parsing and are
+    // already counted as ok or bad
     let total_request_count = total_requests.num_ok_requests
         + total_requests.num_bad_requests
-        + total_requests.num_runt_requests
-        + total_requests.num_jumbo_requests;
+        + total_requests.num_runt_requests;
 
     let responses_per_second =
         total_responses.num_responses as f64 / duration_secs.max(f64::EPSILON);

@@ -67,12 +67,13 @@ impl TestContext {
         let request_bytes = request.as_frame_bytes().unwrap();
         let sock_addr = "127.0.0.1:8080".parse().unwrap();
 
-        self.response_handler.add_request(
+        let added = self.response_handler.add_request(
             &request_bytes,
             request.clone(),
-            ProtocolVersion::RfcDraft19,
+            ProtocolVersion::DRAFT,
             sock_addr,
         );
+        assert!(added, "test fixture batch must accept the request");
 
         let mut responses = Vec::new();
 

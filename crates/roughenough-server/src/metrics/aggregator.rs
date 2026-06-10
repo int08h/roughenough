@@ -117,12 +117,12 @@ impl MetricsAggregator {
             aggregated.network.num_recv_wouldblock,
         );
         info!(
-            "Requests: total={} ok={} bad={} runt={} jumbo={}",
+            "Requests: total={} ok={} bad={} runt={} oversized={}",
             aggregated.total_requests,
             aggregated.requests.num_ok_requests,
             aggregated.requests.num_bad_requests,
             aggregated.requests.num_runt_requests,
-            aggregated.requests.num_jumbo_requests
+            aggregated.requests.num_oversized_requests
         );
         info!(
             "Responses: total={} bytes={:.1}MB, batch sizes={}",

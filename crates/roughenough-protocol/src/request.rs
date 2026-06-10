@@ -16,8 +16,13 @@ use crate::wire::{FRAME_OVERHEAD, FromFrame, FromWire, ToFrame, ToWire};
 /// RFC 5.1: The size of the request message SHOULD be at least 1024 bytes when
 /// the UDP transport mode is used.
 ///
-/// In Roughenough, a Request must be exactly 1024 bytes inclusive of framing
+/// Requests built by this implementation are exactly 1024 bytes inclusive of
+/// framing; the server accepts incoming requests of at least this size up to MAX_REQUEST_SIZE.
 pub const REQUEST_SIZE: usize = 1024;
+
+/// Largest request the server accepts: a full Ethernet-MTU UDP payload
+/// (1500 - 20 IP - 8 UDP), so any non-fragmented datagram can be received.
+pub const MAX_REQUEST_SIZE: usize = 1472;
 
 #[derive(Clone, Eq, PartialEq)]
 pub enum Request {
@@ -119,7 +124,7 @@ impl FromWire for Request {
         const RAW_NONC: u32 = Tag::NONC as u32;
         const RAW_TYPE: u32 = Tag::TYPE as u32;
 
-        if cursor.remaining() != 1012 {
+        if cursor.remaining() < REQUEST_SIZE - FRAME_OVERHEAD {
             return Err(BadRequestSize(cursor.remaining()));
         }
 
@@ -495,7 +500,7 @@ mod tests {
     }
 
     fn ver_value() -> Vec<u8> {
-        (ProtocolVersion::RfcDraft19 as u32).to_le_bytes().to_vec()
+        ProtocolVersion::DRAFT.as_u32().to_le_bytes().to_vec()
     }
 
     fn parse_frame(bytes: &mut [u8]) -> Result<Request, crate::error::Error> {
@@ -518,9 +523,63 @@ mod tests {
         assert_eq!(bytes.len(), 1024);
 
         let parsed = parse_frame(&mut bytes).unwrap();
-        assert_eq!(parsed.ver().versions(), &[ProtocolVersion::RfcDraft19]);
+        assert_eq!(parsed.ver().versions(), &[ProtocolVersion::DRAFT]);
         assert_eq!(parsed.nonc(), &Nonce::from([0x42; 32]));
         assert!(parsed.srv().is_none());
+    }
+
+    #[test]
+    fn oversized_request_is_parsed() {
+        // A full-MTU request: the declared frame length covers all 1460
+        // message bytes via an enlarged ZZZZ value
+        let mut bytes = raw_frame(&[
+            (b"VER\x00", ver_value()),
+            (b"NONC", vec![0x42; 32]),
+            (b"TYPE", 0u32.to_le_bytes().to_vec()),
+            (b"ZZZZ", vec![0; MAX_REQUEST_SIZE - 84]),
+        ]);
+        assert_eq!(bytes.len(), MAX_REQUEST_SIZE);
+
+        let parsed = parse_frame(&mut bytes).unwrap();
+        assert_eq!(parsed.nonc(), &Nonce::from([0x42; 32]));
+    }
+
+    #[test]
+    fn undersized_request_is_rejected() {
+        // One byte short: a 1023-byte frame carries a 1011-byte message
+        let mut bytes = raw_frame(&[
+            (b"VER\x00", ver_value()),
+            (b"NONC", vec![0x42; 32]),
+            (b"TYPE", 0u32.to_le_bytes().to_vec()),
+            (b"ZZZZ", vec![0; 939]),
+        ]);
+        assert_eq!(bytes.len(), 1023);
+
+        match parse_frame(&mut bytes) {
+            Err(Error::BadRequestSize(1011)) => (), // ok, expected
+            other => panic!("expected BadRequestSize(1011), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn trailing_bytes_beyond_declared_length_are_ignored() {
+        // Parsing is bounded by the declared frame length: garbage after a
+        // valid 1024-byte frame must not change the parse result
+        let frame_bytes = raw_frame(&[
+            (b"VER\x00", ver_value()),
+            (b"NONC", vec![0x42; 32]),
+            (b"TYPE", 0u32.to_le_bytes().to_vec()),
+            (b"ZZZZ", vec![0; 940]),
+        ]);
+        assert_eq!(frame_bytes.len(), 1024);
+
+        let expected = parse_frame(&mut frame_bytes.clone()).unwrap();
+
+        let mut oversized = frame_bytes;
+        oversized.resize(MAX_REQUEST_SIZE, 0xff);
+        let parsed = parse_frame(&mut oversized).unwrap();
+
+        assert_eq!(parsed, expected);
     }
 
     #[test]
@@ -624,7 +683,7 @@ mod tests {
         use crate::wire::{FromFrame, ToFrame};
 
         let nonce = Nonce::from([0x42; 32]);
-        let versions = [ProtocolVersion::Rfc, ProtocolVersion::RfcDraft19];
+        let versions = [ProtocolVersion::RFC, ProtocolVersion::DRAFT];
 
         let request = Request::new_with_versions(&nonce, &versions);
         let mut bytes = request.as_frame_bytes().unwrap();

@@ -498,7 +498,7 @@ mod tests {
         dele.set_maxt(u64::MAX);
         let dele_bytes = insert_tag(&to_bytes(&dele), *b"GREZ", &[0xcc; 4]);
 
-        let mut to_sign = ProtocolVersion::RfcDraft19.dele_prefix().to_vec();
+        let mut to_sign = ProtocolVersion::DRAFT.dele_prefix().to_vec();
         to_sign.extend_from_slice(&dele_bytes);
         let dele_sig = longterm.sign(&to_sign);
 
@@ -509,14 +509,14 @@ mod tests {
 
         // SREP with an undefined tag spliced in, signed over those exact bytes
         let mut srep = SignedResponse::default();
-        srep.set_ver(ProtocolVersion::RfcDraft19);
+        srep.set_ver(ProtocolVersion::DRAFT);
         srep.set_radi(5);
         srep.set_midp(1000);
-        srep.set_vers(&SupportedVersions::new(&[ProtocolVersion::RfcDraft19]));
+        srep.set_vers(&SupportedVersions::new(&[ProtocolVersion::DRAFT]));
         srep.set_root(&MerkleRoot::from(root));
         let srep_bytes = insert_tag(&to_bytes(&srep), *b"GREZ", &[0xdd; 8]);
 
-        let mut to_sign = ProtocolVersion::RfcDraft19.srep_prefix().to_vec();
+        let mut to_sign = ProtocolVersion::DRAFT.srep_prefix().to_vec();
         to_sign.extend_from_slice(&srep_bytes);
         let srep_sig = online.sign(&to_sign);
 

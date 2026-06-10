@@ -161,8 +161,8 @@ impl VersionArg {
     pub fn offered(&self) -> Option<Vec<ProtocolVersion>> {
         match self {
             VersionArg::V19 => None,
-            VersionArg::V1 => Some(vec![ProtocolVersion::Rfc]),
-            VersionArg::Both => Some(vec![ProtocolVersion::Rfc, ProtocolVersion::RfcDraft19]),
+            VersionArg::V1 => Some(vec![ProtocolVersion::RFC]),
+            VersionArg::Both => Some(vec![ProtocolVersion::RFC, ProtocolVersion::DRAFT]),
         }
     }
 }

@@ -28,13 +28,17 @@ pub struct RequestMetrics {
     pub num_ok_requests: usize,
     pub num_bad_requests: usize,
     pub num_runt_requests: usize,
-    pub num_jumbo_requests: usize,
+    pub num_oversized_requests: usize,
     /// Requests whose SRV tag did not match this server's long-term key
     /// (RFC 5.2: such requests are ignored)
     pub num_srv_mismatch: usize,
     /// Requests whose VER list shares no version with this server
     /// (RFC 5.1.1: such requests may be ignored)
     pub num_no_common_version: usize,
+    /// Requests dropped because their negotiated version would exceed the
+    /// per-batch distinct version limit (each distinct version costs one
+    /// signature; see `ResponseHandler::MAX_VERSIONS_PER_BATCH`)
+    pub num_version_overflow: usize,
 }
 
 impl AddAssign for RequestMetrics {
@@ -42,9 +46,10 @@ impl AddAssign for RequestMetrics {
         self.num_ok_requests += rhs.num_ok_requests;
         self.num_bad_requests += rhs.num_bad_requests;
         self.num_runt_requests += rhs.num_runt_requests;
-        self.num_jumbo_requests += rhs.num_jumbo_requests;
+        self.num_oversized_requests += rhs.num_oversized_requests;
         self.num_srv_mismatch += rhs.num_srv_mismatch;
         self.num_no_common_version += rhs.num_no_common_version;
+        self.num_version_overflow += rhs.num_version_overflow;
     }
 }
 
@@ -147,18 +152,20 @@ mod tests {
             num_ok_requests: 100,
             num_bad_requests: 10,
             num_runt_requests: 5,
-            num_jumbo_requests: 2,
+            num_oversized_requests: 2,
             num_srv_mismatch: 4,
             num_no_common_version: 6,
+            num_version_overflow: 1,
         };
 
         let metrics2 = RequestMetrics {
             num_ok_requests: 50,
             num_bad_requests: 5,
             num_runt_requests: 3,
-            num_jumbo_requests: 1,
+            num_oversized_requests: 1,
             num_srv_mismatch: 2,
             num_no_common_version: 3,
+            num_version_overflow: 2,
         };
 
         metrics1 += metrics2;
@@ -166,7 +173,8 @@ mod tests {
         assert_eq!(metrics1.num_ok_requests, 150);
         assert_eq!(metrics1.num_bad_requests, 15);
         assert_eq!(metrics1.num_runt_requests, 8);
-        assert_eq!(metrics1.num_jumbo_requests, 3);
+        assert_eq!(metrics1.num_oversized_requests, 3);
+        assert_eq!(metrics1.num_version_overflow, 3);
     }
 
     #[test]

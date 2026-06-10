@@ -109,9 +109,9 @@ mod request_handler {
         let mut request_pool: Vec<Vec<u8>> = (0..batch_size)
             .map(|i| {
                 let version = if i % 2 == 0 {
-                    ProtocolVersion::RfcDraft19
+                    ProtocolVersion::DRAFT
                 } else {
-                    ProtocolVersion::Rfc
+                    ProtocolVersion::RFC
                 };
                 create_wire_request_with_version(i as u8, version)
             })

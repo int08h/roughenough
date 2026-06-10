@@ -14,7 +14,7 @@ pub const FRAME_OVERHEAD: usize = 12;
 
 /// All Roughtime messages will be *at least* this many bytes. A Response message is always
 /// at least 404 bytes long and could be longer as the PATH and SREP values are variable-length.
-/// Requests are exactly 1024 bytes long.
+/// Requests are at least 1024 bytes long.
 pub const MINIMUM_FRAME_SIZE: usize = 404;
 
 /// Implementations can serialize themselves into the Roughtime wire format
@@ -85,6 +85,12 @@ pub trait FromFrame: FromWire {
         if len > cursor.remaining() {
             return Err(BufferTooSmall(len, cursor.remaining()));
         }
+
+        // Bound parsing by the declared length: a datagram larger than its
+        // frame's length field would otherwise have its trailing bytes counted
+        // toward the last tag's value (RawHeader uses the cursor's remaining
+        // bytes as the message length).
+        cursor.truncate_remaining(len);
 
         FromWire::from_wire(cursor)
     }

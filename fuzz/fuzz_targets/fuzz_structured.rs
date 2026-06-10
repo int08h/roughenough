@@ -20,9 +20,12 @@ struct FuzzVersion {
 
 impl From<FuzzVersion> for ProtocolVersion {
     fn from(fuzz: FuzzVersion) -> Self {
-        match fuzz.version % 2 {
-            0 => ProtocolVersion::RfcDraft19,
-            _ => ProtocolVersion::Invalid,
+        match fuzz.version % 4 {
+            0 => ProtocolVersion::RFC,
+            1 => ProtocolVersion::DRAFT,
+            2 => ProtocolVersion::from_u32(0x8000_0000 | u32::from(fuzz.version))
+                .expect("draft-flagged values are always supported"),
+            _ => ProtocolVersion::INVALID,
         }
     }
 }
@@ -105,11 +108,11 @@ impl FuzzSupportedVersions {
             .iter()
             .take(roughenough_protocol::version_list::VersionList::MAX_VERSIONS) // Limit number of versions
             .map(|v| ProtocolVersion::from(v.clone()))
-            .filter(|v| *v != ProtocolVersion::Invalid)
+            .filter(|v| *v != ProtocolVersion::INVALID)
             .collect();
         
         if versions.is_empty() {
-            SupportedVersions::from(&[ProtocolVersion::RfcDraft19][..])
+            SupportedVersions::from(&[ProtocolVersion::DRAFT][..])
         } else {
             SupportedVersions::from(&versions[..])
         }

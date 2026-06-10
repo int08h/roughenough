@@ -27,10 +27,28 @@ pub struct ResponseHandler {
     online_key: OnlineKey,
     response_metrics: ResponseMetrics,
     requests: Vec<PendingRequest>,
+    /// Distinct negotiated versions in the pending batch, bounded by
+    /// `MAX_VERSIONS_PER_BATCH`
+    batch_versions: Vec<ProtocolVersion>,
+    /// Per-version response templates; the Vec is reused across batches to
+    /// avoid re-allocating the template storage
+    version_templates: Vec<(ProtocolVersion, Response)>,
     response_buf: [u8; 1024],
 }
 
 impl ResponseHandler {
+    /// Maximum distinct protocol versions signed per batch. Each distinct
+    /// version requires its own SREP signature; without a bound, an adversary
+    /// offering a unique draft version per request would force one signature
+    /// per request.
+    pub const MAX_VERSIONS_PER_BATCH: usize = 4;
+
+    /// Off-list draft versions compete for the slots left after reserving a slot
+    /// for each advertised version, so a flood of unique draft values can never
+    /// starve clients requesting an advertised version.
+    const MAX_OFFLIST_VERSIONS: usize =
+        Self::MAX_VERSIONS_PER_BATCH - ProtocolVersion::ADVERTISED.len();
+
     pub fn new(batch_size: u8, key_source: KeySource) -> Self {
         let batch_size = batch_size as usize;
         let online_key = key_source.make_online_key();
@@ -46,25 +64,56 @@ impl ResponseHandler {
             merkle_path: MerklePath::default(),
             response_metrics: ResponseMetrics::default(),
             requests: Vec::with_capacity(batch_size),
+            batch_versions: Vec::with_capacity(Self::MAX_VERSIONS_PER_BATCH),
+            version_templates: Vec::with_capacity(Self::MAX_VERSIONS_PER_BATCH),
             response_buf: [0u8; 1024],
         }
     }
 
+    /// Add a request to the pending batch. Returns `false` (and does not add
+    /// the request) when its negotiated version would exceed the batch's
+    /// distinct versions cap; advertised versions always fit.
+    #[must_use = "the request is dropped when the batch's distinct versions cap is reached"]
     pub fn add_request(
         &mut self,
         request_bytes: &[u8],
         request: Request,
         version: ProtocolVersion,
         src_addr: SocketAddr,
-    ) {
+    ) -> bool {
         debug_assert!(self.requests.len() < self.batch_size, "Batch size exceeded");
+
+        if !self.batch_versions.contains(&version) {
+            if self.would_exceed_offlist_cap(&version) {
+                return false;
+            }
+            self.batch_versions.push(version);
+        }
 
         self.merkle_tree.push_leaf(request_bytes);
         self.requests.push(PendingRequest {
             request,
             src_addr,
             version,
-        })
+        });
+        true
+    }
+
+    /// Returns `true` if the batch contains more than `MAX_OFFLIST_VERSIONS`
+    /// non-advertised versions.
+    fn would_exceed_offlist_cap(&self, version: &ProtocolVersion) -> bool {
+        // Advertised versions are always allowed.
+        if ProtocolVersion::ADVERTISED.contains(version) {
+            return false;
+        }
+
+        let num_offlist = self
+            .batch_versions
+            .iter()
+            .filter(|v| !ProtocolVersion::ADVERTISED.contains(v))
+            .count();
+
+        num_offlist >= Self::MAX_OFFLIST_VERSIONS
     }
 
     pub fn replace_online_key(&mut self) {
@@ -92,23 +141,25 @@ impl ResponseHandler {
         let merkle_root = MerkleRoot::from(root_hash);
         let cert = self.online_key.cert().clone();
 
-        const NUM_SUPPORTED: usize = ProtocolVersion::SUPPORTED.len();
-        let mut templates: [Option<Response>; NUM_SUPPORTED] = [const { None }; NUM_SUPPORTED];
+        self.version_templates.clear();
 
         for (index, pending_req) in self.requests.iter().enumerate() {
-            let slot = ProtocolVersion::SUPPORTED
+            let slot = match self
+                .version_templates
                 .iter()
-                .position(|v| *v == pending_req.version)
-                .expect("negotiated version is always supported");
-
-            if templates[slot].is_none() {
-                let (srep, sig) = self.online_key.make_srep(pending_req.version, &merkle_root);
-                let mut template = Response::default();
-                template.set_cert(cert.clone());
-                template.set_srep(srep);
-                template.set_sig(sig);
-                templates[slot] = Some(template);
-            }
+                .position(|(version, _)| *version == pending_req.version)
+            {
+                Some(slot) => slot,
+                None => {
+                    let (srep, sig) = self.online_key.make_srep(pending_req.version, &merkle_root);
+                    let mut template = Response::default();
+                    template.set_cert(cert.clone());
+                    template.set_srep(srep);
+                    template.set_sig(sig);
+                    self.version_templates.push((pending_req.version, template));
+                    self.version_templates.len() - 1
+                }
+            };
 
             // Build the Merkle path for this Request's position in the tree
             self.merkle_path.clear();
@@ -116,10 +167,7 @@ impl ResponseHandler {
 
             // Copy the common response as a template and set the elements unique to this response
             // (merkle path, nonce, and index)
-            let mut response = templates[slot]
-                .as_ref()
-                .expect("template was just created")
-                .clone();
+            let mut response = self.version_templates[slot].1.clone();
             response.copy_path(&self.merkle_path);
             response.set_nonc(*pending_req.request.nonc());
             response.set_indx(index as u32);
@@ -150,6 +198,7 @@ impl ResponseHandler {
     pub fn clear(&mut self) {
         self.merkle_tree.clear();
         self.requests.clear();
+        self.batch_versions.clear();
     }
 
     #[allow(dead_code)] // used in worker metrics collection
@@ -196,12 +245,12 @@ mod tests {
 
         // Add a request
         let request = create_test_request(42);
-        responder.add_request(
+        assert!(responder.add_request(
             &request.as_bytes().unwrap(),
             request,
-            ProtocolVersion::RfcDraft19,
+            ProtocolVersion::DRAFT,
             addr,
-        );
+        ));
 
         assert_eq!(responder.num_pending(), 1);
         assert!(!responder.merkle_tree().is_empty());
@@ -221,12 +270,12 @@ mod tests {
         // Add requests up to batch size
         for i in 0..64 {
             let request = create_test_request(i as u8);
-            responder.add_request(
+            assert!(responder.add_request(
                 &request.as_bytes().unwrap(),
                 request,
-                ProtocolVersion::RfcDraft19,
+                ProtocolVersion::DRAFT,
                 addr,
-            );
+            ));
         }
 
         assert_eq!(responder.num_pending(), 64);
@@ -234,12 +283,12 @@ mod tests {
         // This should trigger the batch size limit debug assertion in add_request
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let request = create_test_request(100);
-            responder.add_request(
+            assert!(responder.add_request(
                 &request.as_bytes().unwrap(),
                 request,
-                ProtocolVersion::RfcDraft19,
+                ProtocolVersion::DRAFT,
                 addr,
-            );
+            ));
         }));
 
         assert!(result.is_err(), "Should panic when batch size is exceeded");
@@ -252,12 +301,12 @@ mod tests {
 
         let request = create_test_request(42);
         let expected_nonce = *request.nonc();
-        responder.add_request(
+        assert!(responder.add_request(
             &request.as_bytes().unwrap(),
             request,
-            ProtocolVersion::RfcDraft19,
+            ProtocolVersion::DRAFT,
             addr,
-        );
+        ));
 
         let mut responses = Vec::new();
         responder.process_responses(|addr, bytes| {
@@ -290,12 +339,12 @@ mod tests {
 
             expected_addrs.push(addr);
             expected_nonces.push(*request.nonc());
-            responder.add_request(
+            assert!(responder.add_request(
                 &request.as_bytes().unwrap(),
                 request,
-                ProtocolVersion::RfcDraft19,
+                ProtocolVersion::DRAFT,
                 addr,
-            );
+            ));
         }
 
         let mut responses = Vec::new();

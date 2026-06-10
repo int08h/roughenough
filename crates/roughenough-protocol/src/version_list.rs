@@ -46,7 +46,7 @@ impl Default for VersionList {
     fn default() -> Self {
         Self {
             num_versions: 0,
-            versions: [ProtocolVersion::Invalid; Self::MAX_VERSIONS],
+            versions: [ProtocolVersion::INVALID; Self::MAX_VERSIONS],
         }
     }
 }
@@ -149,7 +149,7 @@ mod tests {
 
     #[test]
     fn wire_roundtrip() {
-        let versions = VersionList::new(&[ProtocolVersion::RfcDraft19]);
+        let versions = VersionList::new(&[ProtocolVersion::DRAFT]);
 
         let wire_size = versions.wire_size();
         let mut buf = vec![0u8; wire_size];
@@ -173,22 +173,22 @@ mod tests {
 
     #[test]
     fn new() {
-        let versions = VersionList::new(&[ProtocolVersion::RfcDraft19]);
-        assert_eq!(versions.versions(), &[ProtocolVersion::RfcDraft19]);
-        assert!(versions.is_supported(ProtocolVersion::RfcDraft19));
+        let versions = VersionList::new(&[ProtocolVersion::DRAFT]);
+        assert_eq!(versions.versions(), &[ProtocolVersion::DRAFT]);
+        assert!(versions.is_supported(ProtocolVersion::DRAFT));
     }
 
     #[test]
     fn zero_versions() {
         let versions = VersionList::new(&[]);
         assert!(versions.versions().is_empty());
-        assert!(!versions.is_supported(ProtocolVersion::RfcDraft19));
+        assert!(!versions.is_supported(ProtocolVersion::DRAFT));
     }
 
     #[test]
     fn max_versions() {
         let tmp = (0..VersionList::MAX_VERSIONS * 2)
-            .map(|_| ProtocolVersion::RfcDraft19)
+            .map(|_| ProtocolVersion::DRAFT)
             .collect::<Vec<_>>();
 
         let versions = VersionList::new(&tmp);
@@ -203,12 +203,28 @@ mod tests {
         // supplied by the client."
         let mut buf = Vec::new();
         buf.extend_from_slice(&0x00000005u32.to_le_bytes());
-        buf.extend_from_slice(&(ProtocolVersion::RfcDraft19 as u32).to_le_bytes());
+        buf.extend_from_slice(&ProtocolVersion::DRAFT.as_u32().to_le_bytes());
 
         let mut cursor = ParseCursor::new(&mut buf);
         let versions = VersionList::from_wire(&mut cursor).unwrap();
 
-        assert_eq!(versions.versions(), &[ProtocolVersion::RfcDraft19]);
+        assert_eq!(versions.versions(), &[ProtocolVersion::DRAFT]);
+        assert_eq!(cursor.remaining(), 0);
+    }
+
+    #[test]
+    fn draft_versions_are_retained() {
+        // Any draft-flagged value is a supported version and must be kept
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&0x00000001u32.to_le_bytes());
+        buf.extend_from_slice(&0x8000000bu32.to_le_bytes());
+        buf.extend_from_slice(&0x8000000cu32.to_le_bytes());
+
+        let mut cursor = ParseCursor::new(&mut buf);
+        let versions = VersionList::from_wire(&mut cursor).unwrap();
+
+        let values: Vec<u32> = versions.versions().iter().map(|v| v.as_u32()).collect();
+        assert_eq!(values, vec![0x00000001, 0x8000000b, 0x8000000c]);
         assert_eq!(cursor.remaining(), 0);
     }
 
@@ -230,7 +246,7 @@ mod tests {
     fn unknown_versions_must_still_be_ordered() {
         // Ordering is enforced on the raw wire values, unknown or not
         let mut buf = Vec::new();
-        buf.extend_from_slice(&(ProtocolVersion::RfcDraft19 as u32).to_le_bytes());
+        buf.extend_from_slice(&ProtocolVersion::DRAFT.as_u32().to_le_bytes());
         buf.extend_from_slice(&0x00000005u32.to_le_bytes());
 
         let mut cursor = ParseCursor::new(&mut buf);
@@ -246,7 +262,7 @@ mod tests {
     fn versions_out_of_order() {
         // Wire values in descending order: 0x8000000c followed by 0x00000000
         let mut buf = Vec::new();
-        buf.extend_from_slice(&(ProtocolVersion::RfcDraft19 as u32).to_le_bytes());
+        buf.extend_from_slice(&ProtocolVersion::DRAFT.as_u32().to_le_bytes());
         buf.extend_from_slice(&0x00000000u32.to_le_bytes());
 
         // Attempt to deserialize - should fail because versions are not in ascending order

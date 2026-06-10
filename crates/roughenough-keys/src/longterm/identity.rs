@@ -51,9 +51,9 @@ impl LongTermIdentity {
 
         // One delegation signature covers every supported version, which is
         // only sound while they all share the same DELE context string.
-        let prefix = ProtocolVersion::SUPPORTED[0].dele_prefix();
+        let prefix = ProtocolVersion::ADVERTISED[0].dele_prefix();
         debug_assert!(
-            ProtocolVersion::SUPPORTED
+            ProtocolVersion::ADVERTISED
                 .iter()
                 .all(|version| version.dele_prefix() == prefix),
             "supported versions must share a DELE context string to share one CERT"

@@ -56,12 +56,12 @@ mod integration_tests {
 
         let request = create_test_request(42);
         let request_bytes = request.as_bytes().unwrap();
-        test_context.response_handler.add_request(
+        assert!(test_context.response_handler.add_request(
             &request_bytes,
             request,
-            ProtocolVersion::RfcDraft19,
+            ProtocolVersion::DRAFT,
             addr,
-        );
+        ));
 
         let mut responses = Vec::new();
         test_context
@@ -76,6 +76,44 @@ mod integration_tests {
 
         let pub_key = test_context.key_source.public_key();
 
+        validate_response(&request_bytes, response_bytes, pub_key).unwrap();
+    }
+
+    /// Tests that a response negotiated to a draft version this implementation
+    /// does not enumerate (any value with the 0x80000000 flag) passes client
+    /// validation end-to-end.
+    #[test]
+    fn draft_version_request_validation() {
+        let mut test_context = TestContext::new(64);
+        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+
+        let draft = ProtocolVersion::from_u32(0x8000000b).unwrap();
+        let request = create_test_request(43);
+        let request_bytes = request.as_bytes().unwrap();
+        assert!(
+            test_context
+                .response_handler
+                .add_request(&request_bytes, request, draft, addr)
+        );
+
+        let mut responses = Vec::new();
+        test_context
+            .response_handler
+            .process_responses(|addr, bytes| {
+                responses.push((addr, bytes.to_vec()));
+            });
+
+        assert_eq!(responses.len(), 1);
+        let (_, response_bytes) = &responses[0];
+
+        let mut buf = response_bytes[12..].to_vec();
+        let mut cursor = ParseCursor::new(&mut buf);
+        let response = Response::from_wire(&mut cursor).unwrap();
+        assert_eq!(*response.srep().ver(), draft);
+        // RFC 5.2.5: VERS MUST contain the version in the response's VER tag
+        assert!(response.srep().vers().versions().contains(&draft));
+
+        let pub_key = test_context.key_source.public_key();
         validate_response(&request_bytes, response_bytes, pub_key).unwrap();
     }
 
@@ -95,12 +133,12 @@ mod integration_tests {
             let request_bytes = request.as_bytes().unwrap();
 
             request_data.push((request_bytes.clone(), addr));
-            test_context.response_handler.add_request(
+            assert!(test_context.response_handler.add_request(
                 &request_bytes,
                 request,
-                ProtocolVersion::RfcDraft19,
+                ProtocolVersion::DRAFT,
                 addr,
-            );
+            ));
         }
 
         let mut responses = Vec::new();

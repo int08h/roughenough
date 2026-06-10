@@ -28,13 +28,14 @@ impl RequestHandler {
     }
 
     pub fn collect_request(&mut self, request_bytes: &mut [u8], src_addr: SocketAddr) {
-        // Reject requests != 1024 bytes
+        // RFC 5.1: request size SHOULD be at least 1024 bytes for UDP; this
+        // implementation requires it. Larger requests are accepted up to a
+        // full MTU payload (the receive buffer is MAX_REQUEST_SIZE bytes).
         if request_bytes.len() < REQUEST_SIZE {
             self.metrics.num_runt_requests += 1;
             return;
         } else if request_bytes.len() > REQUEST_SIZE {
-            self.metrics.num_jumbo_requests += 1;
-            return;
+            self.metrics.num_oversized_requests += 1;
         }
 
         let mut cursor = ParseCursor::new(request_bytes);
@@ -56,9 +57,14 @@ impl RequestHandler {
                     return;
                 };
 
-                self.responder
-                    .add_request(request_bytes, request, version, src_addr);
-                self.metrics.num_ok_requests += 1;
+                if self
+                    .responder
+                    .add_request(request_bytes, request, version, src_addr)
+                {
+                    self.metrics.num_ok_requests += 1;
+                } else {
+                    self.metrics.num_version_overflow += 1;
+                }
             }
             Err(_) => {
                 self.metrics.num_bad_requests += 1;
@@ -101,6 +107,7 @@ impl RequestHandler {
 
 #[cfg(test)]
 mod tests {
+    use roughenough_protocol::request::MAX_REQUEST_SIZE;
     use roughenough_protocol::tags::Nonce;
     use roughenough_protocol::wire::ToFrame;
 
@@ -133,7 +140,7 @@ mod tests {
         assert_eq!(metrics.num_ok_requests, 1);
         assert_eq!(metrics.num_bad_requests, 0);
         assert_eq!(metrics.num_runt_requests, 0);
-        assert_eq!(metrics.num_jumbo_requests, 0);
+        assert_eq!(metrics.num_oversized_requests, 0);
     }
 
     #[test]
@@ -150,7 +157,7 @@ mod tests {
     }
 
     #[test]
-    fn test_process_jumbo_request() {
+    fn oversized_garbage_request_is_rejected_as_bad() {
         let mut handler = create_request_handler();
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
         let mut large_request = vec![0u8; REQUEST_SIZE + 1];
@@ -159,7 +166,57 @@ mod tests {
 
         let metrics = handler.metrics();
         assert_eq!(metrics.num_ok_requests, 0);
-        assert_eq!(metrics.num_jumbo_requests, 1);
+        assert_eq!(metrics.num_oversized_requests, 1);
+        assert_eq!(metrics.num_bad_requests, 1);
+    }
+
+    #[test]
+    fn oversized_valid_request_is_answered() {
+        // A valid 1024-byte request with trailing bytes beyond the declared
+        // frame length parses the same as its 1024-byte prefix
+        let mut handler = create_request_handler();
+        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+
+        let mut request_bytes = create_test_request_bytes(42);
+        request_bytes.resize(MAX_REQUEST_SIZE, 0);
+
+        handler.collect_request(&mut request_bytes, addr);
+
+        let metrics = handler.metrics();
+        assert_eq!(metrics.num_ok_requests, 1);
+        assert_eq!(metrics.num_oversized_requests, 1);
+        assert_eq!(metrics.num_bad_requests, 0);
+
+        let mut responses = Vec::new();
+        handler.generate_responses(|_, bytes| responses.push(bytes.to_vec()));
+        assert_eq!(responses.len(), 1, "oversized request must be answered");
+    }
+
+    #[test]
+    fn full_mtu_request_is_answered() {
+        // A well-formed request occupying the full MTU payload: the frame's
+        // declared length covers all 1472 bytes via a larger ZZZZ value
+        let zzzz_len = MAX_REQUEST_SIZE - 84; // 84 = framing + header + VER/NONC/TYPE
+        let entries: &[(&[u8; 4], Vec<u8>)] = &[
+            (b"VER\x00", 0x8000000cu32.to_le_bytes().to_vec()),
+            (b"NONC", vec![0x42; 32]),
+            (b"TYPE", 0u32.to_le_bytes().to_vec()),
+            (b"ZZZZ", vec![0; zzzz_len]),
+        ];
+        let mut request_bytes = build_raw_request(entries);
+        assert_eq!(request_bytes.len(), MAX_REQUEST_SIZE);
+
+        let mut handler = create_request_handler();
+        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        handler.collect_request(&mut request_bytes, addr);
+
+        let metrics = handler.metrics();
+        assert_eq!(metrics.num_ok_requests, 1);
+        assert_eq!(metrics.num_oversized_requests, 1);
+
+        let mut responses = Vec::new();
+        handler.generate_responses(|_, bytes| responses.push(bytes.to_vec()));
+        assert_eq!(responses.len(), 1, "full-MTU request must be answered");
     }
 
     #[test]
@@ -252,9 +309,13 @@ mod tests {
 
         let cases = [
             // (offered wire values, expected response VER)
-            (vec![0x00000001u32], ProtocolVersion::Rfc),
-            (vec![0x8000000cu32], ProtocolVersion::RfcDraft19),
-            (vec![0x00000001u32, 0x8000000cu32], ProtocolVersion::Rfc),
+            (vec![0x00000001u32], ProtocolVersion::RFC),
+            (vec![0x8000000cu32], ProtocolVersion::DRAFT),
+            (vec![0x00000001u32, 0x8000000cu32], ProtocolVersion::RFC),
+            // RFC version 1 outranks any draft
+            (vec![0x00000001u32, 0x8000000bu32], ProtocolVersion::RFC),
+            // Among drafts, the highest wire value (most recent draft) wins
+            (vec![0x8000000bu32, 0x8000000cu32], ProtocolVersion::DRAFT),
         ];
 
         for (offered, expected) in cases {
@@ -287,8 +348,8 @@ mod tests {
             assert_eq!(*response.srep().ver(), expected, "offered {offered:x?}");
             assert_eq!(
                 response.srep().vers().versions(),
-                &ProtocolVersion::SUPPORTED,
-                "VERS must advertise all supported versions"
+                &ProtocolVersion::ADVERTISED,
+                "VERS must contain all advertised versions"
             );
         }
     }
@@ -301,10 +362,13 @@ mod tests {
 
         let mut handler = create_request_handler();
 
-        // One client offers only the draft version, another only version 1
-        for (port, wire_ver, nonce_byte) in
-            [(8001u16, 0x8000000cu32, 0x41u8), (8002, 0x00000001, 0x42)]
-        {
+        // Clients offering only the draft version, only version 1, and only
+        // an off-list draft revision
+        for (port, wire_ver, nonce_byte) in [
+            (8001u16, 0x8000000cu32, 0x41u8),
+            (8002, 0x00000001, 0x42),
+            (8003, 0x8000000b, 0x43),
+        ] {
             let entries: &[(&[u8; 4], Vec<u8>)] = &[
                 (b"VER\x00", wire_ver.to_le_bytes().to_vec()),
                 (b"NONC", vec![nonce_byte; 32]),
@@ -315,11 +379,11 @@ mod tests {
             let addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
             handler.collect_request(&mut request_bytes, addr);
         }
-        assert_eq!(handler.metrics().num_ok_requests, 2);
+        assert_eq!(handler.metrics().num_ok_requests, 3);
 
         let mut responses = Vec::new();
         handler.generate_responses(|_, bytes| responses.push(bytes.to_vec()));
-        assert_eq!(responses.len(), 2);
+        assert_eq!(responses.len(), 3);
 
         let mut parsed = Vec::new();
         for bytes in &mut responses {
@@ -328,20 +392,114 @@ mod tests {
         }
 
         // Distinct negotiated versions, one shared Merkle tree
-        assert_eq!(*parsed[0].srep().ver(), ProtocolVersion::RfcDraft19);
-        assert_eq!(*parsed[1].srep().ver(), ProtocolVersion::Rfc);
+        assert_eq!(*parsed[0].srep().ver(), ProtocolVersion::DRAFT);
+        assert_eq!(*parsed[1].srep().ver(), ProtocolVersion::RFC);
+        assert_eq!(
+            parsed[2].srep().ver().as_u32(),
+            0x8000000b,
+            "off-list draft version is echoed"
+        );
         assert_eq!(
             parsed[0].srep().root(),
             parsed[1].srep().root(),
-            "both responses must commit to the same Merkle root"
+            "all responses must commit to the same Merkle root"
         );
+        assert_eq!(parsed[1].srep().root(), parsed[2].srep().root());
         assert_ne!(
             parsed[0].sig(),
             parsed[1].sig(),
             "each version gets its own SREP signature"
         );
+        assert_ne!(parsed[1].sig(), parsed[2].sig());
         assert_eq!(parsed[0].indx(), 0);
         assert_eq!(parsed[1].indx(), 1);
+        assert_eq!(parsed[2].indx(), 2);
+    }
+
+    #[test]
+    fn arbitrary_draft_version_is_negotiated() {
+        use roughenough_protocol::response::Response;
+        use roughenough_protocol::tags::ProtocolVersion;
+        use roughenough_protocol::wire::FromFrame;
+
+        // A draft revision this implementation does not enumerate
+        let draft = ProtocolVersion::from_u32(0x8000000b).unwrap();
+
+        let entries: &[(&[u8; 4], Vec<u8>)] = &[
+            (b"VER\x00", draft.as_u32().to_le_bytes().to_vec()),
+            (b"NONC", vec![0x42; 32]),
+            (b"TYPE", 0u32.to_le_bytes().to_vec()),
+            (b"ZZZZ", vec![0; 940]),
+        ];
+        let mut request_bytes = build_raw_request(entries);
+        assert_eq!(request_bytes.len(), REQUEST_SIZE);
+
+        let mut handler = create_request_handler();
+        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        handler.collect_request(&mut request_bytes, addr);
+        assert_eq!(handler.metrics().num_ok_requests, 1);
+
+        let mut responses = Vec::new();
+        handler.generate_responses(|_, bytes| responses.push(bytes.to_vec()));
+        assert_eq!(responses.len(), 1);
+
+        let mut cursor = ParseCursor::new(&mut responses[0]);
+        let response = Response::from_frame(&mut cursor).unwrap();
+
+        assert_eq!(*response.srep().ver(), draft);
+        // RFC 5.2.5: VERS MUST contain the version in the response's VER tag
+        assert_eq!(
+            response.srep().vers().versions(),
+            &[ProtocolVersion::RFC, draft]
+        );
+    }
+
+    fn collect_one_version(handler: &mut RequestHandler, wire_ver: u32, nonce_byte: u8, port: u16) {
+        let entries: &[(&[u8; 4], Vec<u8>)] = &[
+            (b"VER\x00", wire_ver.to_le_bytes().to_vec()),
+            (b"NONC", vec![nonce_byte; 32]),
+            (b"TYPE", 0u32.to_le_bytes().to_vec()),
+            (b"ZZZZ", vec![0; 940]),
+        ];
+        let mut request_bytes = build_raw_request(entries);
+        let addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+        handler.collect_request(&mut request_bytes, addr);
+    }
+
+    #[test]
+    fn version_overflow_is_capped_per_batch() {
+        let mut handler = create_request_handler();
+
+        // Three distinct off-list drafts: only two off-list slots exist per
+        // batch (MAX_VERSIONS_PER_BATCH minus the reserved advertised slots)
+        let offlist_drafts = [0x80000009u32, 0x8000000a, 0x8000000b];
+
+        for (i, wire_ver) in offlist_drafts.iter().enumerate() {
+            collect_one_version(&mut handler, *wire_ver, i as u8, 8001 + i as u16);
+        }
+
+        let metrics = handler.metrics();
+        assert_eq!(metrics.num_ok_requests, 2);
+        assert_eq!(metrics.num_version_overflow, 1);
+
+        // Advertised versions are never starved, even with off-list slots full
+        collect_one_version(&mut handler, 0x00000001, 0x10, 8101);
+        collect_one_version(&mut handler, ProtocolVersion::DRAFT.as_u32(), 0x11, 8102);
+        assert_eq!(handler.metrics().num_ok_requests, 4);
+        assert_eq!(handler.metrics().num_version_overflow, 1);
+
+        let mut responses = Vec::new();
+        handler.generate_responses(|_, bytes| responses.push(bytes.to_vec()));
+        assert_eq!(responses.len(), ResponseHandler::MAX_VERSIONS_PER_BATCH);
+
+        // The cap applies per batch: the dropped draft is accepted in the
+        // next batch
+        collect_one_version(&mut handler, offlist_drafts[2], 0x99, 9001);
+        assert_eq!(handler.metrics().num_ok_requests, 5);
+
+        let mut responses = Vec::new();
+        handler.generate_responses(|_, bytes| responses.push(bytes.to_vec()));
+        assert_eq!(responses.len(), 1);
     }
 
     #[test]
@@ -351,7 +509,7 @@ mod tests {
         let entries: &[(&[u8; 4], Vec<u8>)] = &[
             (
                 b"VER\x00",
-                (roughenough_protocol::tags::ProtocolVersion::RfcDraft19 as u32)
+                (roughenough_protocol::tags::ProtocolVersion::DRAFT.as_u32())
                     .to_le_bytes()
                     .to_vec(),
             ),

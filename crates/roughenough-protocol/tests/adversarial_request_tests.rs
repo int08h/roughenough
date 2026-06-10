@@ -103,6 +103,29 @@ mod tests {
         }
     }
 
+    // A declared length larger than 1012 is valid when the buffer actually
+    // contains that many message bytes (companion to the rejection above)
+    #[test]
+    fn oversized_request_with_valid_declared_length_parses() {
+        use roughenough_protocol::util::test_utils::{build_msg, frame};
+
+        // 1013-byte message in a 1025-byte frame
+        let entries: Vec<([u8; 4], Vec<u8>)> = vec![
+            (*b"VER\x00", 0x8000000cu32.to_le_bytes().to_vec()),
+            (*b"NONC", vec![0x42; 32]),
+            (*b"TYPE", 0u32.to_le_bytes().to_vec()),
+            (*b"ZZZZ", vec![0; 941]),
+        ];
+        let mut oversized = frame(&build_msg(&entries));
+        assert_eq!(oversized.len(), REQUEST_SIZE + 1);
+
+        maybe_save_to_disk(oversized.as_slice());
+
+        let mut cursor = ParseCursor::new(&mut oversized);
+        let result = Request::from_frame(&mut cursor);
+        assert!(result.is_ok(), "expected parse success: {result:?}");
+    }
+
     // Create Request with tag count (u32::MAX) that would overflow offset calculations
     #[test]
     fn tag_count_overflow() {

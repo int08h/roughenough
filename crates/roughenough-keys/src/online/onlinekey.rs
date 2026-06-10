@@ -27,19 +27,18 @@ impl OnlineKey {
     pub fn new(clock_source: ClockSource) -> OnlineKey {
         let mut srep = SignedResponse::default();
         srep.set_radi(SignedResponse::DEFAULT_RADI_SECONDS);
-        // RFC 5.2.5: VERS lists all versions the server supports
+        // RFC 5.2.5: VERS lists the versions the server advertises
         srep.set_vers(&SupportedVersions::from(
-            ProtocolVersion::SUPPORTED.as_ref(),
+            ProtocolVersion::ADVERTISED.as_ref(),
         ));
 
-        // One reusable signing buffer sized for the largest context string among
-        // the supported versions; make_srep writes the negotiated version's
-        // prefix on each use.
-        let max_prefix_len = ProtocolVersion::SUPPORTED
+        // Reusable signing buffer sized for the largest context string among
+        // the supported versions
+        let max_prefix_len = ProtocolVersion::ADVERTISED
             .iter()
             .map(|version| version.srep_prefix().len())
             .max()
-            .expect("SUPPORTED is non-empty");
+            .expect("ADVERTISED is non-empty");
         let buf = vec![0u8; max_prefix_len + srep.wire_size()];
 
         Self {
@@ -108,11 +107,17 @@ impl OnlineKey {
         srep.set_root(root);
         srep.set_midp(self.clock_source.epoch_seconds());
 
+        // RFC 5.2.5: VERS MUST contain the version in this response's VER tag.
+        // Draft versions outside ADVERTISED are added alongside the RFC version.
+        if !ProtocolVersion::ADVERTISED.contains(&version) {
+            srep.set_vers(&SupportedVersions::new(&[ProtocolVersion::RFC, version]));
+        }
+        debug_assert_eq!(srep.wire_size(), self.template_srep.wire_size());
+
         let prefix = version.srep_prefix();
         let prefix_len = prefix.len();
         let total_len = prefix_len + srep.wire_size();
 
-        // Serialize into signing_buf, which was appropriately sized at construction
         self.signing_buf[..prefix_len].copy_from_slice(prefix);
         let mut cursor = ParseCursor::new(&mut self.signing_buf[prefix_len..total_len]);
         srep.to_wire(&mut cursor)

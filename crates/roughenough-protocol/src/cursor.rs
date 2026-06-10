@@ -276,6 +276,18 @@ impl<'a> ParseCursor<'a> {
         Ok(())
     }
 
+    /// Shrink the cursor so at most `n` bytes remain past the current
+    /// position. Bytes beyond the new end become unreachable; a no-op when
+    /// `n` >= `remaining()`.
+    #[inline]
+    pub fn truncate_remaining(&mut self, n: usize) {
+        let end = self.position.saturating_add(n);
+        if end < self.data.len() {
+            let data = std::mem::take(&mut self.data);
+            self.data = &mut data[..end];
+        }
+    }
+
     /// Reset the cursor to the beginning
     #[inline]
     pub fn reset(&mut self) {
@@ -361,6 +373,28 @@ mod tests {
         let mut cursor = ParseCursor::new(&mut data);
 
         assert!(cursor.try_put_u64_le(0x123456789ABCDEF0).is_err());
+    }
+
+    #[test]
+    fn test_truncate_remaining() {
+        let mut data = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
+        let mut cursor = ParseCursor::new(&mut data);
+
+        cursor.advance(2).unwrap();
+        assert_eq!(cursor.remaining(), 6);
+
+        // Truncating beyond the end is a no-op
+        cursor.truncate_remaining(100);
+        assert_eq!(cursor.remaining(), 6);
+
+        cursor.truncate_remaining(4);
+        assert_eq!(cursor.remaining(), 4);
+        assert_eq!(cursor.position(), 2);
+        assert_eq!(cursor.peek(), &[0x03, 0x04, 0x05, 0x06]);
+
+        // Bytes past the truncation point are unreachable
+        cursor.advance(4).unwrap();
+        assert!(cursor.try_get_u32_le().is_err());
     }
 
     #[test]
