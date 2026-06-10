@@ -35,12 +35,7 @@ impl TestContext {
         let clock = ClockSource::new_mock(now);
         let seed = Box::new(MemoryBackend::from_value(&[42u8; 32]));
         let approx_90_days = Duration::from_secs(8_000_000);
-        let key_source = KeySource::new(
-            ProtocolVersion::RfcDraft14,
-            seed,
-            clock.clone(),
-            approx_90_days,
-        );
+        let key_source = KeySource::new(seed, clock.clone(), approx_90_days);
         let response_handler = ResponseHandler::new(batch_size, key_source.clone());
 
         TestContext {
@@ -72,8 +67,12 @@ impl TestContext {
         let request_bytes = request.as_frame_bytes().unwrap();
         let sock_addr = "127.0.0.1:8080".parse().unwrap();
 
-        self.response_handler
-            .add_request(&request_bytes, request.clone(), sock_addr);
+        self.response_handler.add_request(
+            &request_bytes,
+            request.clone(),
+            ProtocolVersion::RfcDraft19,
+            sock_addr,
+        );
 
         let mut responses = Vec::new();
 

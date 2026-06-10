@@ -3,7 +3,7 @@ use std::mem::size_of;
 use crate::cursor::ParseCursor;
 use crate::error::Error;
 use crate::error::Error::InvalidMessageType;
-use crate::wire::{FromWire, ToWire};
+use crate::wire::{FromWire, FromWireN, ToWire};
 
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -33,5 +33,14 @@ impl FromWire for MessageType {
             0x00000001 => Ok(MessageType::Response),
             _ => Err(InvalidMessageType(value)),
         }
+    }
+}
+
+impl FromWireN for MessageType {
+    fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error> {
+        if n != size_of::<Self>() {
+            return Err(Error::WrongTagSize(size_of::<Self>(), n));
+        }
+        Self::from_wire(cursor)
     }
 }

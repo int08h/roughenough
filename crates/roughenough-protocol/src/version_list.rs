@@ -14,8 +14,8 @@ use crate::wire::{FromWire, FromWireN, ToWire};
 /// In a request, the VER tag contains a list of uint32 version numbers.
 /// The VER tag MUST include at least one Roughtime version supported by
 /// the client and MUST NOT contain more than 32 version numbers.  The
-/// client MUST ensure that the version numbers and tags included in the
-/// request are not incompatible with each other or the packet contents.
+/// version numbers and tags included in the request MUST be compatible
+/// with each other and the packet contents.
 ///
 /// The version numbers MUST NOT repeat and MUST be sorted in ascending
 /// numerical order.
@@ -24,7 +24,7 @@ use crate::wire::{FromWire, FromWireN, ToWire};
 /// ```text
 /// 5.2.5.  SREP
 /// ...
-/// The VERS tag value MUST contain a list of uint32 version numbers
+/// The VERS tag value contains a list of uint32 version numbers
 /// supported by the server, sorted in ascending numerical order.  It
 /// MUST contain the version number specified in the VER tag.  It MUST
 /// NOT contain more than 32 version numbers.
@@ -37,7 +37,9 @@ pub struct VersionList {
 
 impl VersionList {
     /// Maximum # of versions to hold. Excess versions (if present) will be discarded.
-    pub const MAX_VERSIONS: usize = 32;
+    /// This is intentionally less than the RFC recommended value of 32 which here would
+    /// waste an entire 1024 bytes on a mostly empty array.
+    pub const MAX_VERSIONS: usize = 8;
 }
 
 impl Default for VersionList {
@@ -103,25 +105,34 @@ impl FromWireN for VersionList {
     fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error> {
         let mut remaining = n;
         let mut vers = VersionList::default();
-        let mut prior_version = ProtocolVersion::Google;
-        let mut index = 0;
+        let mut prior_value = 0u32;
+        let mut num_read = 0;
+        let mut num_stored = 0;
 
-        while remaining > 0 && index < Self::MAX_VERSIONS {
-            let version = ProtocolVersion::from_wire(cursor)?;
+        while remaining >= size_of::<u32>() && num_read < Self::MAX_VERSIONS {
+            let value = cursor.try_get_u32_le()?;
 
-            // This implementation verifies that the versions are in ascending order,
-            // but does not consider duplicates an error. That might change in the future.
-            if version < prior_version {
-                return Err(UnorderedVersion(index as u32, version as u32));
+            // Ordering is checked on the raw wire values so that unknown versions
+            // participate. This implementation verifies that the versions are in
+            // ascending order, but does not consider duplicates an error. That
+            // might change in the future.
+            if value < prior_value {
+                return Err(UnorderedVersion(num_read as u32, value));
             }
 
-            vers.versions[index] = version;
-            prior_version = version;
-            index += 1;
-            remaining -= version.wire_size();
+            // RFC 5.1.1: "Servers MUST ignore any unknown version numbers in the
+            // list supplied by the client."
+            if let Some(version) = ProtocolVersion::from_u32(value) {
+                vers.versions[num_stored] = version;
+                num_stored += 1;
+            }
+
+            prior_value = value;
+            num_read += 1;
+            remaining -= size_of::<u32>();
         }
 
-        vers.num_versions = index;
+        vers.num_versions = num_stored;
         Ok(vers)
     }
 }
@@ -138,7 +149,7 @@ mod tests {
 
     #[test]
     fn wire_roundtrip() {
-        let versions = VersionList::new(&[ProtocolVersion::Google, ProtocolVersion::RfcDraft14]);
+        let versions = VersionList::new(&[ProtocolVersion::RfcDraft19]);
 
         let wire_size = versions.wire_size();
         let mut buf = vec![0u8; wire_size];
@@ -162,24 +173,22 @@ mod tests {
 
     #[test]
     fn new() {
-        let versions = VersionList::new(&[ProtocolVersion::Google]);
-        assert_eq!(versions.versions(), &[ProtocolVersion::Google]);
-        assert!(versions.is_supported(ProtocolVersion::Google));
-        assert!(!versions.is_supported(ProtocolVersion::RfcDraft14));
+        let versions = VersionList::new(&[ProtocolVersion::RfcDraft19]);
+        assert_eq!(versions.versions(), &[ProtocolVersion::RfcDraft19]);
+        assert!(versions.is_supported(ProtocolVersion::RfcDraft19));
     }
 
     #[test]
     fn zero_versions() {
         let versions = VersionList::new(&[]);
         assert!(versions.versions().is_empty());
-        assert!(!versions.is_supported(ProtocolVersion::Google));
-        assert!(!versions.is_supported(ProtocolVersion::RfcDraft14));
+        assert!(!versions.is_supported(ProtocolVersion::RfcDraft19));
     }
 
     #[test]
     fn max_versions() {
         let tmp = (0..VersionList::MAX_VERSIONS * 2)
-            .map(|_| ProtocolVersion::RfcDraft14)
+            .map(|_| ProtocolVersion::RfcDraft19)
             .collect::<Vec<_>>();
 
         let versions = VersionList::new(&tmp);
@@ -189,16 +198,56 @@ mod tests {
     }
 
     #[test]
-    fn versions_out_of_order() {
-        // Create a VersionList with versions in descending order (RfcDraft14 > Google)
-        let versions = VersionList::new(&[ProtocolVersion::RfcDraft14, ProtocolVersion::Google]);
+    fn unknown_versions_are_ignored() {
+        // RFC 5.1.1: "Servers MUST ignore any unknown version numbers in the list
+        // supplied by the client."
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&0x00000005u32.to_le_bytes());
+        buf.extend_from_slice(&(ProtocolVersion::RfcDraft19 as u32).to_le_bytes());
 
-        // Serialize to wire format
-        let mut buf = vec![0u8; versions.wire_size()];
-        {
-            let mut cursor = ParseCursor::new(&mut buf);
-            versions.to_wire(&mut cursor).unwrap();
+        let mut cursor = ParseCursor::new(&mut buf);
+        let versions = VersionList::from_wire(&mut cursor).unwrap();
+
+        assert_eq!(versions.versions(), &[ProtocolVersion::RfcDraft19]);
+        assert_eq!(cursor.remaining(), 0);
+    }
+
+    #[test]
+    fn all_unknown_versions_yield_empty_list() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&0x00000005u32.to_le_bytes());
+        buf.extend_from_slice(&0x00000006u32.to_le_bytes());
+        buf.extend_from_slice(&0x7fffffffu32.to_le_bytes());
+
+        let mut cursor = ParseCursor::new(&mut buf);
+        let versions = VersionList::from_wire(&mut cursor).unwrap();
+
+        assert!(versions.versions().is_empty());
+        assert_eq!(cursor.remaining(), 0);
+    }
+
+    #[test]
+    fn unknown_versions_must_still_be_ordered() {
+        // Ordering is enforced on the raw wire values, unknown or not
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&(ProtocolVersion::RfcDraft19 as u32).to_le_bytes());
+        buf.extend_from_slice(&0x00000005u32.to_le_bytes());
+
+        let mut cursor = ParseCursor::new(&mut buf);
+        let result = VersionList::from_wire(&mut cursor);
+
+        match result.unwrap_err() {
+            UnorderedVersion(1, 0x00000005) => (), // ok, expected
+            e => panic!("unexpected error: {e:?}"),
         }
+    }
+
+    #[test]
+    fn versions_out_of_order() {
+        // Wire values in descending order: 0x8000000c followed by 0x00000000
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&(ProtocolVersion::RfcDraft19 as u32).to_le_bytes());
+        buf.extend_from_slice(&0x00000000u32.to_le_bytes());
 
         // Attempt to deserialize - should fail because versions are not in ascending order
         let mut cursor = ParseCursor::new(&mut buf);

@@ -1,17 +1,17 @@
 use std::fmt::Debug;
 
-use Error::{BadRequestSize, BufferTooSmall, InvalidMessageType, UnexpectedTags};
+use Error::{BadRequestSize, BufferTooSmall, InvalidMessageType, MissingTag};
 use Request::{Plain, Srv};
 
 use crate::FromWireN;
 use crate::cursor::ParseCursor;
 use crate::error::Error;
-use crate::header::{Header, Header4, Header5};
+use crate::header::{Header4, Header5, RawHeader};
 use crate::tag::Tag;
 use crate::tags::ver::RequestedVersions;
-use crate::tags::{MessageType, Nonce, SrvCommitment};
+use crate::tags::{MessageType, Nonce, ProtocolVersion, SrvCommitment};
 use crate::util::as_hex;
-use crate::wire::{FromFrame, FromWire, ToFrame, ToWire};
+use crate::wire::{FRAME_OVERHEAD, FromFrame, FromWire, ToFrame, ToWire};
 
 /// RFC 5.1: The size of the request message SHOULD be at least 1024 bytes when
 /// the UDP transport mode is used.
@@ -32,13 +32,37 @@ impl Request {
         Plain(RequestPlain::new(nonce))
     }
 
-    // TODO(stuart) choose from RFC and Google variants
-    // pub fn new_with_version(nonce: &Nonce, version: &Version) -> Self {
-    //     // Plain(RequestPlain::new_with_version(nonce, version))
-    // }
-
     pub fn new_with_server(nonce: &Nonce, server: &SrvCommitment) -> Self {
         Srv(RequestSrv::new(nonce, server))
+    }
+
+    /// Build a request offering the given protocol versions instead of the
+    /// default. `versions` must be non-empty and sorted in ascending wire order
+    /// (RFC 5.1.1).
+    pub fn new_with_versions(nonce: &Nonce, versions: &[ProtocolVersion]) -> Self {
+        assert!(!versions.is_empty(), "at least one version is required");
+        Plain(RequestPlain::from_parts(
+            RequestedVersions::new(versions),
+            *nonce,
+            MessageType::Request,
+        ))
+    }
+
+    /// Build a request with an SRV commitment, offering the given protocol
+    /// versions instead of the default. `versions` must be non-empty and sorted
+    /// in ascending wire order (RFC 5.1.1).
+    pub fn new_with_server_and_versions(
+        nonce: &Nonce,
+        server: &SrvCommitment,
+        versions: &[ProtocolVersion],
+    ) -> Self {
+        assert!(!versions.is_empty(), "at least one version is required");
+        Srv(RequestSrv::from_parts(
+            RequestedVersions::new(versions),
+            server.clone(),
+            *nonce,
+            MessageType::Request,
+        ))
     }
 
     pub fn ver(&self) -> &RequestedVersions {
@@ -90,20 +114,61 @@ impl ToFrame for Request {}
 
 impl FromWire for Request {
     fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
+        const RAW_VER: u32 = Tag::VER as u32;
+        const RAW_SRV: u32 = Tag::SRV as u32;
+        const RAW_NONC: u32 = Tag::NONC as u32;
+        const RAW_TYPE: u32 = Tag::TYPE as u32;
+
         if cursor.remaining() != 1012 {
             return Err(BadRequestSize(cursor.remaining()));
         }
 
-        // Distinguish the SRV variant by peeking at the number of tags.
-        // RequestPlain has 4 tags, RequestSrv has 5 tags
-        let saved_pos = cursor.position();
-        let num_tags = cursor.try_get_u32_le()?;
-        cursor.set_position(saved_pos);
+        let header = RawHeader::from_wire(cursor)?;
 
-        match num_tags {
-            4 => Ok(Plain(RequestPlain::from_wire(cursor)?)),
-            5 => Ok(Srv(RequestSrv::from_wire(cursor)?)),
-            _ => Err(Error::MismatchedNumTags(4, num_tags)),
+        let mut version: Option<RequestedVersions> = None;
+        let mut server: Option<SrvCommitment> = None;
+        let mut nonce: Option<Nonce> = None;
+        let mut msg_type: Option<MessageType> = None;
+
+        for (raw_tag, value_len) in header.entries() {
+            let value_start = cursor.position();
+
+            match raw_tag {
+                RAW_VER => version = Some(RequestedVersions::from_wire_n(cursor, value_len)?),
+                RAW_SRV => server = Some(SrvCommitment::from_wire_n(cursor, value_len)?),
+                RAW_NONC => nonce = Some(Nonce::from_wire_n(cursor, value_len)?),
+                RAW_TYPE => msg_type = Some(MessageType::from_wire_n(cursor, value_len)?),
+                // RFC 5.1: "Unknown tags MUST be ignored by the server."
+                // Padding tags (ZZZZ/PAD) are skipped the same way.
+                _ => {}
+            }
+
+            // Advance to the next value regardless of how many bytes the tag
+            // parser consumed (skipped tags, short VER lists, etc.)
+            cursor.set_position(value_start + value_len);
+        }
+
+        // RFC 5.1: requests not containing the three mandatory tags MUST be ignored
+        let Some(version) = version else {
+            return Err(MissingTag("VER"));
+        };
+        let Some(nonce) = nonce else {
+            return Err(MissingTag("NONC"));
+        };
+        let Some(msg_type) = msg_type else {
+            return Err(MissingTag("TYPE"));
+        };
+
+        // RFC 5.1.3: requests with a TYPE other than 0 MUST be ignored
+        if msg_type != MessageType::Request {
+            return Err(InvalidMessageType(msg_type as u32));
+        }
+
+        match server {
+            Some(server) => Ok(Srv(RequestSrv::from_parts(
+                version, server, nonce, msg_type,
+            ))),
+            None => Ok(Plain(RequestPlain::from_parts(version, nonce, msg_type))),
         }
     }
 }
@@ -128,17 +193,49 @@ pub struct RequestPlain {
     version: RequestedVersions,
     nonce: Nonce,
     msg_type: MessageType,
-    padding: [u8; 940],
+    padding: [u8; Self::MAX_PADDING],
 }
 
 impl RequestPlain {
     const TAGS: [Tag; 4] = [Tag::VER, Tag::NONC, Tag::TYPE, Tag::ZZZZ];
+
+    /// ZZZZ padding when the VER list is empty; each version offered uses 4 of
+    /// these bytes so the message stays exactly 1012 bytes (1024 framed)
+    const MAX_PADDING: usize = REQUEST_SIZE
+        - FRAME_OVERHEAD
+        - size_of::<Header4>()
+        - size_of::<Nonce>()
+        - size_of::<MessageType>();
+
+    /// The ZZZZ length needed to pad this request to exactly 1024 bytes
+    fn padding_len(&self) -> usize {
+        Self::MAX_PADDING - self.version.wire_size()
+    }
 
     pub fn new(nonce: &Nonce) -> Self {
         Self {
             nonce: *nonce,
             ..Self::default()
         }
+    }
+
+    /// Build from parsed fields. The header offsets are recomputed so a
+    /// re-serialized request reflects the parsed values.
+    fn from_parts(version: RequestedVersions, nonce: Nonce, msg_type: MessageType) -> Self {
+        let mut req = Self {
+            version,
+            nonce,
+            msg_type,
+            ..Self::default()
+        };
+        req.recompute_offsets();
+        req
+    }
+
+    fn recompute_offsets(&mut self) {
+        self.header.offsets[0] = self.version.wire_size() as u32;
+        self.header.offsets[1] = self.header.offsets[0] + self.nonce.wire_size() as u32;
+        self.header.offsets[2] = self.header.offsets[1] + self.msg_type.wire_size() as u32;
     }
 
     pub fn ver(&self) -> &RequestedVersions {
@@ -154,43 +251,13 @@ impl RequestPlain {
     }
 }
 
-impl FromWire for RequestPlain {
-    fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
-        let header = Header4::from_wire(cursor)?;
-        header.check_offset_bounds(cursor.remaining())?;
-
-        if header.tags() != Self::TAGS {
-            return Err(UnexpectedTags);
-        }
-
-        let mut req = RequestPlain {
-            header,
-            ..Self::default()
-        };
-
-        // Offsets are positive, monotonic, and 4-byte aligned. Verified by
-        // Header::from_wire() and Header::check_offset_bounds()
-        let ver_len = req.header.offsets[0] as usize;
-        req.version = RequestedVersions::from_wire_n(cursor, ver_len)?;
-
-        req.nonce = Nonce::from_wire(cursor)?;
-        req.msg_type = MessageType::from_wire(cursor)?;
-
-        if req.msg_type != MessageType::Request {
-            return Err(InvalidMessageType(req.msg_type as u32));
-        }
-
-        Ok(req)
-    }
-}
-
 impl ToWire for RequestPlain {
     fn wire_size(&self) -> usize {
         self.header.wire_size()
             + self.version.wire_size()
             + self.nonce.wire_size()
             + self.msg_type.wire_size()
-            + self.padding.len()
+            + self.padding_len()
     }
 
     fn to_wire(&self, cursor: &mut ParseCursor) -> Result<(), Error> {
@@ -202,7 +269,7 @@ impl ToWire for RequestPlain {
         self.version.to_wire(cursor)?;
         self.nonce.to_wire(cursor)?;
         self.msg_type.to_wire(cursor)?;
-        cursor.put_slice(&self.padding);
+        cursor.put_slice(&self.padding[..self.padding_len()]);
 
         Ok(())
     }
@@ -215,14 +282,11 @@ impl Default for RequestPlain {
             version: RequestedVersions::default(),
             nonce: Nonce::default(),
             msg_type: MessageType::Request,
-            padding: [0; 940],
+            padding: [0; Self::MAX_PADDING],
         };
 
         request.header.tags = Self::TAGS;
-
-        request.header.offsets[0] = request.version.wire_size() as u32;
-        request.header.offsets[1] = request.header.offsets[0] + request.nonce.wire_size() as u32;
-        request.header.offsets[2] = request.header.offsets[1] + request.msg_type.wire_size() as u32;
+        request.recompute_offsets();
 
         request
     }
@@ -246,11 +310,25 @@ pub struct RequestSrv {
     server: SrvCommitment,
     nonce: Nonce,
     msg_type: MessageType,
-    padding: [u8; 900],
+    padding: [u8; Self::MAX_PADDING],
 }
 
 impl RequestSrv {
     const TAGS: [Tag; 5] = [Tag::VER, Tag::SRV, Tag::NONC, Tag::TYPE, Tag::ZZZZ];
+
+    /// ZZZZ padding when the VER list is empty; each version offered uses 4 of
+    /// these bytes so the message stays exactly 1012 bytes (1024 framed)
+    const MAX_PADDING: usize = REQUEST_SIZE
+        - FRAME_OVERHEAD
+        - size_of::<Header5>()
+        - size_of::<SrvCommitment>()
+        - size_of::<Nonce>()
+        - size_of::<MessageType>();
+
+    /// The ZZZZ length needed to pad this request to exactly 1024 bytes
+    fn padding_len(&self) -> usize {
+        Self::MAX_PADDING - self.version.wire_size()
+    }
 
     pub fn new(nonce: &Nonce, server: &SrvCommitment) -> Self {
         Self {
@@ -258,6 +336,32 @@ impl RequestSrv {
             nonce: *nonce,
             ..Self::default()
         }
+    }
+
+    /// Build from parsed fields. The header offsets are recomputed so a
+    /// re-serialized request reflects the parsed values.
+    fn from_parts(
+        version: RequestedVersions,
+        server: SrvCommitment,
+        nonce: Nonce,
+        msg_type: MessageType,
+    ) -> Self {
+        let mut req = Self {
+            version,
+            server,
+            nonce,
+            msg_type,
+            ..Self::default()
+        };
+        req.recompute_offsets();
+        req
+    }
+
+    fn recompute_offsets(&mut self) {
+        self.header.offsets[0] = self.version.wire_size() as u32;
+        self.header.offsets[1] = self.header.offsets[0] + self.server.wire_size() as u32;
+        self.header.offsets[2] = self.header.offsets[1] + self.nonce.wire_size() as u32;
+        self.header.offsets[3] = self.header.offsets[2] + self.msg_type.wire_size() as u32;
     }
 
     pub fn ver(&self) -> &RequestedVersions {
@@ -285,48 +389,13 @@ impl Default for RequestSrv {
             server: SrvCommitment::default(),
             nonce: Nonce::default(),
             msg_type: MessageType::Request,
-            padding: [0; 900],
+            padding: [0; Self::MAX_PADDING],
         };
 
         request.header.tags = Self::TAGS;
-
-        request.header.offsets[0] = request.version.wire_size() as u32;
-        request.header.offsets[1] = request.header.offsets[0] + request.server.wire_size() as u32;
-        request.header.offsets[2] = request.header.offsets[1] + request.nonce.wire_size() as u32;
-        request.header.offsets[3] = request.header.offsets[2] + request.msg_type.wire_size() as u32;
+        request.recompute_offsets();
 
         request
-    }
-}
-
-impl FromWire for RequestSrv {
-    fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
-        let header = Header5::from_wire(cursor)?;
-        header.check_offset_bounds(cursor.remaining())?;
-
-        if header.tags != Self::TAGS {
-            return Err(UnexpectedTags);
-        }
-
-        let mut req = RequestSrv {
-            header,
-            ..Self::default()
-        };
-
-        // Offsets are positive, monotonic, and 4-byte aligned. Verified by
-        // Header::from_wire() and Header::check_offset_bounds()
-        let ver_len = req.header.offsets[0] as usize;
-        req.version = RequestedVersions::from_wire_n(cursor, ver_len)?;
-
-        req.server = SrvCommitment::from_wire(cursor)?;
-        req.nonce = Nonce::from_wire(cursor)?;
-        req.msg_type = MessageType::from_wire(cursor)?;
-
-        if req.msg_type != MessageType::Request {
-            return Err(InvalidMessageType(req.msg_type as u32));
-        }
-
-        Ok(req)
     }
 }
 
@@ -337,7 +406,7 @@ impl ToWire for RequestSrv {
             + self.server.wire_size()
             + self.nonce.wire_size()
             + self.msg_type.wire_size()
-            + self.padding.len()
+            + self.padding_len()
     }
 
     fn to_wire(&self, cursor: &mut ParseCursor) -> Result<(), Error> {
@@ -350,7 +419,7 @@ impl ToWire for RequestSrv {
         self.server.to_wire(cursor)?;
         self.nonce.to_wire(cursor)?;
         self.msg_type.to_wire(cursor)?;
-        cursor.put_slice(&self.padding);
+        cursor.put_slice(&self.padding[..self.padding_len()]);
 
         Ok(())
     }
@@ -380,20 +449,202 @@ mod tests {
         let nonce = Nonce::from([0x42; 32]);
         let req = RequestPlain::new(&nonce);
 
-        let mut buf = vec![0u8; size_of::<RequestPlain>()];
+        let mut buf = vec![0u8; req.wire_size()];
         {
             let mut cursor = ParseCursor::new(&mut buf);
             req.to_wire(&mut cursor).unwrap();
         }
 
         let mut cursor = ParseCursor::new(&mut buf);
-        let decoded = RequestPlain::from_wire(&mut cursor).unwrap();
+        let decoded = match Request::from_wire(&mut cursor).unwrap() {
+            Plain(req) => req,
+            Srv(_) => panic!("expected Plain variant"),
+        };
 
         assert_eq!(decoded.ver(), req.ver());
         assert_eq!(decoded.nonc(), req.nonc());
         assert_eq!(decoded.msg_type(), req.msg_type());
         assert_eq!(decoded.padding, req.padding);
         assert_eq!(decoded.header, req.header);
+    }
+
+    /// Build a framed message from raw (tag, value) entries. The caller is
+    /// responsible for tag ordering and for sizing values so the message body
+    /// totals 1012 bytes (1024 with framing).
+    fn raw_frame(entries: &[(&[u8; 4], Vec<u8>)]) -> Vec<u8> {
+        let mut msg = Vec::new();
+        msg.extend_from_slice(&(entries.len() as u32).to_le_bytes());
+
+        let mut acc = 0u32;
+        for (_, value) in &entries[..entries.len() - 1] {
+            acc += value.len() as u32;
+            msg.extend_from_slice(&acc.to_le_bytes());
+        }
+        for (tag, _) in entries {
+            msg.extend_from_slice(*tag);
+        }
+        for (_, value) in entries {
+            msg.extend_from_slice(value);
+        }
+
+        let mut out = Vec::new();
+        out.extend_from_slice(b"ROUGHTIM");
+        out.extend_from_slice(&(msg.len() as u32).to_le_bytes());
+        out.extend_from_slice(&msg);
+        out
+    }
+
+    fn ver_value() -> Vec<u8> {
+        (ProtocolVersion::RfcDraft19 as u32).to_le_bytes().to_vec()
+    }
+
+    fn parse_frame(bytes: &mut [u8]) -> Result<Request, crate::error::Error> {
+        use crate::wire::FromFrame;
+        let mut cursor = ParseCursor::new(bytes);
+        Request::from_frame(&mut cursor)
+    }
+
+    #[test]
+    fn request_with_unknown_tag_is_parsed() {
+        // RFC 5.1: "Unknown tags MUST be ignored by the server."
+        // Tag order by little-endian value: VER < NONC < TYPE < GREZ < ZZZZ
+        let mut bytes = raw_frame(&[
+            (b"VER\x00", ver_value()),
+            (b"NONC", vec![0x42; 32]),
+            (b"TYPE", 0u32.to_le_bytes().to_vec()),
+            (b"GREZ", vec![0xaa; 4]),
+            (b"ZZZZ", vec![0; 928]),
+        ]);
+        assert_eq!(bytes.len(), 1024);
+
+        let parsed = parse_frame(&mut bytes).unwrap();
+        assert_eq!(parsed.ver().versions(), &[ProtocolVersion::RfcDraft19]);
+        assert_eq!(parsed.nonc(), &Nonce::from([0x42; 32]));
+        assert!(parsed.srv().is_none());
+    }
+
+    #[test]
+    fn request_with_srv_and_unknown_tag_is_parsed() {
+        let mut bytes = raw_frame(&[
+            (b"VER\x00", ver_value()),
+            (b"SRV\x00", vec![0x77; 32]),
+            (b"NONC", vec![0x42; 32]),
+            (b"TYPE", 0u32.to_le_bytes().to_vec()),
+            (b"GREZ", vec![0xaa; 4]),
+            (b"ZZZZ", vec![0; 888]),
+        ]);
+        assert_eq!(bytes.len(), 1024);
+
+        let parsed = parse_frame(&mut bytes).unwrap();
+        assert_eq!(parsed.srv(), Some(&SrvCommitment::from([0x77; 32])));
+        assert_eq!(parsed.nonc(), &Nonce::from([0x42; 32]));
+    }
+
+    #[test]
+    fn request_padded_with_unknown_tag_is_parsed() {
+        // No ZZZZ at all; an unknown tag provides the padding to 1024 bytes
+        let mut bytes = raw_frame(&[
+            (b"VER\x00", ver_value()),
+            (b"NONC", vec![0x42; 32]),
+            (b"TYPE", 0u32.to_le_bytes().to_vec()),
+            (b"GREZ", vec![0; 940]),
+        ]);
+        assert_eq!(bytes.len(), 1024);
+
+        let parsed = parse_frame(&mut bytes).unwrap();
+        assert_eq!(parsed.nonc(), &Nonce::from([0x42; 32]));
+    }
+
+    #[test]
+    fn request_missing_mandatory_tag_is_rejected() {
+        // RFC 5.1: requests not containing VER, NONC, and TYPE MUST be ignored.
+        // This one has no NONC.
+        let mut bytes = raw_frame(&[
+            (b"VER\x00", ver_value()),
+            (b"TYPE", 0u32.to_le_bytes().to_vec()),
+            (b"ZZZZ", vec![0; 980]),
+        ]);
+        assert_eq!(bytes.len(), 1024);
+
+        assert!(parse_frame(&mut bytes).is_err());
+    }
+
+    #[test]
+    fn request_with_nonzero_type_is_rejected() {
+        // RFC 5.1.3: requests with a TYPE other than 0 MUST be ignored
+        let mut bytes = raw_frame(&[
+            (b"VER\x00", ver_value()),
+            (b"NONC", vec![0x42; 32]),
+            (b"TYPE", 1u32.to_le_bytes().to_vec()),
+            (b"ZZZZ", vec![0; 940]),
+        ]);
+        assert_eq!(bytes.len(), 1024);
+
+        assert!(parse_frame(&mut bytes).is_err());
+    }
+
+    #[test]
+    fn request_with_duplicate_tag_is_rejected() {
+        // RFC 4.2: a tag MUST NOT appear more than once in a header
+        let mut bytes = raw_frame(&[
+            (b"VER\x00", ver_value()),
+            (b"NONC", vec![0x42; 32]),
+            (b"NONC", vec![0x43; 32]),
+            (b"TYPE", 0u32.to_le_bytes().to_vec()),
+            (b"ZZZZ", vec![0; 900]),
+        ]);
+        assert_eq!(bytes.len(), 1024);
+
+        assert!(parse_frame(&mut bytes).is_err());
+    }
+
+    #[test]
+    fn unknown_versions_in_request_are_ignored() {
+        use crate::wire::{FromFrame, ToFrame};
+
+        let nonce = Nonce::from([0x42; 32]);
+        let request = Request::new(&nonce);
+        let mut bytes = request.as_frame_bytes().unwrap();
+
+        // The VER value is the first entry in the message values section:
+        // 12 bytes framing + 32 bytes header (4 tags). Overwrite the single
+        // version entry with a value unknown to this implementation.
+        let ver_offset = 12 + 32;
+        bytes[ver_offset..ver_offset + 4].copy_from_slice(&0x00000005u32.to_le_bytes());
+
+        let mut cursor = ParseCursor::new(&mut bytes);
+        let parsed = Request::from_frame(&mut cursor).unwrap();
+
+        // RFC 5.1.1: unknown version numbers are ignored, not an error
+        assert!(parsed.ver().versions().is_empty());
+    }
+
+    #[test]
+    fn request_offering_multiple_versions_is_1024_bytes() {
+        use crate::wire::{FromFrame, ToFrame};
+
+        let nonce = Nonce::from([0x42; 32]);
+        let versions = [ProtocolVersion::Rfc, ProtocolVersion::RfcDraft19];
+
+        let request = Request::new_with_versions(&nonce, &versions);
+        let mut bytes = request.as_frame_bytes().unwrap();
+        assert_eq!(bytes.len(), super::REQUEST_SIZE);
+
+        let mut cursor = ParseCursor::new(&mut bytes);
+        let parsed = Request::from_frame(&mut cursor).unwrap();
+        assert_eq!(parsed.ver().versions(), &versions);
+        assert_eq!(parsed.nonc(), &Nonce::from([0x42; 32]));
+
+        // SRV variant as well
+        let srv = SrvCommitment::from([0x77; 32]);
+        let request = Request::new_with_server_and_versions(&nonce, &srv, &versions);
+        let mut bytes = request.as_frame_bytes().unwrap();
+        assert_eq!(bytes.len(), super::REQUEST_SIZE);
+
+        let mut cursor = ParseCursor::new(&mut bytes);
+        let parsed = Request::from_frame(&mut cursor).unwrap();
+        assert_eq!(parsed.ver().versions(), &versions);
+        assert_eq!(parsed.srv(), Some(&srv));
     }
 
     #[test]
@@ -412,7 +663,8 @@ mod tests {
         assert_eq!(req.version, RequestedVersions::default());
         assert_eq!(req.msg_type, MessageType::Request);
         assert_eq!(req.nonce, Nonce::from([0u8; 32]));
-        assert_eq!(req.padding, [0u8; 940]);
+        assert_eq!(req.padding, [0u8; RequestPlain::MAX_PADDING]);
+        assert_eq!(req.padding_len(), 940);
 
         // Verify offsets and tags
         assert_eq!(req.header.offsets[0], size_of::<ProtocolVersion>() as u32);
@@ -442,7 +694,8 @@ mod tests {
         assert_eq!(req.msg_type(), MessageType::Request);
         assert_eq!(req.srv(), &SrvCommitment::from([0u8; 32]));
         assert_eq!(req.nonc(), &Nonce::from([0u8; 32]));
-        assert_eq!(req.padding, [0u8; 900]);
+        assert_eq!(req.padding, [0u8; RequestSrv::MAX_PADDING]);
+        assert_eq!(req.padding_len(), 900);
 
         assert_eq!(req.header.offsets[0], req.ver().wire_size() as u32);
         assert_eq!(
@@ -479,11 +732,14 @@ mod tests {
         // }
         let raw = include_bytes!("../testdata/rfc-request.071039e5");
 
-        // skip 12 framing bytes as we're constructing a concrete RequestPlain
+        // skip 12 framing bytes to parse the message directly
         let mut data = raw[12..].to_vec();
         let mut cursor = ParseCursor::new(&mut data);
 
-        let request = RequestPlain::from_wire(&mut cursor).unwrap();
+        let request = match Request::from_wire(&mut cursor).unwrap() {
+            Plain(req) => req,
+            Srv(_) => panic!("expected Plain variant"),
+        };
 
         assert_eq!(request.version, RequestedVersions::default());
         assert_eq!(
@@ -491,7 +747,7 @@ mod tests {
             [0x07, 0x10, 0x39, 0xe5, 0x72, 0x33, 0x23, 0x19]
         );
         assert_eq!(request.msg_type, MessageType::Request);
-        assert_eq!(request.padding, [0u8; 940]);
+        assert_eq!(request.padding_len(), 940);
     }
 
     #[test]

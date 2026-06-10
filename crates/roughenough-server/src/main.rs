@@ -57,12 +57,7 @@ fn main() {
 
     let clock = choose_clock(&args);
     let seed = load_seed(&args);
-    let key_source = KeySource::new(
-        args.version(),
-        seed,
-        clock.clone(),
-        args.rotation_interval(),
-    );
+    let key_source = KeySource::new(seed, clock.clone(), args.rotation_interval());
 
     info!("Long term public key: {:?}", key_source.public_key());
 

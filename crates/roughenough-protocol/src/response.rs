@@ -2,8 +2,8 @@ use std::fmt::Debug;
 
 use crate::cursor::ParseCursor;
 use crate::error::Error;
-use crate::error::Error::{BufferTooSmall, UnexpectedTags};
-use crate::header::{Header, Header7};
+use crate::error::Error::BufferTooSmall;
+use crate::header::{Header, Header7, RawHeader};
 use crate::tag::Tag;
 use crate::tags::srep::SignedResponse;
 use crate::tags::{Certificate, MerklePath, MessageType, Nonce, Signature};
@@ -137,34 +137,65 @@ impl Default for Response {
 
 impl FromWire for Response {
     fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
-        let header = Header7::from_wire(cursor)?;
-        header.check_offset_bounds(cursor.remaining())?;
+        const RAW_SIG: u32 = Tag::SIG as u32;
+        const RAW_NONC: u32 = Tag::NONC as u32;
+        const RAW_TYPE: u32 = Tag::TYPE as u32;
+        const RAW_PATH: u32 = Tag::PATH as u32;
+        const RAW_SREP: u32 = Tag::SREP as u32;
+        const RAW_CERT: u32 = Tag::CERT as u32;
+        const RAW_INDX: u32 = Tag::INDX as u32;
 
-        if header.tags() != Self::TAGS {
-            return Err(UnexpectedTags);
+        let header = RawHeader::from_wire(cursor)?;
+
+        let mut signature: Option<Signature> = None;
+        let mut nonce: Option<Nonce> = None;
+        let mut msg_type: Option<MessageType> = None;
+        let mut path: Option<MerklePath> = None;
+        let mut srep: Option<SignedResponse> = None;
+        let mut cert: Option<Certificate> = None;
+        let mut index: Option<u32> = None;
+
+        for (raw_tag, value_len) in header.entries() {
+            let value_start = cursor.position();
+
+            match raw_tag {
+                RAW_SIG => signature = Some(Signature::from_wire_n(cursor, value_len)?),
+                RAW_NONC => nonce = Some(Nonce::from_wire_n(cursor, value_len)?),
+                RAW_TYPE => msg_type = Some(MessageType::from_wire_n(cursor, value_len)?),
+                RAW_PATH => path = Some(MerklePath::from_wire_n(cursor, value_len)?),
+                RAW_SREP => srep = Some(SignedResponse::from_wire_n(cursor, value_len)?),
+                RAW_CERT => cert = Some(Certificate::from_wire_n(cursor, value_len)?),
+                RAW_INDX => {
+                    if value_len != size_of::<u32>() {
+                        return Err(Error::WrongTagSize(size_of::<u32>(), value_len));
+                    }
+                    index = Some(cursor.try_get_u32_le()?);
+                }
+                // RFC 7: "Clients MUST properly ignore undefined tags"
+                _ => {}
+            }
+
+            cursor.set_position(value_start + value_len);
         }
 
-        let mut response = Response {
-            header,
-            ..Default::default()
+        // RFC 5.2: a response contains the tags SIG, NONC, TYPE, PATH, SREP,
+        // CERT, and INDX
+        let Some(msg_type) = msg_type else {
+            return Err(Error::MissingTag("TYPE"));
         };
 
-        response.signature = Signature::from_wire(cursor)?;
-        response.nonce = Nonce::from_wire(cursor)?;
-
-        let msg_type = MessageType::from_wire(cursor)?;
+        // RFC 5.2.3: responses with a TYPE other than 1 MUST be ignored
         if msg_type != MessageType::Response {
             return Err(Error::InvalidMessageType(msg_type as u32));
         }
 
-        let path_len = (response.header.offsets[3] - response.header.offsets[2]) as usize;
-        response.path = MerklePath::from_wire_n(cursor, path_len)?;
-
-        response.srep = SignedResponse::from_wire(cursor)?;
-        response.cert = Certificate::from_wire(cursor)?;
-
-        // cursor holds remainder of message
-        response.index = cursor.try_get_u32_le()?;
+        let mut response = Response::default();
+        response.set_sig(signature.ok_or(Error::MissingTag("SIG"))?);
+        response.set_nonc(nonce.ok_or(Error::MissingTag("NONC"))?);
+        response.set_path(path.ok_or(Error::MissingTag("PATH"))?);
+        response.set_srep(srep.ok_or(Error::MissingTag("SREP"))?);
+        response.set_cert(cert.ok_or(Error::MissingTag("CERT"))?);
+        response.set_indx(index.ok_or(Error::MissingTag("INDX"))?);
 
         Ok(response)
     }
@@ -210,9 +241,55 @@ mod tests {
     use crate::header::Header;
     use crate::response::Response;
     use crate::tag::Tag;
-    use crate::tags::ProtocolVersion::{Google, RfcDraft14};
+    use crate::tags::ProtocolVersion::RfcDraft19;
     use crate::tags::{MerklePath, MessageType, SignedResponse, SupportedVersions};
+    use crate::util::test_utils::{frame, insert_tag, replace_value, value_range};
     use crate::wire::FromFrame;
+
+    #[test]
+    fn response_with_unknown_tag_is_parsed() {
+        // RFC 7: "Clients MUST properly ignore undefined tags"
+        let raw = include_bytes!("../testdata/rfc-response.path8.index2.4c16c619");
+        let msg = &raw[12..];
+
+        // GREZ sorts after INDX at the top level
+        let greased = insert_tag(msg, *b"GREZ", &[0xaa; 4]);
+        let mut framed = frame(&greased);
+
+        let mut cursor = ParseCursor::new(&mut framed);
+        let response = Response::from_frame(&mut cursor).unwrap();
+
+        assert_eq!(response.indx(), 2);
+        assert_eq!(response.msg_type(), MessageType::Response);
+        assert_eq!(
+            response.nonc().as_ref()[..8],
+            [0x4c, 0x16, 0xc6, 0x19, 0xd7, 0x71, 0x6f, 0xae]
+        );
+        assert_eq!(*response.srep().ver(), RfcDraft19);
+    }
+
+    #[test]
+    fn srep_with_unknown_tag_is_parsed() {
+        // RFC 9.2: new tags SHOULD be added to the SREP tag whenever possible,
+        // so clients must tolerate unknown tags inside SREP
+        let raw = include_bytes!("../testdata/rfc-response.path8.index2.4c16c619");
+        let msg = &raw[12..];
+
+        let srep_range = value_range(msg, *b"SREP");
+        let new_srep = insert_tag(&msg[srep_range.clone()], *b"GREZ", &[0xbb; 8]);
+
+        // Rebuild the top-level message with the larger SREP value so the
+        // top-level offsets stay correct
+        let rebuilt = replace_value(msg, *b"SREP", &new_srep);
+        let mut framed = frame(&rebuilt);
+
+        let mut cursor = ParseCursor::new(&mut framed);
+        let response = Response::from_frame(&mut cursor).unwrap();
+
+        assert_eq!(*response.srep().ver(), RfcDraft19);
+        assert_eq!(response.srep().radi(), 5);
+        assert_eq!(response.srep().midp(), 1748359193);
+    }
 
     #[test]
     fn from_wire_on_known_bytes() {
@@ -237,12 +314,14 @@ mod tests {
         //             offsets: [ 4, 8, 16, 24, ],
         //             tags: [ VER, RADI, MIDP, VERS, ROOT, ],
         //         },
-        //         version: RfcDraft14,
+        //         version: RfcDraft19,
         //         radius: 5,
         //         midpoint: 1748359193,
         //         supported_versions: VERS {
-        //             num_versions: 2,
-        //             versions: [ Google, RfcDraft14, ],
+        //             // on the wire: [0x00000000, 0x8000000c]; 0x00000000 is
+        //             // unknown to this implementation and ignored when parsing
+        //             num_versions: 1,
+        //             versions: [ RfcDraft19, ],
         //         },
         //         merkle_root: ROOT(1ecf2ead5837a00dc01d2875bdb16c2be094da36115dce7966e320e31345bb97),
         //     },
@@ -267,7 +346,11 @@ mod tests {
         //     index: 2
         // }
 
-        assert_eq!(response.header().offsets(), [64, 96, 100, 356, 452, 604]);
+        // Header offsets reflect the reconstructed canonical form: the original
+        // wire bytes carry a two-entry VERS [0x0, 0x8000000c] whose unknown 0x0
+        // entry is dropped during parsing, shrinking SREP by 4 bytes (the wire
+        // offsets were [64, 96, 100, 356, 452, 604])
+        assert_eq!(response.header().offsets(), [64, 96, 100, 356, 448, 600]);
         assert_eq!(
             response.header().tags(),
             [
@@ -298,15 +381,16 @@ mod tests {
         );
 
         let srep = response.srep();
-        assert_eq!(srep.header().offsets(), [4, 8, 16, 24]);
+        // [4, 8, 16, 24] on the wire; the reconstructed VERS holds one entry
+        assert_eq!(srep.header().offsets(), [4, 8, 16, 20]);
         assert_eq!(
             srep.header().tags(),
             [Tag::VER, Tag::RADI, Tag::MIDP, Tag::VERS, Tag::ROOT]
         );
-        assert_eq!(*srep.ver(), RfcDraft14);
+        assert_eq!(*srep.ver(), RfcDraft19);
         assert_eq!(srep.radi(), 5);
         assert_eq!(srep.midp(), 1748359193);
-        assert_eq!(srep.vers().versions(), &[Google, RfcDraft14]);
+        assert_eq!(srep.vers().versions(), &[RfcDraft19]);
         assert_eq!(srep.root().as_ref().len(), 32);
         assert_eq!(
             srep.root().as_ref()[..8],
@@ -343,13 +427,15 @@ mod tests {
         response.set_path(path);
         assert_eq!(response.header.offsets, [64, 96, 100, 292, 380, 532]);
 
+        // Only the VERS wire size matters here; duplicate the entry to test the
+        // two-version offsets
         let mut srep = SignedResponse::default();
-        srep.set_vers(&SupportedVersions::new(&[Google, RfcDraft14]));
+        srep.set_vers(&SupportedVersions::new(&[RfcDraft19, RfcDraft19]));
         response.set_srep(srep);
         assert_eq!(response.header.offsets, [64, 96, 100, 292, 388, 540]);
 
         let mut srep = SignedResponse::default();
-        srep.set_vers(&SupportedVersions::new(&[RfcDraft14]));
+        srep.set_vers(&SupportedVersions::new(&[RfcDraft19]));
         response.set_srep(srep);
         assert_eq!(response.header.offsets, [64, 96, 100, 292, 384, 536]);
     }

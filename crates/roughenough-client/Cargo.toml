@@ -22,7 +22,6 @@ path = "src/main.rs"
 roughenough-common = { workspace = true }
 roughenough-merkle = { workspace = true }
 roughenough-protocol = { workspace = true }
-roughenough-server = { workspace = true }
 aws-lc-rs = { workspace = true }
 jiff = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
@@ -35,3 +34,7 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 ureq = { workspace = true, features = ["json"], optional = true }
+
+[dev-dependencies]
+roughenough-protocol = { workspace = true, features = ["test-utils"] }
+roughenough-server = { workspace = true, features = ["test-utils"] }

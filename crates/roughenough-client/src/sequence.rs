@@ -47,12 +47,12 @@ impl MeasurementSequence {
         }
 
         let mut measurements = Vec::new();
-        let mut prior_response: Option<Response> = None;
+        let mut prior_response: Option<Vec<u8>> = None;
 
         for _round in 0..rounds {
             for client in &self.clients {
-                let measurement = self.query(client, prior_response)?;
-                prior_response = Some(measurement.response().clone());
+                let measurement = self.query(client, prior_response.as_deref())?;
+                prior_response = Some(measurement.response_bytes().to_vec());
                 measurements.push(measurement);
             }
         }
@@ -63,23 +63,31 @@ impl MeasurementSequence {
     fn query(
         &self,
         client: &Client,
-        prior_response: Option<Response>,
+        prior_response: Option<&[u8]>,
     ) -> Result<Measurement, ClientError> {
-        let (nonce, rand_value) = Self::generate_nonce(&prior_response)?;
+        let (nonce, rand_value) = Self::generate_nonce(prior_response);
 
         let srv_commit = client.srv_commit.clone().unwrap();
-        let request = Request::new_with_server(&nonce, &srv_commit);
+        let request = match &client.versions {
+            Some(versions) => Request::new_with_server_and_versions(&nonce, &srv_commit, versions),
+            None => Request::new_with_server(&nonce, &srv_commit),
+        };
 
         let request_bytes = request.as_frame_bytes()?;
         let _nbytes = client.transport.send(&request_bytes, client.server)?;
 
         let mut buf = [0u8; 1024];
         let (nbytes, _addr) = client.transport.recv(&mut buf)?;
+        let response_bytes = buf[..nbytes].to_vec();
+
+        // Parsing only advances the cursor; buf still holds the bytes as received
         let mut cursor = ParseCursor::new(&mut buf[..nbytes]);
         let response = Response::from_frame(&mut cursor)?;
 
-        // Validate the response
-        let _midpoint = client.validator.validate(&request_bytes, &response)?;
+        // Validate the response against the bytes as received
+        let _midpoint = client
+            .validator
+            .validate(&request_bytes, &response_bytes, &response)?;
 
         Measurement::builder()
             .server(client.server)
@@ -87,26 +95,21 @@ impl MeasurementSequence {
             .public_key(client.public_key)
             .request(request)
             .response(response)
+            .response_bytes(response_bytes)
             .rand_value(rand_value)
-            .prior_response(prior_response.clone())
             .build()
     }
 
     /// If we have a prior response, then generate `H(prior_response || chaining_rand)`. Otherwise
-    /// generate a random nonce.
-    fn generate_nonce(
-        prior_response: &Option<Response>,
-    ) -> Result<(Nonce, Option<[u8; 32]>), ClientError> {
-        let (nonce, rand) = if let Some(prior_response) = &prior_response {
-            let rand = random_bytes::<32>();
-            let nonce = calculate_chained_nonce(prior_response, &rand);
-
-            (nonce, Some(rand))
-        } else {
-            let nonce = Nonce::from(random_bytes::<32>());
-            (nonce, None)
-        };
-
-        Ok((nonce, rand))
+    /// generate a random nonce. `prior_response` is the prior response packet exactly as received.
+    fn generate_nonce(prior_response: Option<&[u8]>) -> (Nonce, Option<[u8; 32]>) {
+        match prior_response {
+            Some(prior_frame) => {
+                let rand = random_bytes::<32>();
+                let nonce = calculate_chained_nonce(prior_frame, &rand);
+                (nonce, Some(rand))
+            }
+            None => (Nonce::from(random_bytes::<32>()), None),
+        }
     }
 }

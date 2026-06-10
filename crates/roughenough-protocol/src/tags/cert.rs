@@ -2,11 +2,11 @@ use std::fmt::Debug;
 
 use crate::cursor::ParseCursor;
 use crate::error::Error;
-use crate::error::Error::{UnexpectedOffsets, UnexpectedTags};
-use crate::header::{Header, Header2};
+use crate::error::Error::{MissingTag, WrongTagSize};
+use crate::header::{Header, Header2, RawHeader};
 use crate::tag::Tag;
 use crate::tags::{Delegation, Signature};
-use crate::wire::{FromWire, ToWire};
+use crate::wire::{FromWire, FromWireN, ToWire};
 
 #[repr(C)]
 #[derive(PartialEq, Eq, Clone)]
@@ -66,21 +66,43 @@ impl Certificate {
 
 impl FromWire for Certificate {
     fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
-        let cert = Certificate {
-            header: Header2::from_wire(cursor)?,
-            signature: Signature::from_wire(cursor)?,
-            delegation: Delegation::from_wire(cursor)?,
-        };
+        let msg_len = cursor.remaining();
+        Self::from_wire_n(cursor, msg_len)
+    }
+}
 
-        if cert.header.offsets != Self::OFFSETS {
-            return Err(UnexpectedOffsets);
+impl FromWireN for Certificate {
+    fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error> {
+        const RAW_SIG: u32 = Tag::SIG as u32;
+        const RAW_DELE: u32 = Tag::DELE as u32;
+
+        let header = RawHeader::from_wire_n(cursor, n)?;
+
+        let mut signature: Option<Signature> = None;
+        let mut delegation: Option<Delegation> = None;
+
+        for (raw_tag, value_len) in header.entries() {
+            let value_start = cursor.position();
+
+            match raw_tag {
+                RAW_SIG => {
+                    if value_len != size_of::<Signature>() {
+                        return Err(WrongTagSize(size_of::<Signature>(), value_len));
+                    }
+                    signature = Some(Signature::from_wire(cursor)?);
+                }
+                RAW_DELE => delegation = Some(Delegation::from_wire_n(cursor, value_len)?),
+                // RFC 7: clients MUST properly ignore undefined tags
+                _ => {}
+            }
+
+            cursor.set_position(value_start + value_len);
         }
 
-        if cert.header.tags != Self::TAGS {
-            return Err(UnexpectedTags);
-        }
-
-        Ok(cert)
+        Ok(Certificate::new(
+            signature.ok_or(MissingTag("SIG"))?,
+            delegation.ok_or(MissingTag("DELE"))?,
+        ))
     }
 }
 

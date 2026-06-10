@@ -5,7 +5,7 @@ use crate::cursor::ParseCursor;
 use crate::error::Error;
 use crate::error::Error::BufferTooSmall;
 use crate::util::as_hex;
-use crate::wire::{FromWire, ToWire};
+use crate::wire::{FromWire, FromWireN, ToWire};
 
 /// The SRV tag is used by the client to indicate which long-term public key it expects to
 /// verify the response with.
@@ -45,6 +45,15 @@ impl FromWire for SrvCommitment {
         let mut srv = SrvCommitment::default();
         cursor.try_copy_to_slice(&mut srv.0)?;
         Ok(srv)
+    }
+}
+
+impl FromWireN for SrvCommitment {
+    fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error> {
+        if n != size_of::<Self>() {
+            return Err(Error::WrongTagSize(size_of::<Self>(), n));
+        }
+        Self::from_wire(cursor)
     }
 }
 

@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use roughenough_protocol::ToWire;
-use roughenough_protocol::tags::ProtocolVersion::RfcDraft14;
 use roughenough_protocol::tags::{Certificate, Delegation, ProtocolVersion, PublicKey, Signature};
 use roughenough_protocol::util::ClockSource;
 
@@ -11,14 +10,13 @@ use crate::seed::SeedBackend;
 /// The server's long-term Ed25519 identity.
 pub struct LongTermIdentity {
     seed: Box<dyn SeedBackend>,
-    version: ProtocolVersion,
 }
 
 impl LongTermIdentity {
-    pub fn new(version: ProtocolVersion, seed: Box<dyn SeedBackend>) -> LongTermIdentity {
+    pub fn new(seed: Box<dyn SeedBackend>) -> LongTermIdentity {
         assert_eq!(seed.seed_len(), 32, "seed must be 32 bytes long");
 
-        LongTermIdentity { seed, version }
+        LongTermIdentity { seed }
     }
 
     /// Retrieves the raw public key bytes associated with this LongTermIdentity.
@@ -47,11 +45,20 @@ impl LongTermIdentity {
     /// authorized by this long-term identity.
     pub fn make_online_key(&mut self, clock: &ClockSource, validity_length: Duration) -> OnlineKey {
         let now = clock.epoch_seconds();
-        let mut olk = OnlineKey::new(self.version, clock.clone());
+        let mut olk = OnlineKey::new(clock.clone());
         let pubkey = PublicKey::from(olk.public_key_bytes());
         let dele = Delegation::new(pubkey, now, validity_length);
 
-        let mut to_sign = RfcDraft14.dele_prefix().to_vec();
+        // One delegation signature covers every supported version, which is
+        // only sound while they all share the same DELE context string.
+        let prefix = ProtocolVersion::SUPPORTED[0].dele_prefix();
+        debug_assert!(
+            ProtocolVersion::SUPPORTED
+                .iter()
+                .all(|version| version.dele_prefix() == prefix),
+            "supported versions must share a DELE context string to share one CERT"
+        );
+        let mut to_sign = prefix.to_vec();
         to_sign.extend_from_slice(&dele.as_bytes().expect("DELE serialization should not fail"));
 
         let dele_sig: [u8; 64] = self

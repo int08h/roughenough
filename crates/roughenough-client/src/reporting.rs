@@ -63,17 +63,17 @@ impl ReportEntry {
     /// Creates a report entry from a measurement
     fn from_measurement(measurement: &Measurement) -> Self {
         let request_bytes = measurement.request().as_frame_bytes().unwrap();
-        let response_bytes = measurement.response().as_frame_bytes().unwrap();
 
         let public_key = measurement
             .public_key()
             .expect("Measurements always have a public key by construction");
 
-        // Encode everything as base64
+        // Encode everything as base64. The response is reported exactly as it
+        // was received from the server.
         ReportEntry {
             rand: measurement.rand_value().map(|r| BASE64.encode(r)),
             request: BASE64.encode(&request_bytes),
-            response: BASE64.encode(&response_bytes),
+            response: BASE64.encode(measurement.response_bytes()),
             public_key: BASE64.encode(public_key.as_ref()),
         }
     }
@@ -148,11 +148,11 @@ mod tests {
             Request::from_frame(&mut cursor).unwrap()
         };
 
+        let raw_response =
+            include_bytes!("../../roughenough-protocol/testdata/rfc-response.071039e5").to_vec();
         let mut response = {
-            let mut raw =
-                include_bytes!("../../roughenough-protocol/testdata/rfc-response.071039e5")
-                    .to_vec();
-            let mut cursor = ParseCursor::new(&mut raw);
+            let mut parse_buf = raw_response.clone();
+            let mut cursor = ParseCursor::new(&mut parse_buf);
             Response::from_frame(&mut cursor).unwrap()
         };
 
@@ -170,8 +170,8 @@ mod tests {
             .public_key(Some(public_key))
             .request(request)
             .response(response)
+            .response_bytes(raw_response)
             .rand_value(Some([0x42u8; 32]))
-            .prior_response(None)
             .build()
             .unwrap()
     }

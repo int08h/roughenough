@@ -27,7 +27,7 @@ pub struct RequestedVersions {
 impl Default for RequestedVersions {
     fn default() -> Self {
         Self {
-            versions: VersionList::new(&[ProtocolVersion::RfcDraft14]),
+            versions: VersionList::new(&[ProtocolVersion::RfcDraft19]),
         }
     }
 }
@@ -91,8 +91,7 @@ mod tests {
 
     #[test]
     fn wire_roundtrip() {
-        let versions =
-            RequestedVersions::new(&[ProtocolVersion::Google, ProtocolVersion::RfcDraft14]);
+        let versions = RequestedVersions::new(&[ProtocolVersion::RfcDraft19]);
 
         let wire_size = versions.wire_size();
         let mut buf = vec![0u8; wire_size];
@@ -111,22 +110,20 @@ mod tests {
     #[test]
     fn default() {
         let versions = RequestedVersions::default();
-        assert_eq!(versions.versions(), &[ProtocolVersion::RfcDraft14]);
+        assert_eq!(versions.versions(), &[ProtocolVersion::RfcDraft19]);
     }
 
     #[test]
     fn new() {
-        let versions = RequestedVersions::new(&[ProtocolVersion::Google]);
-        assert_eq!(versions.versions(), &[ProtocolVersion::Google]);
-        assert!(versions.is_supported(ProtocolVersion::Google));
-        assert!(!versions.is_supported(ProtocolVersion::RfcDraft14));
+        let versions = RequestedVersions::new(&[ProtocolVersion::RfcDraft19]);
+        assert_eq!(versions.versions(), &[ProtocolVersion::RfcDraft19]);
+        assert!(versions.is_supported(ProtocolVersion::RfcDraft19));
     }
 
     #[test]
     fn zero_versions() {
         let versions = RequestedVersions::new(&[]);
         assert!(versions.versions().is_empty());
-        assert!(!versions.is_supported(ProtocolVersion::Google));
-        assert!(!versions.is_supported(ProtocolVersion::RfcDraft14));
+        assert!(!versions.is_supported(ProtocolVersion::RfcDraft19));
     }
 }

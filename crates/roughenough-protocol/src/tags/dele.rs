@@ -3,11 +3,11 @@ use std::time::Duration;
 
 use crate::cursor::ParseCursor;
 use crate::error::Error;
-use crate::error::Error::{UnexpectedOffsets, UnexpectedTags};
-use crate::header::{Header, Header3};
+use crate::error::Error::{MissingTag, WrongTagSize};
+use crate::header::{Header3, RawHeader};
 use crate::tag::Tag;
 use crate::tags::PublicKey;
-use crate::wire::{FromWire, ToWire};
+use crate::wire::{FromWire, FromWireN, ToWire};
 
 #[repr(C)]
 #[derive(PartialEq, Eq, Clone)]
@@ -80,20 +80,56 @@ impl Default for Delegation {
 
 impl FromWire for Delegation {
     fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
-        let dele = Delegation {
-            header: Header3::from_wire(cursor)?,
-            public_key: PublicKey::from_wire(cursor)?,
-            min_time: cursor.try_get_u64_le()?,
-            max_time: cursor.try_get_u64_le()?,
-        };
+        let msg_len = cursor.remaining();
+        Self::from_wire_n(cursor, msg_len)
+    }
+}
 
-        if dele.header.offsets() != Self::OFFSETS {
-            return Err(UnexpectedOffsets);
+impl FromWireN for Delegation {
+    fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error> {
+        const RAW_PUBK: u32 = Tag::PUBK as u32;
+        const RAW_MINT: u32 = Tag::MINT as u32;
+        const RAW_MAXT: u32 = Tag::MAXT as u32;
+
+        let header = RawHeader::from_wire_n(cursor, n)?;
+
+        let mut public_key: Option<PublicKey> = None;
+        let mut min_time: Option<u64> = None;
+        let mut max_time: Option<u64> = None;
+
+        for (raw_tag, value_len) in header.entries() {
+            let value_start = cursor.position();
+
+            match raw_tag {
+                RAW_PUBK => {
+                    if value_len != size_of::<PublicKey>() {
+                        return Err(WrongTagSize(size_of::<PublicKey>(), value_len));
+                    }
+                    public_key = Some(PublicKey::from_wire(cursor)?);
+                }
+                RAW_MINT => {
+                    if value_len != size_of::<u64>() {
+                        return Err(WrongTagSize(size_of::<u64>(), value_len));
+                    }
+                    min_time = Some(cursor.try_get_u64_le()?);
+                }
+                RAW_MAXT => {
+                    if value_len != size_of::<u64>() {
+                        return Err(WrongTagSize(size_of::<u64>(), value_len));
+                    }
+                    max_time = Some(cursor.try_get_u64_le()?);
+                }
+                // RFC 7: clients MUST properly ignore undefined tags
+                _ => {}
+            }
+
+            cursor.set_position(value_start + value_len);
         }
 
-        if dele.header.tags() != Self::TAGS {
-            return Err(UnexpectedTags);
-        }
+        let mut dele = Delegation::default();
+        dele.set_pubk(public_key.ok_or(MissingTag("PUBK"))?);
+        dele.set_mint(min_time.ok_or(MissingTag("MINT"))?);
+        dele.set_maxt(max_time.ok_or(MissingTag("MAXT"))?);
 
         Ok(dele)
     }

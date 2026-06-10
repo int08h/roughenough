@@ -7,7 +7,7 @@ use roughenough_protocol::request::{Request, REQUEST_SIZE};
 use roughenough_protocol::response::Response;
 use roughenough_protocol::tags::{
     Certificate, Delegation, MerklePath, Nonce, PublicKey, 
-    Signature, SignedResponse, SrvCommitment, SupportedVersions, Version
+    ProtocolVersion, Signature, SignedResponse, SrvCommitment, SupportedVersions,
 };
 use roughenough_protocol::wire::{FromWire, ToWire};
 
@@ -18,12 +18,11 @@ struct FuzzVersion {
     version: u8,
 }
 
-impl From<FuzzVersion> for Version {
+impl From<FuzzVersion> for ProtocolVersion {
     fn from(fuzz: FuzzVersion) -> Self {
-        match fuzz.version % 3 {
-            0 => Version::Google,
-            1 => Version::RfcDraft14,
-            _ => Version::Invalid,
+        match fuzz.version % 2 {
+            0 => ProtocolVersion::RfcDraft19,
+            _ => ProtocolVersion::Invalid,
         }
     }
 }
@@ -102,15 +101,15 @@ struct FuzzSupportedVersions {
 
 impl FuzzSupportedVersions {
     fn to_supported_versions(&self) -> SupportedVersions {
-        let versions: Vec<Version> = self.versions
+        let versions: Vec<ProtocolVersion> = self.versions
             .iter()
-            .take(SupportedVersions::MAX_VERSIONS) // Limit number of versions
-            .map(|v| Version::from(v.clone()))
-            .filter(|v| *v != Version::Invalid)
+            .take(roughenough_protocol::version_list::VersionList::MAX_VERSIONS) // Limit number of versions
+            .map(|v| ProtocolVersion::from(v.clone()))
+            .filter(|v| *v != ProtocolVersion::Invalid)
             .collect();
         
         if versions.is_empty() {
-            SupportedVersions::from(&[Version::RfcDraft14][..])
+            SupportedVersions::from(&[ProtocolVersion::RfcDraft19][..])
         } else {
             SupportedVersions::from(&versions[..])
         }
@@ -166,7 +165,7 @@ struct FuzzSignedResponse {
 impl FuzzSignedResponse {
     fn to_signed_response(&self) -> SignedResponse {
         let mut srep = SignedResponse::default();
-        srep.set_ver(Version::from(self.version.clone()));
+        srep.set_ver(ProtocolVersion::from(self.version.clone()));
         srep.set_radi(self.radius.min(10)); // Cap at 10 seconds
         srep.set_midp(self.midpoint);
         srep.set_vers(&self.supported_versions.to_supported_versions());

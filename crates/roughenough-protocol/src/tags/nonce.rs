@@ -4,7 +4,7 @@ use crate::cursor::ParseCursor;
 use crate::error::Error;
 use crate::tags::fixed_tag::FixedTag;
 use crate::util::as_hex;
-use crate::wire::{FromWire, ToWire};
+use crate::wire::{FromWire, FromWireN, ToWire};
 
 /// RFC 5.1.2: The value of the NONC tag is a 32-byte nonce.
 const SIZE: usize = 32;
@@ -32,6 +32,15 @@ impl ToWire for Nonce {
 impl FromWire for Nonce {
     fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
         Ok(Nonce(cursor.try_get_fixed()?.into()))
+    }
+}
+
+impl FromWireN for Nonce {
+    fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error> {
+        if n != SIZE {
+            return Err(Error::WrongTagSize(SIZE, n));
+        }
+        Self::from_wire(cursor)
     }
 }
 

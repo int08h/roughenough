@@ -8,10 +8,11 @@ use aws_lc_rs::signature;
 use aws_lc_rs::signature::UnparsedPublicKey;
 use data_encoding::HEXLOWER;
 use roughenough_merkle::MerkleTree;
-use roughenough_protocol::cursor::ParseCursor;
+use roughenough_protocol::header::find_value_range;
 use roughenough_protocol::response::Response;
+use roughenough_protocol::tag::Tag;
 use roughenough_protocol::tags::PublicKey;
-use roughenough_protocol::wire::ToWire;
+use roughenough_protocol::wire::FRAME_OVERHEAD;
 
 use crate::measurement::Measurement;
 
@@ -91,7 +92,17 @@ impl ResponseValidator {
     /// Validate a response. Validity of a response does not prove that the timestamp's value in
     /// the response is correct, but merely that the server represents it signed the timestamp
     /// and computed its signature during the time interval (MIDP-RADI, MIDP+RADI).
-    pub fn validate(&self, request: &[u8], response: &Response) -> Result<u64, ValidationError> {
+    ///
+    /// `response_bytes` is the response packet exactly as received (including the
+    /// "ROUGHTIM" framing): signatures are verified over the received bytes, which
+    /// a re-serialization of `response` would not reproduce if the server included
+    /// tags unknown to this implementation.
+    pub fn validate(
+        &self,
+        request: &[u8],
+        response_bytes: &[u8],
+        response: &Response,
+    ) -> Result<u64, ValidationError> {
         // RFC section 5.4. Validity of Response:
         //   "A client MUST check the following properties when it receives a
         //   response. We assume the long-term server public key is known to the
@@ -99,7 +110,7 @@ impl ResponseValidator {
 
         // The signature in CERT was made with the long-term key of the server.
         if self.pub_key.is_some() {
-            self.check_dele_signature(response)?;
+            self.check_dele_signature(response_bytes, response)?;
         }
 
         // The MIDP timestamp lies in the interval specified by the MINT and MAXT timestamps.
@@ -110,28 +121,41 @@ impl ResponseValidator {
         self.check_merkle_proof(request, response)?;
 
         // The signature of SREP in SIG validates with the public key in DELE.
-        self.check_srep_signature(response)?;
+        self.check_srep_signature(response_bytes, response)?;
 
         let midpoint = response.srep().midp();
         Ok(midpoint)
     }
 
-    fn check_dele_signature(&self, response: &Response) -> Result<(), ValidationError> {
-        let dele = response.cert().dele();
+    /// Slice the value of nested `path` tags out of the received response packet
+    fn received_value(response_bytes: &[u8], path: &[Tag]) -> Result<Vec<u8>, ValidationError> {
+        if response_bytes.len() < FRAME_OVERHEAD {
+            return Err(ValidationError::BadSignature(format!(
+                "response packet too short: {} bytes",
+                response_bytes.len()
+            )));
+        }
+
+        let mut msg = response_bytes[FRAME_OVERHEAD..].to_vec();
+        let range = find_value_range(&mut msg, path)?;
+        Ok(msg[range].to_vec())
+    }
+
+    fn check_dele_signature(
+        &self,
+        response_bytes: &[u8],
+        response: &Response,
+    ) -> Result<(), ValidationError> {
+        let dele_bytes = Self::received_value(response_bytes, &[Tag::CERT, Tag::DELE])?;
         let prefix = response.srep().ver().dele_prefix();
 
-        let mut cert_bytes = vec![0u8; prefix.len() + dele.wire_size()];
-        cert_bytes[..prefix.len()].copy_from_slice(prefix);
-        let mut cursor = ParseCursor::new(&mut cert_bytes[prefix.len()..]);
-        dele.to_wire(&mut cursor)?;
+        let mut to_verify = Vec::with_capacity(prefix.len() + dele_bytes.len());
+        to_verify.extend_from_slice(prefix);
+        to_verify.extend_from_slice(&dele_bytes);
 
         let signature = response.cert().sig();
 
-        match self
-            .pub_key
-            .unwrap()
-            .verify(&cert_bytes, signature.as_ref())
-        {
+        match self.pub_key.unwrap().verify(&to_verify, signature.as_ref()) {
             Ok(_) => Ok(()),
             Err(_) => Err(ValidationError::BadSignature(
                 "signature on DELE is invalid".to_string(),
@@ -139,19 +163,22 @@ impl ResponseValidator {
         }
     }
 
-    fn check_srep_signature(&self, response: &Response) -> Result<(), ValidationError> {
-        let srep = response.srep();
-        let prefix = srep.ver().srep_prefix();
+    fn check_srep_signature(
+        &self,
+        response_bytes: &[u8],
+        response: &Response,
+    ) -> Result<(), ValidationError> {
+        let srep_bytes = Self::received_value(response_bytes, &[Tag::SREP])?;
+        let prefix = response.srep().ver().srep_prefix();
 
-        let mut srep_bytes = vec![0u8; prefix.len() + srep.wire_size()];
-        srep_bytes[..prefix.len()].copy_from_slice(prefix);
-        let mut cursor = ParseCursor::new(&mut srep_bytes[prefix.len()..]);
-        srep.to_wire(&mut cursor)?;
+        let mut to_verify = Vec::with_capacity(prefix.len() + srep_bytes.len());
+        to_verify.extend_from_slice(prefix);
+        to_verify.extend_from_slice(&srep_bytes);
 
         let dele = response.cert().dele();
         let pubk = UnparsedPublicKey::new(&signature::ED25519, dele.pubk().as_ref());
 
-        match pubk.verify(&srep_bytes, response.sig().as_ref()) {
+        match pubk.verify(&to_verify, response.sig().as_ref()) {
             Ok(_) => Ok(()),
             Err(_) => {
                 let msg = format!(
@@ -173,7 +200,13 @@ impl ResponseValidator {
         let index = response.indx() as usize;
 
         let tree = MerkleTree::new();
-        let computed_root = tree.root_from_paths(index, request, merkle_path);
+        let Some(computed_root) = tree.root_from_paths(index, request, merkle_path) else {
+            let msg = format!(
+                "INDX {index} has nonzero bits beyond the PATH length {}",
+                merkle_path.depth()
+            );
+            return Err(ValidationError::FailedProof(msg));
+        };
         let response_root = response.srep().root().as_ref();
 
         if computed_root != *response_root {
@@ -251,51 +284,62 @@ mod tests {
             .decode(b"AW5uAoTSTDfG5NfY1bTh08GUnOqlRb+HVhbJ3ODJvsE=")
             .unwrap();
 
-        let mut msg_bytes =
+        let response_bytes =
             include_bytes!("../../roughenough-protocol/testdata/rfc-response.071039e5").to_vec();
 
-        let mut cursor = ParseCursor::new(&mut msg_bytes);
+        let mut parse_buf = response_bytes.clone();
+        let mut cursor = ParseCursor::new(&mut parse_buf);
         let response = Response::from_frame(&mut cursor).unwrap();
         let validator = ResponseValidator::new_with_key(PublicKey::from(pub_key.as_slice()));
 
-        validator.check_dele_signature(&response).unwrap();
+        validator
+            .check_dele_signature(&response_bytes, &response)
+            .unwrap();
     }
 
     #[test]
     fn srep_signature_is_validated() {
-        let mut msg_bytes =
-            include_bytes!("../../roughenough-protocol/testdata/rfc-response.071039e5").to_vec();
+        use roughenough_protocol::ToFrame;
+        use roughenough_server::test_utils::TestContext;
 
-        let mut cursor = ParseCursor::new(&mut msg_bytes);
-        let response = Response::from_frame(&mut cursor).unwrap();
+        let mut ctx = TestContext::new(64);
+        let (_request, response) = ctx.create_interaction_pair(1000);
+        let response_bytes = response.as_frame_bytes().unwrap();
         let validator = ResponseValidator::new();
 
-        validator.check_srep_signature(&response).unwrap();
+        validator
+            .check_srep_signature(&response_bytes, &response)
+            .unwrap();
     }
 
     #[test]
     fn corrupt_dele_signature_is_detected() {
+        use roughenough_protocol::header::find_value_range;
+        use roughenough_protocol::tag::Tag;
+        use roughenough_protocol::wire::FRAME_OVERHEAD;
+
         let pub_key = BASE64
             .decode(b"AW5uAoTSTDfG5NfY1bTh08GUnOqlRb+HVhbJ3ODJvsE=")
             .unwrap();
 
-        let mut msg_bytes =
+        let mut response_bytes =
             include_bytes!("../../roughenough-protocol/testdata/rfc-response.071039e5").to_vec();
 
-        let mut cursor = ParseCursor::new(&mut msg_bytes);
-        let mut response = Response::from_frame(&mut cursor).unwrap();
+        // Corrupt the last byte of the DELE value (high byte of MAXT) in the
+        // received bytes; the message still parses but the signature is broken
+        let dele_range = {
+            let mut msg = response_bytes[FRAME_OVERHEAD..].to_vec();
+            find_value_range(&mut msg, &[Tag::CERT, Tag::DELE]).unwrap()
+        };
+        response_bytes[FRAME_OVERHEAD + dele_range.end - 1] ^= 0xff;
 
-        let mut cert_copy = response.cert().clone();
-        let mut dele_copy = cert_copy.dele().clone();
-
-        // Change the value of the DELE.MINT field
-        dele_copy.set_mint(dele_copy.mint() + 1);
-        cert_copy.set_dele(dele_copy);
-        response.set_cert(cert_copy);
+        let mut parse_buf = response_bytes.clone();
+        let mut cursor = ParseCursor::new(&mut parse_buf);
+        let response = Response::from_frame(&mut cursor).unwrap();
 
         let validator = ResponseValidator::new_with_key(PublicKey::from(pub_key.as_slice()));
 
-        match validator.check_dele_signature(&response) {
+        match validator.check_dele_signature(&response_bytes, &response) {
             Err(BadSignature(msg)) => assert!(msg.contains("DELE")), // ok, expected failure
             Err(e) => panic!("expected BadSignature, got {e:?}"),
             Ok(_) => panic!("expected validation to fail"),
@@ -304,21 +348,26 @@ mod tests {
 
     #[test]
     fn corrupt_srep_signature_is_detected() {
-        let mut msg_bytes =
-            include_bytes!("../../roughenough-protocol/testdata/rfc-response.071039e5").to_vec();
+        use roughenough_protocol::ToFrame;
+        use roughenough_protocol::header::find_value_range;
+        use roughenough_protocol::tag::Tag;
+        use roughenough_protocol::wire::FRAME_OVERHEAD;
+        use roughenough_server::test_utils::TestContext;
 
-        let mut cursor = ParseCursor::new(&mut msg_bytes);
-        let mut response = Response::from_frame(&mut cursor).unwrap();
+        let mut ctx = TestContext::new(64);
+        let (_request, response) = ctx.create_interaction_pair(1000);
+        let mut response_bytes = response.as_frame_bytes().unwrap();
 
-        let mut srep_copy = response.srep().clone();
-
-        // Change the value of the MIDP
-        srep_copy.set_midp(srep_copy.midp() + 1);
-        response.set_srep(srep_copy);
+        // Corrupt the last byte of the SREP value (part of ROOT) in the received bytes
+        let srep_range = {
+            let mut msg = response_bytes[FRAME_OVERHEAD..].to_vec();
+            find_value_range(&mut msg, &[Tag::SREP]).unwrap()
+        };
+        response_bytes[FRAME_OVERHEAD + srep_range.end - 1] ^= 0xff;
 
         let validator = ResponseValidator::new();
 
-        match validator.check_srep_signature(&response) {
+        match validator.check_srep_signature(&response_bytes, &response) {
             Err(BadSignature(msg)) => assert!(msg.contains("SREP")), // ok, expected failure
             Err(e) => panic!("expected BadSignature, got {e:?}"),
             Ok(_) => panic!("expected validation to fail"),
@@ -406,6 +455,126 @@ mod tests {
             Ok(_) => panic!("expected validation to fail"),
         }
     }
+
+    /// Serialize a ToWire value to bytes
+    fn to_bytes<T: roughenough_protocol::ToWire>(value: &T) -> Vec<u8> {
+        let mut buf = vec![0u8; value.wire_size()];
+        let mut cursor = ParseCursor::new(&mut buf);
+        value.to_wire(&mut cursor).unwrap();
+        buf
+    }
+
+    use roughenough_protocol::util::test_utils::{build_msg, insert_tag};
+
+    #[test]
+    fn greased_response_with_valid_signatures_validates() {
+        // RFC 7 / 9.2: a response may carry undefined tags (including inside
+        // SREP and DELE) with signatures computed over the bytes as sent. The
+        // client MUST ignore the undefined tags and the response validates.
+        use aws_lc_rs::signature::{Ed25519KeyPair, KeyPair};
+        use roughenough_merkle::MerkleTree;
+        use roughenough_protocol::ToFrame;
+        use roughenough_protocol::request::Request;
+        use roughenough_protocol::tags::{
+            Delegation, MerkleRoot, Nonce, ProtocolVersion, SignedResponse, SupportedVersions,
+        };
+
+        let longterm = Ed25519KeyPair::generate().unwrap();
+        let online = Ed25519KeyPair::generate().unwrap();
+
+        let nonce = Nonce::from([0x42u8; 32]);
+        let request = Request::new(&nonce);
+        let request_bytes = request.as_frame_bytes().unwrap();
+
+        // Single-request batch: ROOT is the leaf hash of the request packet
+        let mut tree = MerkleTree::new();
+        tree.push_leaf(&request_bytes);
+        let root = tree.compute_root();
+
+        // DELE with an undefined tag spliced in, signed over those exact bytes
+        let mut dele = Delegation::default();
+        dele.set_pubk(PublicKey::from(online.public_key().as_ref()));
+        dele.set_mint(0);
+        dele.set_maxt(u64::MAX);
+        let dele_bytes = insert_tag(&to_bytes(&dele), *b"GREZ", &[0xcc; 4]);
+
+        let mut to_sign = ProtocolVersion::RfcDraft19.dele_prefix().to_vec();
+        to_sign.extend_from_slice(&dele_bytes);
+        let dele_sig = longterm.sign(&to_sign);
+
+        let cert_bytes = build_msg(&[
+            (*b"SIG\x00", dele_sig.as_ref().to_vec()),
+            (*b"DELE", dele_bytes),
+        ]);
+
+        // SREP with an undefined tag spliced in, signed over those exact bytes
+        let mut srep = SignedResponse::default();
+        srep.set_ver(ProtocolVersion::RfcDraft19);
+        srep.set_radi(5);
+        srep.set_midp(1000);
+        srep.set_vers(&SupportedVersions::new(&[ProtocolVersion::RfcDraft19]));
+        srep.set_root(&MerkleRoot::from(root));
+        let srep_bytes = insert_tag(&to_bytes(&srep), *b"GREZ", &[0xdd; 8]);
+
+        let mut to_sign = ProtocolVersion::RfcDraft19.srep_prefix().to_vec();
+        to_sign.extend_from_slice(&srep_bytes);
+        let srep_sig = online.sign(&to_sign);
+
+        // Top-level message with one more undefined tag
+        let msg = build_msg(&[
+            (*b"SIG\x00", srep_sig.as_ref().to_vec()),
+            (*b"NONC", nonce.as_ref().to_vec()),
+            (*b"TYPE", 1u32.to_le_bytes().to_vec()),
+            (*b"PATH", vec![]),
+            (*b"SREP", srep_bytes),
+            (*b"CERT", cert_bytes),
+            (*b"INDX", 0u32.to_le_bytes().to_vec()),
+            (*b"GREZ", vec![0xee; 4]),
+        ]);
+
+        let mut response_bytes = Vec::new();
+        response_bytes.extend_from_slice(b"ROUGHTIM");
+        response_bytes.extend_from_slice(&(msg.len() as u32).to_le_bytes());
+        response_bytes.extend_from_slice(&msg);
+
+        let mut parse_buf = response_bytes.clone();
+        let mut cursor = ParseCursor::new(&mut parse_buf);
+        let response = Response::from_frame(&mut cursor).unwrap();
+
+        let pub_key = PublicKey::from(longterm.public_key().as_ref());
+        let validator = ResponseValidator::new_with_key(pub_key);
+
+        let midpoint = validator
+            .validate(&request_bytes, &response_bytes, &response)
+            .unwrap();
+        assert_eq!(midpoint, 1000);
+    }
+
+    #[test]
+    fn merkle_proof_with_leftover_index_bits_is_detected() {
+        use roughenough_protocol::ToFrame;
+        use roughenough_server::test_utils::TestContext;
+
+        let mut ctx = TestContext::new(64);
+        let (request, mut response) = ctx.create_interaction_pair(1000);
+        let request_bytes = request.as_frame_bytes().unwrap();
+
+        let validator = ResponseValidator::new();
+
+        // Sanity check: the unmodified proof is valid
+        validator
+            .check_merkle_proof(&request_bytes, &response)
+            .unwrap();
+
+        // RFC 5.3.1: any nonzero INDX bits beyond the PATH length must fail
+        response.set_indx(response.indx() | (1 << response.path().depth()));
+
+        match validator.check_merkle_proof(&request_bytes, &response) {
+            Err(ValidationError::FailedProof(_)) => {} // ok, expected failure
+            Err(e) => panic!("expected ValidationError::FailedProof, got {e:?}"),
+            Ok(_) => panic!("expected validation to fail"),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -415,17 +584,20 @@ mod causality {
     use super::*;
 
     fn create_measurement(midpoint: u64) -> Measurement {
+        use roughenough_protocol::ToFrame;
+
         let mut test_context = TestContext::new(64);
         let (req, resp) = test_context.create_interaction_pair(midpoint);
+        let resp_bytes = resp.as_frame_bytes().unwrap();
         let pubkey = PublicKey::from(test_context.key_source.public_key_bytes());
 
         Measurement::builder()
             .server("127.0.0.1:8000".parse().unwrap())
             .request(req)
             .response(resp)
+            .response_bytes(resp_bytes)
             .hostname("testing1234".to_string())
             .public_key(Some(pubkey))
-            .prior_response(None)
             .rand_value(None)
             .build()
             .unwrap()

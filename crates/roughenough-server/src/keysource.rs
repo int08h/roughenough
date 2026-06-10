@@ -4,7 +4,7 @@ use std::time::Duration;
 use roughenough_keys::longterm::LongTermIdentity;
 use roughenough_keys::online::onlinekey::OnlineKey;
 use roughenough_keys::seed::SeedBackend;
-use roughenough_protocol::tags::{ProtocolVersion, PublicKey};
+use roughenough_protocol::tags::PublicKey;
 use roughenough_protocol::util::ClockSource;
 
 /// A thread-safe source of `OnlineKey`s for Workers. All generated `OnlineKey`s share a clock,
@@ -27,7 +27,6 @@ unsafe impl Sync for KeySource {}
 impl KeySource {
     #[allow(clippy::arc_with_non_send_sync)]
     pub fn new(
-        version: ProtocolVersion,
         seed: Box<dyn SeedBackend>,
         clock_source: ClockSource,
         validity_length: Duration,
@@ -37,7 +36,7 @@ impl KeySource {
             "validity duration must be non-zero"
         );
 
-        let identity = LongTermIdentity::new(version, seed);
+        let identity = LongTermIdentity::new(seed);
 
         Self {
             clock_source,
@@ -72,7 +71,6 @@ mod tests {
     use std::time::Duration;
 
     use roughenough_keys::seed::MemoryBackend;
-    use roughenough_protocol::tags::ProtocolVersion;
     use roughenough_protocol::util::ClockSource;
 
     use crate::keysource::KeySource;
@@ -81,7 +79,6 @@ mod tests {
     #[should_panic]
     fn zero_validity_duration_panics() {
         // Given an attempt to create a KeySource
-        let version = roughenough_protocol::tags::ProtocolVersion::RfcDraft14;
         let seed: Box<dyn roughenough_keys::seed::SeedBackend> =
             Box::new(MemoryBackend::from_random());
         let clock = ClockSource::System;
@@ -90,7 +87,7 @@ mod tests {
         let zero_duration = Duration::from_secs(0);
 
         // Then `new` will panic
-        let _ = KeySource::new(version, seed, clock, zero_duration);
+        let _ = KeySource::new(seed, clock, zero_duration);
     }
 
     #[test]
@@ -101,12 +98,7 @@ mod tests {
         let validity_duration = Duration::from_secs(60); // 1 minute validity
 
         let backend = Box::new(MemoryBackend::from_random());
-        let key_source = KeySource::new(
-            ProtocolVersion::RfcDraft14,
-            backend,
-            clock.clone(),
-            validity_duration,
-        );
+        let key_source = KeySource::new(backend, clock.clone(), validity_duration);
 
         // Create initial key
         let first_key = key_source.make_online_key();
@@ -135,12 +127,7 @@ mod tests {
         let validity_duration = Duration::from_secs(2); // 2 second validity
 
         let backend = Box::new(MemoryBackend::from_random());
-        let key_source = Arc::new(KeySource::new(
-            ProtocolVersion::RfcDraft14,
-            backend,
-            clock.clone(),
-            validity_duration,
-        ));
+        let key_source = Arc::new(KeySource::new(backend, clock.clone(), validity_duration));
 
         let keep_running = Arc::new(AtomicBool::new(true));
         let mut handles = vec![];
@@ -216,12 +203,7 @@ mod tests {
         let rotation_interval = Duration::from_secs(1800); // 30 minutes
 
         let backend = Box::new(MemoryBackend::from_random());
-        let key_source = KeySource::new(
-            ProtocolVersion::RfcDraft14,
-            backend,
-            clock.clone(),
-            validity_duration,
-        );
+        let key_source = KeySource::new(backend, clock.clone(), validity_duration);
 
         // Get initial key
         let key1 = key_source.make_online_key();

@@ -1,7 +1,7 @@
 use crate::cursor::ParseCursor;
 use crate::error::Error;
-use crate::error::Error::{NoSupportedVersions, UnexpectedOffsets, UnexpectedTags};
-use crate::header::{Header, Header5};
+use crate::error::Error::{MissingTag, NoSupportedVersions, WrongTagSize};
+use crate::header::{Header, Header5, RawHeader};
 use crate::tag::Tag;
 use crate::tags::{MerkleRoot, ProtocolVersion, SupportedVersions};
 use crate::wire::{FromWire, FromWireN, ToWire};
@@ -128,38 +128,75 @@ impl ToWire for SignedResponse {
 
 impl FromWire for SignedResponse {
     fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
-        let header = Header5::from_wire(cursor)?;
-        header.check_offset_bounds(cursor.remaining())?;
+        let msg_len = cursor.remaining();
+        Self::from_wire_n(cursor, msg_len)
+    }
+}
 
-        if header.tags() != Self::TAGS {
-            return Err(UnexpectedTags);
+impl FromWireN for SignedResponse {
+    fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error> {
+        const RAW_VER: u32 = Tag::VER as u32;
+        const RAW_RADI: u32 = Tag::RADI as u32;
+        const RAW_MIDP: u32 = Tag::MIDP as u32;
+        const RAW_VERS: u32 = Tag::VERS as u32;
+        const RAW_ROOT: u32 = Tag::ROOT as u32;
+
+        let header = RawHeader::from_wire_n(cursor, n)?;
+
+        let mut version: Option<ProtocolVersion> = None;
+        let mut radius: Option<u32> = None;
+        let mut midpoint: Option<u64> = None;
+        let mut supported_versions: Option<SupportedVersions> = None;
+        let mut merkle_root: Option<MerkleRoot> = None;
+
+        for (raw_tag, value_len) in header.entries() {
+            let value_start = cursor.position();
+
+            match raw_tag {
+                RAW_VER => {
+                    if value_len != size_of::<u32>() {
+                        return Err(WrongTagSize(size_of::<u32>(), value_len));
+                    }
+                    version = Some(ProtocolVersion::from_wire(cursor)?);
+                }
+                RAW_RADI => {
+                    if value_len != size_of::<u32>() {
+                        return Err(WrongTagSize(size_of::<u32>(), value_len));
+                    }
+                    radius = Some(cursor.try_get_u32_le()?);
+                }
+                RAW_MIDP => {
+                    if value_len != size_of::<u64>() {
+                        return Err(WrongTagSize(size_of::<u64>(), value_len));
+                    }
+                    midpoint = Some(cursor.try_get_u64_le()?);
+                }
+                RAW_VERS => {
+                    if value_len == 0 {
+                        return Err(NoSupportedVersions);
+                    }
+                    supported_versions = Some(SupportedVersions::from_wire_n(cursor, value_len)?);
+                }
+                RAW_ROOT => {
+                    if value_len != size_of::<MerkleRoot>() {
+                        return Err(WrongTagSize(size_of::<MerkleRoot>(), value_len));
+                    }
+                    merkle_root = Some(MerkleRoot::from_wire(cursor)?);
+                }
+                // RFC 9.2 adds new tags to SREP; RFC 7: clients MUST properly
+                // ignore undefined tags
+                _ => {}
+            }
+
+            cursor.set_position(value_start + value_len);
         }
 
-        let mut srep = SignedResponse {
-            header,
-            ..Default::default()
-        };
-
-        let offsets = srep.header.offsets();
-
-        if offsets[..3] != Self::OFFSETS[..3] {
-            return Err(UnexpectedOffsets);
-        }
-
-        // The VERS value is zero-length, no supported versions
-        if offsets[2] == offsets[3] {
-            return Err(NoSupportedVersions);
-        }
-
-        srep.version = ProtocolVersion::from_wire(cursor)?;
-        srep.radius = cursor.try_get_u32_le()?;
-        srep.midpoint = cursor.try_get_u64_le()?;
-
-        let vers_size = (offsets[3] - offsets[2]) as usize;
-        srep.supported_versions = SupportedVersions::from_wire_n(cursor, vers_size)?;
-
-        // cursor holds remainder of message
-        srep.merkle_root = MerkleRoot::from_wire(cursor)?;
+        let mut srep = SignedResponse::default();
+        srep.set_ver(version.ok_or(MissingTag("VER"))?);
+        srep.set_radi(radius.ok_or(MissingTag("RADI"))?);
+        srep.set_midp(midpoint.ok_or(MissingTag("MIDP"))?);
+        srep.set_vers(&supported_versions.ok_or(MissingTag("VERS"))?);
+        srep.set_root(&merkle_root.ok_or(MissingTag("ROOT"))?);
 
         Ok(srep)
     }
@@ -172,13 +209,10 @@ mod tests {
 
     fn create_valid_signed_response() -> SignedResponse {
         let mut srep = SignedResponse::default();
-        srep.set_ver(ProtocolVersion::RfcDraft14);
+        srep.set_ver(ProtocolVersion::RfcDraft19);
         srep.set_radi(5);
         srep.set_midp(1234567);
-        srep.set_vers(&SupportedVersions::new(&[
-            ProtocolVersion::Google,
-            ProtocolVersion::RfcDraft14,
-        ]));
+        srep.set_vers(&SupportedVersions::new(&[ProtocolVersion::RfcDraft19]));
         srep.set_root(&MerkleRoot::from([0x2e; 32]));
 
         srep
@@ -209,10 +243,12 @@ mod tests {
     }
 
     #[test]
-    fn invalid_tags_are_detected() {
+    fn missing_required_tag_is_detected() {
         let mut srep = create_valid_signed_response();
         let mut buf = vec![0u8; srep.wire_size()];
 
+        // Replace ROOT with a tag that is undefined in SREP. The undefined tag
+        // is ignored, leaving the required ROOT tag missing.
         srep.header.tags[4] = Tag::INDX;
         {
             let mut cursor = ParseCursor::new(&mut buf);
@@ -221,11 +257,10 @@ mod tests {
         let mut cursor = ParseCursor::new(&mut buf);
 
         let result = SignedResponse::from_wire(&mut cursor);
-        assert!(result.is_err(), "the tags were modified to be invalid");
 
         match result {
-            Err(UnexpectedTags) => (), // ok, expected
-            _ => panic!("unexpected error: {result:?}"),
+            Err(MissingTag("ROOT")) => (), // ok, expected
+            _ => panic!("unexpected result: {result:?}"),
         }
     }
 }

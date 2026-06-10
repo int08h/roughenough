@@ -121,8 +121,8 @@ mod tests {
         let mut cursor = ParseCursor::new(&mut malicious);
         let result = Request::from_frame(&mut cursor);
 
-        // Should fail with MismatchedNumTags
-        assert!(matches!(result, Err(Error::MismatchedNumTags(_, _))));
+        // Should fail with BadNumTags
+        assert!(matches!(result, Err(Error::BadNumTags(_))));
     }
 
     // Create request with valid tag count but offsets pointing outside request length

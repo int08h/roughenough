@@ -4,7 +4,7 @@ use crate::cursor::ParseCursor;
 use crate::error::Error;
 use crate::tags::fixed_tag::FixedTag;
 use crate::util::as_hex;
-use crate::wire::{FromWire, ToWire};
+use crate::wire::{FromWire, FromWireN, ToWire};
 
 /// RFC 5.2.1: A SIG tag value is a 64-byte Ed25519 signature.
 const SIZE: usize = 64;
@@ -21,6 +21,15 @@ impl Default for Signature {
 impl FromWire for Signature {
     fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
         Ok(Self(cursor.try_get_fixed()?.into()))
+    }
+}
+
+impl FromWireN for Signature {
+    fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error> {
+        if n != SIZE {
+            return Err(Error::WrongTagSize(SIZE, n));
+        }
+        Self::from_wire(cursor)
     }
 }
 

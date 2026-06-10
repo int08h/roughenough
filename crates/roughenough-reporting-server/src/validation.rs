@@ -83,9 +83,11 @@ fn parse_interaction_pair(
     Ok((request, response))
 }
 
-/// Validate a single request/response pair
+/// Validate a single request/response pair. `response_bytes` is the response
+/// packet exactly as reported; signatures are verified over those bytes.
 fn validate_entry(
     request_bytes: &[u8],
+    response_bytes: &[u8],
     response: &Response,
     public_key_bytes: &[u8],
     index: usize,
@@ -94,16 +96,17 @@ fn validate_entry(
     let validator = ResponseValidator::new_with_key(public_key);
 
     validator
-        .validate(request_bytes, response)
+        .validate(request_bytes, response_bytes, response)
         .map(|_| ()) // Discard the midpoint value
         .map_err(|e| format!("Entry {index}: validation failed: {e}"))
 }
 
-/// Validate chaining between consecutive entries
+/// Validate chaining between consecutive entries. `previous_response` is the
+/// prior entry's response packet exactly as reported.
 fn validate_chaining(
     request: &Request,
     decoded: &DecodedEntry,
-    previous_response: Option<&Response>,
+    previous_response: Option<&[u8]>,
     index: usize,
 ) -> Result<(), String> {
     match previous_response {
@@ -115,14 +118,14 @@ fn validate_chaining(
                 ));
             }
         }
-        Some(prev_response) => {
+        Some(prev_response_frame) => {
             // Second and later entries must have rand value
             let rand_bytes = decoded
                 .rand_bytes
                 .as_ref()
                 .ok_or(format!("Entry {index}: missing a rand value"))?;
 
-            let expected_nonce = calculate_chained_nonce(prev_response, rand_bytes);
+            let expected_nonce = calculate_chained_nonce(prev_response_frame, rand_bytes);
             let found_nonce = *request.nonc();
 
             if found_nonce != expected_nonce {
@@ -142,7 +145,7 @@ pub fn validate_report(report: &MalfeasanceReport) -> Result<(), String> {
         return Err("Need at least 2 entries for causality violation".into());
     }
 
-    let mut previous_response: Option<Response> = None;
+    let mut previous_response: Option<Vec<u8>> = None;
 
     for (i, entry) in report.responses().iter().enumerate() {
         // Decode all base64 fields
@@ -154,16 +157,17 @@ pub fn validate_report(report: &MalfeasanceReport) -> Result<(), String> {
         // Validate the request/response pair
         validate_entry(
             &decoded.request_bytes,
+            &decoded.response_bytes,
             &response,
             &decoded.public_key_bytes,
             i,
         )?;
 
         // Validate chaining
-        validate_chaining(&request, &decoded, previous_response.as_ref(), i)?;
+        validate_chaining(&request, &decoded, previous_response.as_deref(), i)?;
 
-        // Store response for next iteration
-        previous_response = Some(response);
+        // The chained nonce covers the response packet exactly as received
+        previous_response = Some(decoded.response_bytes.clone());
     }
 
     Ok(())

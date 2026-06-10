@@ -17,8 +17,11 @@ pub enum Error {
     #[error("invalid message type: {0:#08x}")]
     InvalidMessageType(u32),
 
-    #[error("mismatched number of tags: expected {0}, got {1}")]
-    MismatchedNumTags(u32, u32),
+    #[error("number of tags is zero or too large: {0}")]
+    BadNumTags(u32),
+
+    #[error("required tag {0} is missing")]
+    MissingTag(&'static str),
 
     #[error("magic value was not 'ROUGHTIM' (0x544f55474854494d): {0:#016x}")]
     UnexpectedMagic(u64),
@@ -26,14 +29,8 @@ pub enum Error {
     #[error("frame length invalid: {0}")]
     UnexpectedFraming(usize),
 
-    #[error("tags found in the message are not what was expected")]
-    UnexpectedTags,
-
     #[error("tag is less than prior tag: index {0}, value {1:#08x}")]
     UnorderedTag(u32, u32),
-
-    #[error("offsets found in the message are not what was expected")]
-    UnexpectedOffsets,
 
     #[error("offset value less than prior offset: index {0}, value {1:#08x}")]
     UnorderedOffset(u32, u32),

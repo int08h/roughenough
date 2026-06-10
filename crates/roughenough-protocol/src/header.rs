@@ -1,5 +1,5 @@
 use Error::{
-    BufferTooSmall, MismatchedNumTags, OutOfBoundsOffset, UnalignedOffset, UnorderedOffset,
+    BadNumTags, BufferTooSmall, MissingTag, OutOfBoundsOffset, UnalignedOffset, UnorderedOffset,
     UnorderedTag,
 };
 use pastey::paste;
@@ -7,17 +7,15 @@ use pastey::paste;
 use crate::cursor::ParseCursor;
 use crate::error::Error;
 use crate::tag::Tag;
-use crate::wire::{FromWire, ToWire};
+use crate::wire::ToWire;
 
+/// Serialization-side view of a message header with a fixed, known tag set.
+/// Parsing always goes through [`RawHeader`], which tolerates unknown tags as
+/// the RFC requires.
 pub trait Header {
     fn num_tags() -> u32;
     fn offsets(&self) -> &[u32];
     fn tags(&self) -> &[Tag];
-
-    fn set_offset(&mut self, idx: usize, offset: u32);
-    fn set_tag(&mut self, idx: usize, tag: Tag);
-
-    fn check_offset_bounds(&self, total_len: usize) -> Result<(), Error>;
 }
 
 fn to_wire_inner<H: Header>(header: &H, cursor: &mut ParseCursor) -> Result<(), Error> {
@@ -38,63 +36,162 @@ fn to_wire_inner<H: Header>(header: &H, cursor: &mut ParseCursor) -> Result<(), 
     Ok(())
 }
 
-fn from_wire_inner<H: Header + Default>(cursor: &mut ParseCursor) -> Result<H, Error> {
-    if cursor.remaining() < size_of::<H>() {
-        return Err(BufferTooSmall(size_of::<H>(), cursor.remaining()));
-    }
+/// Maximum number of (tag, value) pairs accepted when parsing a message with an
+/// open tag set. Generous compared to any message defined by the RFC.
+pub const MAX_RAW_TAGS: usize = 16;
 
-    let mut header = H::default();
-
-    let read_num_tags = cursor.try_get_u32_le()?;
-    if H::num_tags() != read_num_tags {
-        return Err(MismatchedNumTags(H::num_tags(), read_num_tags));
-    }
-
-    let mut prior_offset = 0;
-    for idx in 0..(H::num_tags() - 1) {
-        let value = cursor.try_get_u32_le()?;
-
-        // RFC 4.2: All offsets MUST be multiples of four and placed in increasing order.
-        if value % 4 != 0 {
-            return Err(UnalignedOffset(idx, value));
-        }
-
-        if value < prior_offset {
-            return Err(UnorderedOffset(idx, value));
-        }
-
-        header.set_offset(idx as usize, value);
-        prior_offset = value;
-    }
-
-    let mut prior_tag = Tag::INVALID;
-    for idx in 0..H::num_tags() {
-        // Tags themselves are read big-endian even though tag ordering is based on
-        // their little-endian value.
-        let value = cursor.try_get_u32()?;
-        let tag = Tag::try_from(value)?;
-
-        // RFC 4.2: Tags MUST be listed in the same order as the offsets of their values
-        // and be sorted in ascending order by numeric value.
-        if tag < prior_tag {
-            return Err(UnorderedTag(idx, value));
-        }
-
-        header.set_tag(idx as usize, tag);
-        prior_tag = tag;
-    }
-
-    Ok(header)
+/// A message header parsed without requiring a fixed, known tag set.
+///
+/// RFC 5.1 requires servers to ignore unknown tags in requests, and RFC 7
+/// requires clients to ignore undefined tags in responses. `RawHeader` keeps
+/// tags as raw u32 values (in the same big-endian interpretation as [`Tag`])
+/// instead of rejecting values this implementation does not recognize.
+///
+/// RFC 4.2 tag ordering is enforced on the little-endian value of each tag;
+/// the ordering is strict, which also rejects duplicate tags ("A tag MUST NOT
+/// appear more than once in a header").
+#[derive(Debug, Clone)]
+pub struct RawHeader {
+    num_tags: usize,
+    /// `ends[i]` is the offset one past the last byte of value i; the final
+    /// entry is the total length of the message values section
+    ends: [u32; MAX_RAW_TAGS],
+    raw_tags: [u32; MAX_RAW_TAGS],
 }
 
-fn check_offset_bounds_inner<H: Header>(header: &H, total_len: usize) -> Result<(), Error> {
-    for (idx, &offset) in header.offsets().iter().enumerate() {
-        if offset > total_len as u32 {
-            return Err(OutOfBoundsOffset(idx as u32, offset));
+impl RawHeader {
+    /// Parse a header and validate it against the remaining message length.
+    /// On return the cursor is positioned at the start of the values section.
+    pub fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
+        let msg_len = cursor.remaining();
+        Self::from_wire_n(cursor, msg_len)
+    }
+
+    /// Parse the header of a message that spans the next `msg_len` bytes of the
+    /// cursor. Needed for nested messages (SREP, CERT, DELE), where the message
+    /// ends before the end of the enclosing buffer.
+    pub fn from_wire_n(cursor: &mut ParseCursor, msg_len: usize) -> Result<Self, Error> {
+        if msg_len > cursor.remaining() {
+            return Err(BufferTooSmall(msg_len, cursor.remaining()));
+        }
+
+        let start = cursor.position();
+        let num_tags_field = cursor.try_get_u32_le()?;
+        if num_tags_field == 0 || num_tags_field as usize > MAX_RAW_TAGS {
+            return Err(BadNumTags(num_tags_field));
+        }
+        let num_tags = num_tags_field as usize;
+
+        let mut header = RawHeader {
+            num_tags,
+            ends: [0; MAX_RAW_TAGS],
+            raw_tags: [0; MAX_RAW_TAGS],
+        };
+
+        let mut prior_offset = 0;
+        for idx in 0..num_tags - 1 {
+            let value = cursor.try_get_u32_le()?;
+
+            // RFC 4.2: All offsets MUST be multiples of four and placed in increasing order.
+            if value % 4 != 0 {
+                return Err(UnalignedOffset(idx as u32, value));
+            }
+            if value < prior_offset {
+                return Err(UnorderedOffset(idx as u32, value));
+            }
+
+            header.ends[idx] = value;
+            prior_offset = value;
+        }
+
+        let mut prior_key = 0u32;
+        for idx in 0..num_tags {
+            // Tags are read big-endian but ordered by their little-endian value
+            let value = cursor.try_get_u32()?;
+            let key = value.swap_bytes();
+
+            if idx > 0 && key <= prior_key {
+                return Err(UnorderedTag(idx as u32, value));
+            }
+
+            header.raw_tags[idx] = value;
+            prior_key = key;
+        }
+
+        let header_size = cursor.position() - start;
+        if msg_len < header_size {
+            return Err(BufferTooSmall(header_size, msg_len));
+        }
+
+        let values_len = msg_len - header_size;
+        if num_tags > 1 && header.ends[num_tags - 2] as usize > values_len {
+            return Err(OutOfBoundsOffset(
+                (num_tags - 2) as u32,
+                header.ends[num_tags - 2],
+            ));
+        }
+        header.ends[num_tags - 1] = values_len as u32;
+
+        Ok(header)
+    }
+
+    pub fn num_tags(&self) -> usize {
+        self.num_tags
+    }
+
+    /// Iterate `(raw_tag, value_length)` pairs in wire order. Raw tags use the
+    /// same big-endian interpretation as [`Tag`] discriminants.
+    pub fn entries(&self) -> impl Iterator<Item = (u32, usize)> + '_ {
+        (0..self.num_tags).map(move |idx| {
+            let start = if idx == 0 {
+                0
+            } else {
+                self.ends[idx - 1] as usize
+            };
+            let end = self.ends[idx] as usize;
+            (self.raw_tags[idx], end - start)
+        })
+    }
+}
+
+/// Locate the value of nested tags within a Roughtime message (without
+/// framing). `path` descends into nested messages: `[Tag::CERT, Tag::DELE]`
+/// returns the byte range of the DELE value within `msg`.
+///
+/// Signature verification must operate on the bytes as received -- a message
+/// may carry tags unknown to this implementation, which re-serialization of
+/// the parsed form would not reproduce. Validators use this to slice the
+/// signed regions out of the original bytes.
+pub fn find_value_range(msg: &mut [u8], path: &[Tag]) -> Result<std::ops::Range<usize>, Error> {
+    let mut start = 0usize;
+    let mut end = msg.len();
+
+    for tag in path {
+        let raw_tag = *tag as u32;
+        let mut found = None;
+
+        let mut cursor = ParseCursor::new(&mut msg[start..end]);
+        let header = RawHeader::from_wire(&mut cursor)?;
+
+        for (entry_tag, value_len) in header.entries() {
+            let value_start = cursor.position();
+            if entry_tag == raw_tag {
+                found = Some((start + value_start, start + value_start + value_len));
+                break;
+            }
+            cursor.set_position(value_start + value_len);
+        }
+
+        match found {
+            Some((s, e)) => {
+                start = s;
+                end = e;
+            }
+            None => return Err(MissingTag(tag.name())),
         }
     }
 
-    Ok(())
+    Ok(start..end)
 }
 
 // Frustratingly, we can't use a generic Header<const N: usize> yet because Rust does not
@@ -139,12 +236,6 @@ macro_rules! make_header_n {
                 }
             }
 
-            impl FromWire for [<Header $N>] {
-                fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
-                    from_wire_inner(cursor)
-                }
-            }
-
             impl Header for [<Header $N>] {
                 fn num_tags() -> u32 {
                     Self::NUM_TAGS
@@ -156,18 +247,6 @@ macro_rules! make_header_n {
 
                 fn tags(&self) -> &[Tag] {
                     &self.tags
-                }
-
-                fn check_offset_bounds(&self, total_len: usize) -> Result<(), Error> {
-                    check_offset_bounds_inner(self, total_len)
-                }
-
-                fn set_offset(&mut self, idx: usize, offset: u32) {
-                    self.offsets[idx] = offset;
-                }
-
-                fn set_tag(&mut self, idx: usize, tag: Tag) {
-                    self.tags[idx] = tag;
                 }
             }
         }
@@ -233,11 +312,19 @@ mod tests {
             "the third tag should be ROOT"
         );
 
+        // RawHeader parses the serialized form and derives value lengths
+        // from the offsets (88, 104-88, and the remainder of the message)
+        buf.resize(header.wire_size() + 104, 0);
         let mut cursor = ParseCursor::new(&mut buf);
-        let decoded = Header3::from_wire(&mut cursor).unwrap();
+        let raw = RawHeader::from_wire(&mut cursor).unwrap();
+        let entries: Vec<(u32, usize)> = raw.entries().collect();
         assert_eq!(
-            decoded, header,
-            "the decoded header should match the original"
+            entries,
+            vec![
+                (Tag::NONC as u32, 88),
+                (Tag::DELE as u32, 16),
+                (Tag::ROOT as u32, 0),
+            ]
         );
     }
 
@@ -271,7 +358,7 @@ mod tests {
         _ = header.to_wire(&mut cursor);
 
         let mut cursor = ParseCursor::new(&mut buf);
-        let result = Header3::from_wire(&mut cursor);
+        let result = RawHeader::from_wire(&mut cursor);
         assert!(result.is_err(), "the first offset is not aligned");
 
         match result.unwrap_err() {
@@ -299,11 +386,35 @@ mod tests {
         _ = header.to_wire(&mut cursor);
 
         let mut cursor = ParseCursor::new(&mut buf);
-        let result = Header5::from_wire(&mut cursor);
+        let result = RawHeader::from_wire(&mut cursor);
         assert!(result.is_err(), "the second SIG tag is out of order");
 
         match result.unwrap_err() {
             UnorderedTag(3, _) => (), // ok, expected
+            e => panic!("unexpected error: {e:?}"),
+        }
+    }
+
+    #[test]
+    fn duplicate_tags_rejected() {
+        // RFC 4.2: a tag MUST NOT appear more than once in a header. The
+        // strict ascending-order check rejects an equal adjacent tag.
+        let header = Header3 {
+            offsets: [8, 16],
+            tags: [Tag::NONC, Tag::NONC, Tag::ROOT],
+            ..Header3::default()
+        };
+
+        let mut buf = vec![0u8; header.wire_size() + 16];
+        let mut cursor = ParseCursor::new(&mut buf);
+        _ = header.to_wire(&mut cursor);
+
+        let mut cursor = ParseCursor::new(&mut buf);
+        let result = RawHeader::from_wire(&mut cursor);
+        assert!(result.is_err(), "the second NONC tag is a duplicate");
+
+        match result.unwrap_err() {
+            UnorderedTag(1, _) => (), // ok, expected
             e => panic!("unexpected error: {e:?}"),
         }
     }
@@ -321,7 +432,7 @@ mod tests {
         _ = header.to_wire(&mut cursor);
 
         let mut cursor = ParseCursor::new(&mut buf);
-        let result = Header4::from_wire(&mut cursor);
+        let result = RawHeader::from_wire(&mut cursor);
         assert!(result.is_err(), "the third offset is out of order");
 
         match result.unwrap_err() {
@@ -331,43 +442,43 @@ mod tests {
     }
 
     #[test]
-    fn mismatched_num_tags() {
-        let header = Header3 {
-            offsets: [8, 16],
-            tags: [Tag::SIG, Tag::VER, Tag::SRV],
-            ..Header3::default()
-        };
-
-        let mut buf = vec![0u8; header.wire_size()];
+    fn bad_num_tags() {
+        // num_tags == 0
+        let mut buf = 0u32.to_le_bytes().to_vec();
         let mut cursor = ParseCursor::new(&mut buf);
-        _ = header.to_wire(&mut cursor);
+        match RawHeader::from_wire(&mut cursor) {
+            Err(BadNumTags(0)) => (), // ok, expected
+            other => panic!("unexpected result: {other:?}"),
+        }
 
+        // num_tags > MAX_RAW_TAGS
+        let too_many = (MAX_RAW_TAGS + 1) as u32;
+        let mut buf = too_many.to_le_bytes().to_vec();
         let mut cursor = ParseCursor::new(&mut buf);
-        let result = Header2::from_wire(&mut cursor);
-        assert!(result.is_err(), "we wrote a Header3 but read a Header2");
-
-        match result.unwrap_err() {
-            MismatchedNumTags(2, 3) => (),
-            e => panic!("unexpected error: {e:?}"),
+        match RawHeader::from_wire(&mut cursor) {
+            Err(BadNumTags(n)) if n == too_many => (), // ok, expected
+            other => panic!("unexpected result: {other:?}"),
         }
     }
 
     #[test]
-    fn offset_bounds_check() {
+    fn offset_beyond_message_bounds() {
         let header = Header3 {
             offsets: [16, 96],
-            tags: [Tag::SIG, Tag::VER, Tag::SRV],
+            tags: [Tag::NONC, Tag::DELE, Tag::ROOT],
             ..Header3::default()
         };
 
-        // This will pass, the last offset is within the total length
-        assert!(header.check_offset_bounds(100).is_ok());
+        // 56 bytes of values: the second offset (96) points past the end
+        let mut buf = vec![0u8; header.wire_size() + 56];
+        let mut cursor = ParseCursor::new(&mut buf);
+        _ = header.to_wire(&mut cursor);
 
-        // This will fail, the last offset is not within the total length
-        let result = header.check_offset_bounds(56);
+        let mut cursor = ParseCursor::new(&mut buf);
+        let result = RawHeader::from_wire(&mut cursor);
         assert!(
             result.is_err(),
-            "the last offset (96) is beyond the total length"
+            "the last offset (96) is beyond the message length"
         );
         match result.unwrap_err() {
             OutOfBoundsOffset(1, 96) => (), // ok, expected

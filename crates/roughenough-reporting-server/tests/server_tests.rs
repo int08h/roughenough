@@ -85,8 +85,9 @@ fn create_test_malfeasance_report() -> MalfeasanceReport {
     let (request1, response1) =
         ctx1.create_interaction_pair_with_nonce(current_time + 2_000_000, &nonce1);
 
+    let response1_bytes = response1.as_frame_bytes().unwrap();
     let rand_value = [0x22u8; 32];
-    let nonce2 = calculate_chained_nonce(&response1, &rand_value);
+    let nonce2 = calculate_chained_nonce(&response1_bytes, &rand_value);
 
     // Second measurement (measurement_j) uses the earlier time - this creates the causality violation
     let (request2, response2) = ctx2.create_interaction_pair_with_nonce(current_time, &nonce2);
@@ -99,9 +100,9 @@ fn create_test_malfeasance_report() -> MalfeasanceReport {
         .hostname("test-server".to_string())
         .public_key(Some(public_key))
         .request(request1)
-        .response(response1.clone())
+        .response(response1)
+        .response_bytes(response1_bytes)
         .rand_value(None)
-        .prior_response(None)
         .build()
         .unwrap();
 
@@ -110,9 +111,9 @@ fn create_test_malfeasance_report() -> MalfeasanceReport {
         .hostname("test-server".to_string())
         .public_key(Some(public_key))
         .request(request2)
-        .response(response2)
+        .response(response2.clone())
+        .response_bytes(response2.as_frame_bytes().unwrap())
         .rand_value(Some(rand_value))
-        .prior_response(Some(response1))
         .build()
         .unwrap();
 
@@ -219,9 +220,9 @@ async fn test_invalid_report_missing_entries() {
         .hostname("test-server".to_string())
         .public_key(Some(public_key))
         .request(request)
-        .response(response)
+        .response(response.clone())
+        .response_bytes(response.as_frame_bytes().unwrap())
         .rand_value(None)
-        .prior_response(None)
         .build()
         .unwrap();
 

@@ -58,10 +58,13 @@ fn main() {
 fn query_single_server(args: &Args, hostname: &String) -> u64 {
     let port = args.port.unwrap();
 
-    let client = Client::new(hostname, port, args.pub_key.as_deref()).unwrap_or_else(|e| {
-        error!("Error creating client for '{hostname}:{port}': {e}");
-        std::process::exit(-1);
-    });
+    let versions = args.protocol.offered();
+    let client =
+        Client::new_with_versions(hostname, port, args.pub_key.as_deref(), versions.as_deref())
+            .unwrap_or_else(|e| {
+                error!("Error creating client for '{hostname}:{port}': {e}");
+                std::process::exit(-1);
+            });
 
     let mut midpoint: u64 = 0;
     for _ in 0..args.num_requests {
@@ -190,13 +193,16 @@ fn clients_from_list(server_list: &ServerList, args: &Args) -> Result<Vec<Client
         let public_key = try_decode_key(encoded_key)?;
 
         // Build client with all settings
-        let client = Client::builder(sock_addr)
+        let mut builder = Client::builder(sock_addr)
             .hostname(server.name())
             .timeout(timeout)
-            .public_key(public_key)
-            .build();
+            .public_key(public_key);
 
-        clients.push(client);
+        if let Some(versions) = args.protocol.offered() {
+            builder = builder.versions(&versions);
+        }
+
+        clients.push(builder.build());
     }
 
     Ok(clients)

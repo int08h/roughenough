@@ -75,7 +75,7 @@ fn test_build_mode(build_mode: &str) -> bool {
 
     // Run the client with multiple requests to test multi-batch behavior
     println!("=== Running client with 50 requests...");
-    let client_result = Command::new(client_path)
+    let client_result = Command::new(&client_path)
         // -k is the pubkey for test seed [0u8; 32]
         .args([
             "127.0.0.1",
@@ -87,9 +87,77 @@ fn test_build_mode(build_mode: &str) -> bool {
         ])
         .output();
 
+    // Version negotiation: the client offers RFC version 1, then both versions;
+    // the server must answer either offer with a valid response
+    for version_arg in ["1", "both"] {
+        println!("=== Running client offering version '{version_arg}'...");
+        let version_result = Command::new(&client_path)
+            .args([
+                "127.0.0.1",
+                "2003",
+                "-P",
+                version_arg,
+                "-k",
+                "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29",
+            ])
+            .output();
+
+        match version_result {
+            Ok(output) if output.status.success() => {
+                println!("=== Client offering version '{version_arg}' succeeded");
+            }
+            Ok(output) => {
+                eprintln!(
+                    "=== Client offering version '{version_arg}' failed: {}",
+                    output.status
+                );
+                eprintln!(
+                    "=== Client stderr: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                let _ = server_process.kill();
+                let _ = server_process.wait();
+                return false;
+            }
+            Err(e) => {
+                eprintln!("=== Failed to run client: {e}");
+                let _ = server_process.kill();
+                let _ = server_process.wait();
+                return false;
+            }
+        }
+    }
+
+    // Negative test: a client committing to a different long-term key sends an
+    // SRV the server does not hold; RFC 5.2 requires the server to ignore the
+    // request, so the client must time out
+    println!("=== Running client with wrong public key (expecting timeout)...");
+    let wrong_key_result = Command::new(&client_path)
+        .args([
+            "127.0.0.1",
+            "2003",
+            "-t",
+            "1",
+            "-k",
+            "4242424242424242424242424242424242424242424242424242424242424242",
+        ])
+        .output();
+
     // Kill the server
     let _ = server_process.kill();
     let _ = server_process.wait();
+
+    match wrong_key_result {
+        Ok(output) if output.status.success() => {
+            eprintln!("=== Client with wrong public key unexpectedly got a response");
+            return false;
+        }
+        Ok(_) => println!("=== Client with wrong public key was ignored, as expected"),
+        Err(e) => {
+            eprintln!("=== Failed to run client: {e}");
+            return false;
+        }
+    }
 
     // Check client result
     match client_result {

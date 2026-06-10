@@ -197,7 +197,17 @@ impl MerkleTree {
         result
     }
 
-    pub fn root_from_paths(&self, mut index: usize, init_data: &[u8], paths: &MerklePath) -> Hash {
+    /// Reconstruct the root hash from a leaf's data, its index, and its Merkle path.
+    ///
+    /// Returns `None` if any bits of `index` remain nonzero after all path elements
+    /// are consumed. RFC 5.3.1: "if any of the remaining bits of INDX is non-zero,
+    /// the algorithm fails."
+    pub fn root_from_paths(
+        &self,
+        mut index: usize,
+        init_data: &[u8],
+        paths: &MerklePath,
+    ) -> Option<Hash> {
         let mut hash = self.hash_leaf(init_data);
 
         for path in paths.elements() {
@@ -220,7 +230,11 @@ impl MerkleTree {
             index >>= 1;
         }
 
-        hash
+        if index != 0 {
+            return None;
+        }
+
+        Some(hash)
     }
 }
 
@@ -239,7 +253,7 @@ mod test {
 
         for i in 0..num {
             let paths = tree.get_paths(i);
-            let computed_root = tree.root_from_paths(i, &[i as u8], &paths);
+            let computed_root = tree.root_from_paths(i, &[i as u8], &paths).unwrap();
 
             assert_eq!(
                 root, computed_root,
@@ -338,7 +352,7 @@ mod test {
         // For each leaf, get its path and verify it
         for (idx, leaf) in leaves.iter().enumerate() {
             let paths = tree.get_paths(idx);
-            let verified_root = tree.root_from_paths(idx, leaf, &paths);
+            let verified_root = tree.root_from_paths(idx, leaf, &paths).unwrap();
 
             assert_eq!(
                 verified_root, expected_root,

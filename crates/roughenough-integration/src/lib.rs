@@ -18,7 +18,7 @@ mod integration_tests {
     use roughenough_protocol::cursor::ParseCursor;
     use roughenough_protocol::request::Request;
     use roughenough_protocol::response::Response;
-    use roughenough_protocol::tags::{Nonce, PublicKey};
+    use roughenough_protocol::tags::{Nonce, ProtocolVersion, PublicKey};
     use roughenough_protocol::wire::{FromWire, ToWire};
     use roughenough_server::test_utils::TestContext;
 
@@ -36,7 +36,7 @@ mod integration_tests {
         let response = Response::from_wire(&mut cursor)?;
 
         let validator = ResponseValidator::new_with_key(pub_key);
-        validator.validate(request_bytes, &response)?;
+        validator.validate(request_bytes, response_bytes, &response)?;
         Ok(())
     }
 
@@ -56,9 +56,12 @@ mod integration_tests {
 
         let request = create_test_request(42);
         let request_bytes = request.as_bytes().unwrap();
-        test_context
-            .response_handler
-            .add_request(&request_bytes, request, addr);
+        test_context.response_handler.add_request(
+            &request_bytes,
+            request,
+            ProtocolVersion::RfcDraft19,
+            addr,
+        );
 
         let mut responses = Vec::new();
         test_context
@@ -92,9 +95,12 @@ mod integration_tests {
             let request_bytes = request.as_bytes().unwrap();
 
             request_data.push((request_bytes.clone(), addr));
-            test_context
-                .response_handler
-                .add_request(&request_bytes, request, addr);
+            test_context.response_handler.add_request(
+                &request_bytes,
+                request,
+                ProtocolVersion::RfcDraft19,
+                addr,
+            );
         }
 
         let mut responses = Vec::new();
@@ -140,10 +146,13 @@ mod integration_tests {
                         request_bytes,
                         response.path(),
                     );
-                    println!(
-                        "  Client computed: {}",
-                        data_encoding::HEXLOWER.encode(&computed_root)
-                    );
+                    match computed_root {
+                        Some(root) => println!(
+                            "  Client computed: {}",
+                            data_encoding::HEXLOWER.encode(&root)
+                        ),
+                        None => println!("  Client computed: INDX bits exceed PATH length"),
+                    }
 
                     panic!("Validation failed for response {idx}: {e}");
                 }

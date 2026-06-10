@@ -52,7 +52,7 @@ use roughenough_common::encoding::try_decode_key;
 use roughenough_protocol::cursor::ParseCursor;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::response::Response;
-use roughenough_protocol::tags::{Nonce, PublicKey, SrvCommitment};
+use roughenough_protocol::tags::{Nonce, ProtocolVersion, PublicKey, SrvCommitment};
 use roughenough_protocol::{FromFrame, ToFrame};
 
 use crate::measurement::Measurement;
@@ -117,7 +117,7 @@ pub struct ClientBuilder {
     transport: Option<Box<dyn ClientTransport>>,
     timeout: Option<Duration>,
     public_key: Option<PublicKey>,
-    // TODO(stuart) add protocol version, others?...
+    versions: Option<Vec<ProtocolVersion>>,
 }
 
 impl ClientBuilder {
@@ -130,6 +130,7 @@ impl ClientBuilder {
             transport: None,
             timeout: None,
             public_key: None,
+            versions: None,
         }
     }
 
@@ -150,6 +151,14 @@ impl ClientBuilder {
 
     pub fn public_key(mut self, public_key: PublicKey) -> Self {
         self.public_key = Some(public_key);
+        self
+    }
+
+    /// Protocol versions to offer in requests instead of the default. Must be
+    /// non-empty and sorted in ascending wire order (RFC 5.1.1).
+    pub fn versions(mut self, versions: &[ProtocolVersion]) -> Self {
+        assert!(!versions.is_empty(), "versions must be non-empty");
+        self.versions = Some(versions.to_vec());
         self
     }
 
@@ -176,6 +185,7 @@ impl ClientBuilder {
             server: self.server,
             hostname: self.hostname,
             public_key: self.public_key,
+            versions: self.versions,
         }
     }
 }
@@ -187,6 +197,8 @@ pub struct Client {
     pub(crate) validator: ResponseValidator,
     pub(crate) public_key: Option<PublicKey>,
     pub(crate) srv_commit: Option<SrvCommitment>,
+    /// Protocol versions to offer instead of the default, if configured
+    pub(crate) versions: Option<Vec<ProtocolVersion>>,
 }
 
 /// Make requests to servers and receive responses
@@ -203,6 +215,17 @@ impl Client {
         port: u16,
         pub_key: Option<impl AsRef<str>>,
     ) -> Result<Self, ClientError> {
+        Self::new_with_versions(hostname, port, pub_key, None)
+    }
+
+    /// Like [`Client::new`], additionally configuring the protocol versions to
+    /// offer in requests (see [`ClientBuilder::versions`]).
+    pub fn new_with_versions(
+        hostname: &str,
+        port: u16,
+        pub_key: Option<impl AsRef<str>>,
+        versions: Option<&[ProtocolVersion]>,
+    ) -> Result<Self, ClientError> {
         let host_port = format!("{hostname}:{port}");
         let sock_addr = host_port
             .to_socket_addrs()?
@@ -214,6 +237,10 @@ impl Client {
         if let Some(encoded_key) = pub_key {
             let pub_key = try_decode_key(encoded_key.as_ref())?;
             builder = builder.public_key(pub_key);
+        }
+
+        if let Some(versions) = versions {
+            builder = builder.versions(versions);
         }
 
         Ok(builder.build())
@@ -244,11 +271,14 @@ impl Client {
         let nbytes = self.send_request(&request)?;
         assert_eq!(nbytes, request.frame_size());
 
-        let response = self.recv_response()?;
+        let (response, response_bytes) = self.recv_response()?;
         let request_bytes = request.as_frame_bytes()?;
 
-        // validate() ensures that the response is valid and authentic
-        let _midpoint = self.validator.validate(&request_bytes, &response)?;
+        // validate() ensures that the response is valid and authentic; it
+        // verifies signatures over the bytes as received
+        let _midpoint = self
+            .validator
+            .validate(&request_bytes, &response_bytes, &response)?;
 
         Measurement::builder()
             .server(self.server)
@@ -256,8 +286,8 @@ impl Client {
             .public_key(self.public_key)
             .request(request)
             .response(response)
+            .response_bytes(response_bytes)
             .rand_value(None)
-            .prior_response(None)
             .build()
     }
 
@@ -266,10 +296,13 @@ impl Client {
     fn create_request(&self, nonce: Option<Nonce>) -> Request {
         let nonce = nonce.unwrap_or_else(|| Nonce::from(random_bytes::<32>()));
 
-        if let Some(srv_commit) = &self.srv_commit {
-            Request::new_with_server(&nonce, srv_commit)
-        } else {
-            Request::new(&nonce)
+        match (&self.srv_commit, &self.versions) {
+            (Some(srv), Some(versions)) => {
+                Request::new_with_server_and_versions(&nonce, srv, versions)
+            }
+            (Some(srv), None) => Request::new_with_server(&nonce, srv),
+            (None, Some(versions)) => Request::new_with_versions(&nonce, versions),
+            (None, None) => Request::new(&nonce),
         }
     }
 
@@ -278,12 +311,18 @@ impl Client {
         self.transport.send(&request_bytes, self.server)
     }
 
-    fn recv_response(&self) -> Result<Response, ClientError> {
+    /// Receive a response, returning the parsed [Response] together with the
+    /// packet exactly as received (used for signature verification, nonce
+    /// chaining, and malfeasance reports)
+    fn recv_response(&self) -> Result<(Response, Vec<u8>), ClientError> {
         let mut buf = [0u8; 1024];
         let (nbytes, _addr) = self.transport.recv(&mut buf)?;
+        let response_bytes = buf[..nbytes].to_vec();
+
+        // Parsing only advances the cursor; buf still holds the bytes as received
         let mut cursor = ParseCursor::new(&mut buf[..nbytes]);
         let response = Response::from_frame(&mut cursor)?;
 
-        Ok(response)
+        Ok((response, response_bytes))
     }
 }

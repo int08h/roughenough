@@ -18,31 +18,35 @@ use roughenough_protocol::util::ClockSource;
 pub struct OnlineKey {
     signer: OnlineSigner,
     cert: Certificate,
-    version: ProtocolVersion,
     clock_source: ClockSource,
     template_srep: SignedResponse,
     signing_buf: Vec<u8>,
 }
 
 impl OnlineKey {
-    pub fn new(version: ProtocolVersion, clock_source: ClockSource) -> OnlineKey {
+    pub fn new(clock_source: ClockSource) -> OnlineKey {
         let mut srep = SignedResponse::default();
         srep.set_radi(SignedResponse::DEFAULT_RADI_SECONDS);
-        srep.set_vers(&SupportedVersions::from([version].as_ref()));
-        srep.set_ver(version);
+        // RFC 5.2.5: VERS lists all versions the server supports
+        srep.set_vers(&SupportedVersions::from(
+            ProtocolVersion::SUPPORTED.as_ref(),
+        ));
 
-        // Allocate buffer and load signing prefix to be reused for all future signatures
-        let prefix = version.srep_prefix();
-        let mut buf = Vec::with_capacity(prefix.len() + srep.wire_size());
-        buf.extend_from_slice(prefix);
-        buf.resize(buf.capacity(), 0);
+        // One reusable signing buffer sized for the largest context string among
+        // the supported versions; make_srep writes the negotiated version's
+        // prefix on each use.
+        let max_prefix_len = ProtocolVersion::SUPPORTED
+            .iter()
+            .map(|version| version.srep_prefix().len())
+            .max()
+            .expect("SUPPORTED is non-empty");
+        let buf = vec![0u8; max_prefix_len + srep.wire_size()];
 
         Self {
             signer: OnlineSigner::from_random(),
             cert: Certificate::default(),
             template_srep: srep,
             signing_buf: buf,
-            version,
             clock_source,
         }
     }
@@ -84,6 +88,8 @@ impl OnlineKey {
     ///
     /// # Arguments
     ///
+    /// * `version` - The protocol version negotiated for this response (RFC
+    ///   5.2.5: the response VER should be one the client offered)
     /// * `root` - The Merkle tree root hash that commits to the batch of client requests being
     ///   processed. This root allows clients to verify their request was included in the batch.
     ///
@@ -92,15 +98,22 @@ impl OnlineKey {
     /// A tuple containing:
     /// - `SignedResponse` - The complete SREP structure with timestamp, radius, versions, and root
     /// - `Signature` - Ed25519 signature over the SREP
-    pub fn make_srep(&mut self, root: &MerkleRoot) -> (SignedResponse, Signature) {
+    pub fn make_srep(
+        &mut self,
+        version: ProtocolVersion,
+        root: &MerkleRoot,
+    ) -> (SignedResponse, Signature) {
         let mut srep = self.template_srep.clone();
+        srep.set_ver(version);
         srep.set_root(root);
         srep.set_midp(self.clock_source.epoch_seconds());
 
-        let prefix_len = self.version.srep_prefix().len();
+        let prefix = version.srep_prefix();
+        let prefix_len = prefix.len();
         let total_len = prefix_len + srep.wire_size();
 
         // Serialize into signing_buf, which was appropriately sized at construction
+        self.signing_buf[..prefix_len].copy_from_slice(prefix);
         let mut cursor = ParseCursor::new(&mut self.signing_buf[prefix_len..total_len]);
         srep.to_wire(&mut cursor)
             .expect("SREP serialization should not fail");

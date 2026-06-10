@@ -1,18 +1,17 @@
 //! Cryptographic utilities shared across the project
 
 use aws_lc_rs::digest::{SHA512, digest};
-use roughenough_protocol::ToFrame;
-use roughenough_protocol::response::Response;
 use roughenough_protocol::tags::{Nonce, PublicKey, SrvCommitment};
 
 /// Calculate the chained nonce from a prior response and random value.
 /// Returns `SHA512(prior_response_frame || rand)[0:32]`
-pub fn calculate_chained_nonce(prior_response: &Response, rand: &[u8]) -> Nonce {
-    let mut chain_value = prior_response
-        .as_frame_bytes()
-        .expect("should be infallible")
-        .to_vec();
-
+///
+/// `prior_response_frame` is the prior response packet exactly as received,
+/// including the "ROUGHTIM" framing. The received bytes are used because a
+/// response may contain tags unknown to this implementation, which a
+/// re-serialization of the parsed response would not reproduce.
+pub fn calculate_chained_nonce(prior_response_frame: &[u8], rand: &[u8]) -> Nonce {
+    let mut chain_value = prior_response_frame.to_vec();
     chain_value.extend_from_slice(rand);
 
     let digest = digest(&SHA512, &chain_value);
@@ -43,14 +42,18 @@ mod tests {
 
     #[test]
     fn test_calculate_chained_nonce() {
-        let prior_response = Response::default();
+        let prior_response_frame = [0x5au8; 128];
         let rand = [0x42u8; 32];
 
-        let nonce1 = calculate_chained_nonce(&prior_response, &rand);
-        let nonce2 = calculate_chained_nonce(&prior_response, &rand);
+        let nonce1 = calculate_chained_nonce(&prior_response_frame, &rand);
+        let nonce2 = calculate_chained_nonce(&prior_response_frame, &rand);
 
         // Should be deterministic
         assert_eq!(nonce1, nonce2);
+
+        // And sensitive to both inputs
+        let other = calculate_chained_nonce(&prior_response_frame, &[0x43u8; 32]);
+        assert_ne!(nonce1, other);
     }
 
     #[test]

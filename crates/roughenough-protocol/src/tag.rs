@@ -104,6 +104,32 @@ impl Tag {
     pub const fn is_nested(&self) -> bool {
         matches!(self, Tag::CERT | Tag::DELE | Tag::SREP)
     }
+
+    /// The ASCII name of this tag
+    pub const fn name(&self) -> &'static str {
+        match self {
+            Tag::INVALID => "INVALID",
+            Tag::SIG => "SIG",
+            Tag::VER => "VER",
+            Tag::SRV => "SRV",
+            Tag::NONC => "NONC",
+            Tag::DELE => "DELE",
+            Tag::TYPE => "TYPE",
+            Tag::PATH => "PATH",
+            Tag::RADI => "RADI",
+            Tag::PUBK => "PUBK",
+            Tag::MIDP => "MIDP",
+            Tag::SREP => "SREP",
+            Tag::VERS => "VERS",
+            Tag::MINT => "MINT",
+            Tag::ROOT => "ROOT",
+            Tag::CERT => "CERT",
+            Tag::MAXT => "MAXT",
+            Tag::INDX => "INDX",
+            Tag::ZZZZ => "ZZZZ",
+            Tag::PAD => "PAD",
+        }
+    }
 }
 
 impl TryFrom<u32> for Tag {

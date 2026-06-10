@@ -3212,6 +3212,7 @@ dependencies = [
  "divan",
  "fastrand",
  "mio",
+ "roughenough-common",
  "roughenough-keys",
  "roughenough-merkle",
  "roughenough-protocol",

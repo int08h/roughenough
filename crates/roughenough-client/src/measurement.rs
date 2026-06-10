@@ -19,8 +19,8 @@ pub struct Measurement {
     public_key: Option<PublicKey>,
     request: Request,
     response: Response,
+    response_bytes: Vec<u8>,
     rand_value: Option<[u8; 32]>,
-    prior_response: Option<Response>,
 }
 
 /// Builder for creating `Measurement` instances.
@@ -31,8 +31,8 @@ pub struct MeasurementBuilder {
     public_key: Option<PublicKey>,
     request: Option<Request>,
     response: Option<Response>,
+    response_bytes: Option<Vec<u8>>,
     rand_value: Option<[u8; 32]>,
-    prior_response: Option<Response>,
 }
 
 impl MeasurementBuilder {
@@ -70,8 +70,11 @@ impl MeasurementBuilder {
         self
     }
 
-    pub fn prior_response(mut self, prior_response: Option<Response>) -> Self {
-        self.prior_response = prior_response;
+    /// The response packet exactly as received from the server, including the
+    /// "ROUGHTIM" framing. Kept verbatim because nonce chaining, malfeasance
+    /// reports, and signature checks operate on the received bytes.
+    pub fn response_bytes(mut self, response_bytes: Vec<u8>) -> Self {
+        self.response_bytes = Some(response_bytes);
         self
     }
 
@@ -88,8 +91,10 @@ impl MeasurementBuilder {
             response: self
                 .response
                 .ok_or_else(|| InvalidConfiguration("response is required".to_string()))?,
+            response_bytes: self
+                .response_bytes
+                .ok_or_else(|| InvalidConfiguration("response_bytes is required".to_string()))?,
             rand_value: self.rand_value,
-            prior_response: self.prior_response,
         })
     }
 }
@@ -156,8 +161,8 @@ impl Measurement {
         self.rand_value.as_ref()
     }
 
-    /// The chained prior [`Response`] used in a multi-server [`MeasurementSequence`](crate::sequence::MeasurementSequence).
-    pub fn prior_response(&self) -> Option<&Response> {
-        self.prior_response.as_ref()
+    /// The response packet exactly as received, including the "ROUGHTIM" framing
+    pub fn response_bytes(&self) -> &[u8] {
+        &self.response_bytes
     }
 }

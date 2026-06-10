@@ -29,6 +29,12 @@ pub struct RequestMetrics {
     pub num_bad_requests: usize,
     pub num_runt_requests: usize,
     pub num_jumbo_requests: usize,
+    /// Requests whose SRV tag did not match this server's long-term key
+    /// (RFC 5.2: such requests are ignored)
+    pub num_srv_mismatch: usize,
+    /// Requests whose VER list shares no version with this server
+    /// (RFC 5.1.1: such requests may be ignored)
+    pub num_no_common_version: usize,
 }
 
 impl AddAssign for RequestMetrics {
@@ -37,6 +43,8 @@ impl AddAssign for RequestMetrics {
         self.num_bad_requests += rhs.num_bad_requests;
         self.num_runt_requests += rhs.num_runt_requests;
         self.num_jumbo_requests += rhs.num_jumbo_requests;
+        self.num_srv_mismatch += rhs.num_srv_mismatch;
+        self.num_no_common_version += rhs.num_no_common_version;
     }
 }
 
@@ -140,6 +148,8 @@ mod tests {
             num_bad_requests: 10,
             num_runt_requests: 5,
             num_jumbo_requests: 2,
+            num_srv_mismatch: 4,
+            num_no_common_version: 6,
         };
 
         let metrics2 = RequestMetrics {
@@ -147,6 +157,8 @@ mod tests {
             num_bad_requests: 5,
             num_runt_requests: 3,
             num_jumbo_requests: 1,
+            num_srv_mismatch: 2,
+            num_no_common_version: 3,
         };
 
         metrics1 += metrics2;

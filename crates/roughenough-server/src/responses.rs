@@ -5,7 +5,7 @@ use roughenough_merkle::{MerklePath, MerkleTree};
 use roughenough_protocol::cursor::ParseCursor;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::response::Response;
-use roughenough_protocol::tags::{MerkleRoot, PublicKey};
+use roughenough_protocol::tags::{MerkleRoot, ProtocolVersion, PublicKey};
 use roughenough_protocol::wire::ToFrame;
 
 use crate::keysource::KeySource;
@@ -15,6 +15,8 @@ use crate::metrics::types::ResponseMetrics;
 pub struct PendingRequest {
     request: Request,
     src_addr: SocketAddr,
+    /// The protocol version negotiated for this request's response
+    version: ProtocolVersion,
 }
 
 pub struct ResponseHandler {
@@ -48,11 +50,21 @@ impl ResponseHandler {
         }
     }
 
-    pub fn add_request(&mut self, request_bytes: &[u8], request: Request, src_addr: SocketAddr) {
+    pub fn add_request(
+        &mut self,
+        request_bytes: &[u8],
+        request: Request,
+        version: ProtocolVersion,
+        src_addr: SocketAddr,
+    ) {
         debug_assert!(self.requests.len() < self.batch_size, "Batch size exceeded");
 
         self.merkle_tree.push_leaf(request_bytes);
-        self.requests.push(PendingRequest { request, src_addr })
+        self.requests.push(PendingRequest {
+            request,
+            src_addr,
+            version,
+        })
     }
 
     pub fn replace_online_key(&mut self) {
@@ -72,25 +84,42 @@ impl ResponseHandler {
         self.response_metrics
             .add_batch_size(self.requests.len() as u8);
 
-        // Tags that are common to all responses in this batch
-        // (CERT, SREP, and SIG are the same per-batch)
+        // One Merkle tree commits to every request in the batch. CERT, SREP,
+        // and SIG are shared by all responses with the same negotiated version;
+        // a template (and one signature) is created lazily per distinct version
+        // present in the batch, so a homogeneous batch still signs exactly once.
         let root_hash: [u8; 32] = self.merkle_tree.compute_root();
         let merkle_root = MerkleRoot::from(root_hash);
         let cert = self.online_key.cert().clone();
-        let (srep, sig) = self.online_key.make_srep(&merkle_root);
-        let mut response_common = Response::default();
-        response_common.set_cert(cert);
-        response_common.set_srep(srep);
-        response_common.set_sig(sig);
+
+        const NUM_SUPPORTED: usize = ProtocolVersion::SUPPORTED.len();
+        let mut templates: [Option<Response>; NUM_SUPPORTED] = [const { None }; NUM_SUPPORTED];
 
         for (index, pending_req) in self.requests.iter().enumerate() {
+            let slot = ProtocolVersion::SUPPORTED
+                .iter()
+                .position(|v| *v == pending_req.version)
+                .expect("negotiated version is always supported");
+
+            if templates[slot].is_none() {
+                let (srep, sig) = self.online_key.make_srep(pending_req.version, &merkle_root);
+                let mut template = Response::default();
+                template.set_cert(cert.clone());
+                template.set_srep(srep);
+                template.set_sig(sig);
+                templates[slot] = Some(template);
+            }
+
             // Build the Merkle path for this Request's position in the tree
             self.merkle_path.clear();
             self.merkle_tree.get_paths_to(index, &mut self.merkle_path);
 
             // Copy the common response as a template and set the elements unique to this response
             // (merkle path, nonce, and index)
-            let mut response = response_common.clone();
+            let mut response = templates[slot]
+                .as_ref()
+                .expect("template was just created")
+                .clone();
             response.copy_path(&self.merkle_path);
             response.set_nonc(*pending_req.request.nonc());
             response.set_indx(index as u32);
@@ -110,6 +139,12 @@ impl ResponseHandler {
 
     pub fn public_key(&self) -> PublicKey {
         self.online_key.public_key()
+    }
+
+    /// The server's long-term identity public key (the key clients commit to
+    /// with the SRV tag)
+    pub fn long_term_public_key(&self) -> PublicKey {
+        self.key_source.public_key()
     }
 
     pub fn clear(&mut self) {
@@ -161,7 +196,12 @@ mod tests {
 
         // Add a request
         let request = create_test_request(42);
-        responder.add_request(&request.as_bytes().unwrap(), request, addr);
+        responder.add_request(
+            &request.as_bytes().unwrap(),
+            request,
+            ProtocolVersion::RfcDraft19,
+            addr,
+        );
 
         assert_eq!(responder.num_pending(), 1);
         assert!(!responder.merkle_tree().is_empty());
@@ -181,7 +221,12 @@ mod tests {
         // Add requests up to batch size
         for i in 0..64 {
             let request = create_test_request(i as u8);
-            responder.add_request(&request.as_bytes().unwrap(), request, addr);
+            responder.add_request(
+                &request.as_bytes().unwrap(),
+                request,
+                ProtocolVersion::RfcDraft19,
+                addr,
+            );
         }
 
         assert_eq!(responder.num_pending(), 64);
@@ -189,7 +234,12 @@ mod tests {
         // This should trigger the batch size limit debug assertion in add_request
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let request = create_test_request(100);
-            responder.add_request(&request.as_bytes().unwrap(), request, addr);
+            responder.add_request(
+                &request.as_bytes().unwrap(),
+                request,
+                ProtocolVersion::RfcDraft19,
+                addr,
+            );
         }));
 
         assert!(result.is_err(), "Should panic when batch size is exceeded");
@@ -202,7 +252,12 @@ mod tests {
 
         let request = create_test_request(42);
         let expected_nonce = *request.nonc();
-        responder.add_request(&request.as_bytes().unwrap(), request, addr);
+        responder.add_request(
+            &request.as_bytes().unwrap(),
+            request,
+            ProtocolVersion::RfcDraft19,
+            addr,
+        );
 
         let mut responses = Vec::new();
         responder.process_responses(|addr, bytes| {
@@ -235,7 +290,12 @@ mod tests {
 
             expected_addrs.push(addr);
             expected_nonces.push(*request.nonc());
-            responder.add_request(&request.as_bytes().unwrap(), request, addr);
+            responder.add_request(
+                &request.as_bytes().unwrap(),
+                request,
+                ProtocolVersion::RfcDraft19,
+                addr,
+            );
         }
 
         let mut responses = Vec::new();

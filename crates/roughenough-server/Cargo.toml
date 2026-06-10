@@ -18,6 +18,7 @@ path = "src/main.rs"
 test-utils = []
 
 [dependencies]
+roughenough-common = { workspace = true }
 roughenough-keys = { workspace = true }
 roughenough-merkle = { workspace = true }
 roughenough-protocol = { workspace = true }
@@ -36,6 +37,7 @@ tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 divan = { workspace = true }
+roughenough-protocol = { workspace = true, features = ["test-utils"] }
 
 [[bench]]
 name = "server_ops"

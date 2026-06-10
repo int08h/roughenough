@@ -1,6 +1,7 @@
 #![doc(hidden)]
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+use roughenough_protocol::tags::ProtocolVersion;
 
 /// Arguments for the client CLI
 #[derive(Parser, Debug)]
@@ -49,14 +50,15 @@ pub struct Args {
     )]
     pub num_requests: usize,
 
+    /// Roughtime protocol version(s) to offer the server
     #[clap(
         short = 'P',
-        long,
-        value_name = "PROTOCOL",
-        help = "Roughtime version to send; 0 = Google, 19 = RFC draft 19",
-        default_value_t = 19
+        long = "protocol",
+        value_enum,
+        value_name = "VERSION",
+        default_value_t = VersionArg::V19,
     )]
-    pub protocol: usize,
+    pub protocol: VersionArg,
 
     #[clap(
         short = 'l',
@@ -134,4 +136,33 @@ pub struct Args {
         default_value_t = false
     )]
     pub zulu: bool,
+}
+
+/// Roughtime protocol version(s) the client offers in its requests.
+///
+/// The default offers only the draft version: deployed servers that predate
+/// RFC version negotiation reject requests containing version numbers they do
+/// not recognize.
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VersionArg {
+    /// Offer only draft version 0x8000000c (the default)
+    #[value(name = "19")]
+    V19,
+    /// Offer only RFC version 1
+    #[value(name = "1")]
+    V1,
+    /// Offer RFC version 1 and the draft version
+    #[value(name = "both")]
+    Both,
+}
+
+impl VersionArg {
+    /// The version list to offer, or `None` to use the client default
+    pub fn offered(&self) -> Option<Vec<ProtocolVersion>> {
+        match self {
+            VersionArg::V19 => None,
+            VersionArg::V1 => Some(vec![ProtocolVersion::Rfc]),
+            VersionArg::Both => Some(vec![ProtocolVersion::Rfc, ProtocolVersion::RfcDraft19]),
+        }
+    }
 }

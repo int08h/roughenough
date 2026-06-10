@@ -14,6 +14,10 @@ categories = ["network-programming", "cryptography"]
 name = "roughenough_protocol"
 bench = false
 
+[features]
+# Expose the raw TLV test message builders (testmsg) to other crates' tests
+test-utils = []
+
 [dependencies]
 thiserror = { workspace = true }
 pastey = { workspace = true }

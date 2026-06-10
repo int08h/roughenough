@@ -3,7 +3,6 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use clap::{Parser, ValueEnum};
-use roughenough_protocol::tags::ProtocolVersion;
 
 #[derive(Parser, Debug, Clone)]
 #[command(version = "2.0.0", about = "Roughenough roughtime server")]
@@ -41,17 +40,6 @@ pub struct Args {
         default_value_t = default_num_threads()
     )]
     pub num_threads: u16,
-
-    /// Version of the protocol to use
-    #[clap(
-        value_enum,
-        short = 'P',
-        long,
-        value_name = "PROTOCOL",
-        env = "ROUGHENOUGH_PROTOCOL",
-        default_value_t = ProtocolVersionArg::V14,
-    )]
-    pub protocol: ProtocolVersionArg,
 
     /// Number of seconds to add/subtract from the wall clock time; for testing
     #[clap(
@@ -123,12 +111,6 @@ pub struct Args {
 }
 
 #[derive(ValueEnum, Debug, Clone)]
-pub enum ProtocolVersionArg {
-    #[value(name = "14")]
-    V14,
-}
-
-#[derive(ValueEnum, Debug, Clone)]
 pub enum SeedBackendArg {
     #[value(name = "memory")]
     Memory,
@@ -153,12 +135,6 @@ impl Args {
             .expect("invalid IP address or interface name");
 
         SocketAddr::new(addr, self.port)
-    }
-
-    pub fn version(&self) -> ProtocolVersion {
-        match self.protocol {
-            ProtocolVersionArg::V14 => ProtocolVersion::RfcDraft14,
-        }
     }
 
     /// How long the short-term response signing key is valid
