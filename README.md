@@ -151,6 +151,7 @@ Thank you to all past and present contributors:
 * Eric Swanson (github.com/lachesis)
 * Marcus Dansarie (github.com/dansarie)
 * Marco Davids (github.com/mdavids)
+* Tanner Ryan (github.com/tannerryan)
 
 ## License
 
