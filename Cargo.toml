@@ -21,7 +21,7 @@ roughenough-reporting-server = { path = "crates/roughenough-reporting-server", v
 aws-config = "1.8"
 aws-lc-rs = "1.17"
 aws-sdk-kms = "1.109"
-aws-sdk-secretsmanager = "1.105"
+aws-sdk-secretsmanager = "1.106"
 axum = "0.8"
 async-trait = "0.1"
 jiff = { version = "0.2", features = ["serde"] }
