@@ -97,7 +97,7 @@ For each publishable crate, verify `Cargo.toml` contains:
 
 - [ ] LICENSE-APACHE and LICENSE-MIT files are current
 - [ ] All crates have `license = "Apache-2.0 OR MIT"` in Cargo.toml
-- [ ] License files included in packages (see PUBLICATION.md)
+- [ ] License files included in packages 
 - [ ] No copyright violations in code or dependencies
 - [ ] Third-party dependencies reviewed and acceptable
 
@@ -158,8 +158,6 @@ For each crate (in dependency order):
 ## Publication Process
 
 ### Publishing to crates.io
-
-Follow the publication order in PUBLICATION.md:
 
 - [ ] Logged in to crates.io: `cargo login`
 - [ ] Publish **protocol**: `cargo publish -p roughenough-protocol`
@@ -254,4 +252,3 @@ Note: Yanking should only be used for serious issues (security, data corruption,
 - [Semantic Versioning](https://semver.org/)
 - [Cargo Publishing](https://doc.rust-lang.org/cargo/reference/publishing.html)
 - [Crates.io Policies](https://crates.io/policies)
-- Internal: See PUBLICATION.md for detailed publication instructions
