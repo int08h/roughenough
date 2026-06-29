@@ -59,7 +59,7 @@ sequenceDiagram
         loop per pending request
             RS->>M: get_paths_to(index)
             M-->>RS: Merkle path (siblings)
-            Note over RS: clone version template;<br/>set PATH, NONC, INDX;<br/>Response::to_frame
+            Note over RS: clone version template<br/>set PATH, NONC, INDX<br/>Response::to_frame
             RS->>N: callback(addr, response_bytes)
             N->>Sock: send_to(response, addr)
             Sock-->>C: framed Response
@@ -71,7 +71,7 @@ sequenceDiagram
     C->>C: check_midpoint<br/>(MINT <= MIDP <= MAXT)
     C->>C: check_merkle_proof<br/>(root_from_paths(INDX, my_request, PATH) == ROOT)
     C->>C: check_srep_signature<br/>(DELE.PUBK signed SREP)
-    Note over C: returns authenticated MIDP;<br/>paired with RADI -> Measurement
+    Note over C: returns authenticated MIDP<br/>paired with RADI -> Measurement
 ```
 
 ## Trust chain verified by the client
