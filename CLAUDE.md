@@ -36,16 +36,23 @@ See `doc/RFC-PROTOCOL.md` for protocol details. See `doc/PROTECTION.md` for seed
 
 ### Build and Test
 ```bash
-cargo build                    # Build workspace (excludes reporting-server)
+cargo build                    # Build default members (excludes reporting-server)
+cargo build --workspace        # Build all crates including reporting-server
 cargo build --release          # Release build
-cargo test                     # Run all tests
-cargo test -p protocol         # Test specific crate
+cargo test                     # Test default members
+cargo test --workspace         # Test all crates including reporting-server
+cargo test -p roughenough-protocol    # Test specific crate
 
 # Integration test (build first, then run from project root)
 cargo build && target/debug/roughenough_integration_test
 
-# Reporting server (separate build)
-cd crates/reporting-server && cargo build
+# Reporting server (not a default member; build and test with -p)
+cargo build -p roughenough-reporting-server
+cargo test -p roughenough-reporting-server
+
+# Keys backends are feature-gated and tokio is only present with a
+# longterm-* cloud feature; check a specific combination with:
+cargo check -p roughenough-keys --features longterm-aws-kms
 ```
 
 ### Code Quality
@@ -57,8 +64,8 @@ cargo check                    # Type check
 
 ### Benchmarking
 ```bash
-cargo bench                    # All benchmarks
-cargo bench -p merkle          # Specific crate
+cargo bench                            # All benchmarks
+cargo bench -p roughenough-merkle      # Specific crate
 ```
 
 ### Fuzzing
@@ -80,8 +87,8 @@ cargo +nightly fuzz cmin <target>           # Minimize corpus
 ```bash
 cargo run --bin roughenough_server          # Server
 cargo run --bin roughenough_client -- -h    # Client (see --help for options)
-cargo run -p keys --bin roughenough_keys -- --help  # Keys tool
-cd crates/reporting-server && cargo run --bin roughenough_reporting_server  # Reporting server (port 3000)
+cargo run -p roughenough-keys --bin roughenough_keys -- --help  # Keys tool
+cargo run -p roughenough-reporting-server --bin roughenough_reporting_server  # Reporting server (port 3000)
 ```
 
 ## Commenting Guidelines
@@ -106,7 +113,7 @@ Comments explain **why**, not what. Do not narrate code or duplicate names in En
 - Measure baseline before changes, compare after. Reject changes that do not show improvement.
 - NEVER use averages. Use percentiles, medians, and distributions.
 - Show all measurements, not cherry-picked results.
-- Run `cargo bench -p merkle` for merkle changes, `cargo bench -p server` for server changes.
+- Run `cargo bench -p roughenough-merkle` for merkle changes, `cargo bench -p roughenough-server` for server changes.
 
 ## Communication Style
 
