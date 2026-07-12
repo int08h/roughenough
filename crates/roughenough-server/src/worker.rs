@@ -6,13 +6,17 @@ use crossbeam_channel::Sender;
 use mio::net::UdpSocket as MioUdpSocket;
 use mio::{Events, Poll, Token};
 use roughenough_protocol::util::ClockSource;
-use roughenough_server::args::Args;
-use roughenough_server::metrics::aggregator::WorkerMetrics;
-use roughenough_server::network::CollectResult::Empty;
-use roughenough_server::network::{CollectResult, NetworkHandler};
-use roughenough_server::requests::RequestHandler;
-use roughenough_server::responses::ResponseHandler;
 use tracing::info;
+
+use crate::args::Args;
+use crate::metrics::aggregator::WorkerMetrics;
+use crate::network::CollectResult::Empty;
+use crate::network::{CollectResult, NetworkHandler};
+use crate::requests::RequestHandler;
+use crate::responses::ResponseHandler;
+
+/// Batches processed per wakeup before deadlines and the shutdown flag are re-checked. 
+const MAX_BATCHES_PER_WAKEUP: usize = 8;
 
 pub struct Worker {
     worker_id: usize,
@@ -63,6 +67,8 @@ impl Worker {
         let mut events = Events::with_capacity(1024);
         let poll_duration = Duration::from_millis(350);
 
+        let mut still_readable = false;
+
         while keep_running.load(Relaxed) {
             let now = self.clock.epoch_seconds();
 
@@ -74,24 +80,27 @@ impl Worker {
                 self.replace_online_key();
             }
 
-            if poll.poll(&mut events, Some(poll_duration)).is_err() {
-                self.net_handler.record_failed_poll();
+            if !still_readable {
+                if poll.poll(&mut events, Some(poll_duration)).is_err() {
+                    self.net_handler.record_failed_poll();
+                }
+                // single registered token: any event means the socket may be
+                // readable
+                still_readable = !events.is_empty();
             }
 
-            for event in &events {
-                match event.token() {
-                    READER => loop {
-                        let collect_result = self.collect_requests(&mut sock);
+            if still_readable {
+                for _ in 0..MAX_BATCHES_PER_WAKEUP {
+                    let collect_result = self.collect_requests(&mut sock);
 
-                        self.req_handler.generate_responses(|addr, bytes| {
-                            self.net_handler.send_response(&mut sock, bytes, addr);
-                        });
+                    self.req_handler.generate_responses(|addr, bytes| {
+                        self.net_handler.send_response(&mut sock, bytes, addr);
+                    });
 
-                        if collect_result == Empty {
-                            break;
-                        }
-                    },
-                    _ => unreachable!(),
+                    if collect_result == Empty {
+                        still_readable = false;
+                        break;
+                    }
                 }
             }
         }

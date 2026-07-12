@@ -60,7 +60,7 @@ impl MetricsSnapshot {
                 .unwrap();
 
         let file_path = metrics_path.join(&filename);
-        let temp_path = metrics_path.join(format!(".{}.tmp", &filename));
+        let temp_path = metrics_path.join(format!(".{}.tmp", filename));
 
         // Write to temporary file first
         let mut temp_file = File::create(&temp_path)?;

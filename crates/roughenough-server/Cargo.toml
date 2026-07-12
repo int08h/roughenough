@@ -25,11 +25,11 @@ roughenough-protocol = { workspace = true }
 aws-lc-rs = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 crossbeam-channel = { workspace = true }
-ctrlc = { workspace = true }
 fastrand = { workspace = true }
 mio = { workspace = true, features = ["net", "os-poll"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+signal-hook = { workspace = true }
 socket2 = { workspace = true, features = ["all"] }
 time-format = { workspace = true }
 tracing = { workspace = true }

@@ -17,8 +17,6 @@
 //! - **Processing Pipeline**: UDP Socket -> NetworkHandler -> RequestHandler -> BatchingResponder
 //!   -> UDP Socket
 //!
-mod worker;
-
 use std::io;
 use std::net::UdpSocket as StdUdpSocket;
 use std::path::Path;
@@ -38,18 +36,18 @@ use roughenough_server::keysource::KeySource;
 use roughenough_server::metrics::aggregator::{MetricsAggregator, WorkerMetrics};
 use roughenough_server::metrics::snapshot::validate_metrics_directory;
 use roughenough_server::responses::ResponseHandler;
+use roughenough_server::worker::Worker;
 use socket2::{Domain, Socket, Type};
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{Layer, filter};
-use worker::Worker;
 
 /// Global flag that will be set to `false` when all threads should exit.
 static KEEP_RUNNING: AtomicBool = AtomicBool::new(true);
 
 fn main() {
-    set_ctrlc_handler();
+    set_signal_handler();
 
     let args = Args::parse();
     enable_logging(&args);
@@ -136,6 +134,7 @@ fn worker_task(
         metrics_channel,
         metrics_interval,
     );
+
     worker.run(sock, &KEEP_RUNNING);
 }
 
@@ -155,17 +154,32 @@ fn bind_socket(args: &Args) -> io::Result<MioUdpSocket> {
     Ok(mio_socket)
 }
 
-fn set_ctrlc_handler() {
-    ctrlc::set_handler(|| {
-        info!("Received Ctrl-C, exiting...");
-        KEEP_RUNNING.store(false, Release);
-    })
-    .expect("Error setting Ctrl-C handler");
+// SIGHUP is deliberately not handled: nohup'd deployments must keep
+// surviving hangup, and SIGHUP stays available as a future reload signal
+fn set_signal_handler() {
+    let mut signals = signal_hook::iterator::Signals::new([
+        signal_hook::consts::SIGINT,
+        signal_hook::consts::SIGTERM,
+    ])
+    .expect("Error setting signal handler");
+
+    // detached on purpose: Signals::forever() never returns, so this thread
+    // must not be joined at shutdown
+    std::thread::Builder::new()
+        .name("signal-handler".to_string())
+        .spawn(move || {
+            if signals.forever().next().is_some() {
+                info!("Received shutdown signal, exiting...");
+                KEEP_RUNNING.store(false, Release);
+            }
+        })
+        .expect("Failed to spawn signal handler thread");
 }
 
 fn enable_logging(args: &Args) {
     // AWS, GCP, Rustls, Hyper, etc crates are quite verbose, "normal" level for them is WARN
     let cloud_sdk_verbosity = match args.verbose {
+        _ if args.quiet => tracing::Level::ERROR,
         0 => tracing::Level::WARN,
         1 => tracing::Level::INFO,
         2 => tracing::Level::DEBUG,
@@ -173,6 +187,7 @@ fn enable_logging(args: &Args) {
     };
 
     let verbosity = match args.verbose {
+        _ if args.quiet => tracing::Level::ERROR,
         0 => tracing::Level::INFO,
         1 => tracing::Level::DEBUG,
         2.. => tracing::Level::TRACE,

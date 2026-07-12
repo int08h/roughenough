@@ -57,7 +57,7 @@ impl AddAssign for RequestMetrics {
 pub struct ResponseMetrics {
     pub num_responses: usize,
     pub num_bytes_sent: usize,
-    pub batch_sizes: Vec<u8>,
+    pub batch_sizes: Vec<usize>,
 }
 
 impl Default for ResponseMetrics {

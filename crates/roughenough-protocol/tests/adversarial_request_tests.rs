@@ -29,7 +29,7 @@ mod tests {
             );
             let mut file = std::fs::File::create(&fname).unwrap();
             file.write_all(bytes).unwrap();
-            println!("Wrote {} bytes to {}", bytes.len(), &fname);
+            println!("Wrote {} bytes to {}", bytes.len(), fname);
         }
     }
 

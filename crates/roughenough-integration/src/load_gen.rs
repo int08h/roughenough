@@ -1,31 +1,33 @@
-#![allow(dead_code)] // there are a lot of false positives that I'll deal with later
+#![allow(dead_code)] // compiled both as a bin and a lib module
 
+use std::collections::HashMap;
 use std::io::ErrorKind;
-use std::net::{SocketAddr, UdpSocket};
+use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::sync::Arc;
 use std::sync::atomic::Ordering::Relaxed;
-use std::sync::atomic::{AtomicU64, AtomicUsize};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
 use data_encoding::{
     BASE64, BASE64_NOPAD, BASE64URL, BASE64URL_NOPAD, DecodeError, DecodeKind, HEXLOWER, HEXUPPER,
 };
-use roughenough_protocol::ToFrame;
+use roughenough_protocol::cursor::ParseCursor;
 use roughenough_protocol::request::Request;
+use roughenough_protocol::response::Response;
 use roughenough_protocol::tags::{Nonce, PublicKey};
-use tracing::{debug, info, trace, warn};
+use roughenough_protocol::{FromFrame, ToFrame};
+use tracing::{debug, info, warn};
 
-// This is a load generator for testing server performance. This is not well written.
-// Ignore this file. ;) Needs a lot of work.
-//
-// Todo
-// * Receives need to be their own task/thread. The sync request/response loop in the load
-//   generator doesn't actually test how fast the servers is, it only tests latency
-// * Need to compensate for coordinated omission in measurement loop
-// * Could track how out-of-order responses get
-// * Make levels of response validation selectable
+// Load generator with bounded in-flight requests per worker and per-request
+// RTT measurement. Each worker binds its own source socket (so SO_REUSEPORT
+// hashing on the server spreads flows across its workers) and keeps up to
+// --in-flight requests outstanding. Responses are matched to requests via
+// the echoed NONC tag (the request sequence number is embedded in the nonce),
+// so reordering under depth > 1 cannot corrupt RTT samples; requests that
+// see no response within the expiry window count as losses, never as
+// samples. The final report gives percentiles, not averages.
 
 #[derive(Parser, Debug, Clone)]
 #[command(version = "2.0.0", about = "Roughenough load generator")]
@@ -65,6 +67,16 @@ pub struct Args {
     pub num_workers: usize,
 
     #[clap(
+        short = 'f',
+        long,
+        value_name = "N",
+        required = false,
+        help = "Maximum requests in flight per worker",
+        default_value_t = 1
+    )]
+    pub in_flight: usize,
+
+    #[clap(
         short = 'k',
         long,
         value_name = "KEY",
@@ -94,7 +106,7 @@ pub struct Stats {
 }
 
 impl Stats {
-    pub fn display_loop(stats: Arc<Stats>) {
+    pub fn display_loop(stats: Arc<Stats>, done: Arc<AtomicBool>) {
         let delay = Duration::from_secs(2);
 
         fn now() -> u64 {
@@ -104,7 +116,9 @@ impl Stats {
                 .as_millis() as u64
         }
 
-        loop {
+        stats.last_update.store(now(), Relaxed);
+
+        while !done.load(Relaxed) {
             thread::sleep(delay);
 
             let num_sent = stats.num_sent.load(Relaxed);
@@ -157,76 +171,211 @@ impl Stats {
     }
 }
 
+/// Per-worker outcome: RTT samples (nanoseconds) for matched responses only
+#[derive(Debug, Default)]
+pub struct WorkerReport {
+    pub rtt_nanos: Vec<u64>,
+    pub sent: usize,
+    pub received: usize,
+    pub lost: usize,
+}
+
 fn main() {
     let args = Args::parse();
     enable_logging(&args);
     debug!("command line: {:?}", args);
 
-    let pub_key = if let Some(public_key) = args.public_key.as_ref() {
-        let key = try_decode_key(public_key).unwrap();
-        Some(key)
-    } else {
-        None
-    };
+    let _pub_key = args
+        .public_key
+        .as_ref()
+        .map(|key| try_decode_key(key).unwrap());
 
     let stats = Arc::new(Stats::default());
+    let done = Arc::new(AtomicBool::new(false));
 
-    let mut threads = Vec::new();
+    let display_thread = {
+        let stats = Arc::clone(&stats);
+        let done = Arc::clone(&done);
+        thread::spawn(move || Stats::display_loop(stats, done))
+    };
+
+    let start = Instant::now();
+    let mut workers = Vec::new();
     for idx in 0..args.num_workers {
         let args = args.clone();
         let stats = Arc::clone(&stats);
-
-        threads.push(thread::spawn(move || run_worker(idx, args, pub_key, stats)));
+        workers.push(thread::spawn(move || run_worker(idx, args, stats)));
     }
 
-    threads.push(thread::spawn(move || {
-        Stats::display_loop(Arc::clone(&stats))
-    }));
+    let reports: Vec<WorkerReport> = workers
+        .into_iter()
+        .map(|w| w.join().expect("worker panicked"))
+        .collect();
+    let wall = start.elapsed();
 
-    threads.into_iter().for_each(|w| w.join().unwrap());
+    done.store(true, Relaxed);
+    display_thread.join().expect("display thread panicked");
+
+    print_report(&reports, wall);
 }
 
-fn run_worker(idx: usize, args: Args, _public_key: Option<PublicKey>, stats: Arc<Stats>) {
-    let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    let source = UdpSocket::bind(addr).unwrap();
+fn print_report(reports: &[WorkerReport], wall: Duration) {
+    let sent: usize = reports.iter().map(|r| r.sent).sum();
+    let received: usize = reports.iter().map(|r| r.received).sum();
+    let lost: usize = reports.iter().map(|r| r.lost).sum();
 
-    // Don't wait too long to get response before declaring it a loss
+    let mut rtts: Vec<u64> = reports
+        .iter()
+        .flat_map(|r| r.rtt_nanos.iter().copied())
+        .collect();
+    rtts.sort_unstable();
+
+    let loss_pct = if sent > 0 {
+        100.0 * lost as f64 / sent as f64
+    } else {
+        0.0
+    };
+    let rps = received as f64 / wall.as_secs_f64();
+
+    info!("---- final report ----");
+    info!(
+        "sent {} requests, received {} responses, lost {} ({:.3}%)",
+        sent, received, lost, loss_pct
+    );
+    info!(
+        "wall time {:.3}s, {:.0} responses/s",
+        wall.as_secs_f64(),
+        rps
+    );
+
+    if rtts.is_empty() {
+        info!("rtt: no samples");
+        return;
+    }
+    let us = |nanos: u64| nanos as f64 / 1000.0;
+    info!(
+        "rtt: min {:.1}us p50 {:.1}us p90 {:.1}us p99 {:.1}us max {:.1}us ({} samples)",
+        us(rtts[0]),
+        us(percentile(&rtts, 0.50)),
+        us(percentile(&rtts, 0.90)),
+        us(percentile(&rtts, 0.99)),
+        us(*rtts.last().unwrap()),
+        rtts.len()
+    );
+}
+
+/// Nearest-rank percentile over a sorted, non-empty slice
+fn percentile(sorted: &[u64], p: f64) -> u64 {
+    let idx = ((sorted.len() - 1) as f64 * p).round() as usize;
+    sorted[idx.min(sorted.len() - 1)]
+}
+
+/// How long an unanswered request stays in the window before it is declared
+/// lost. Kept well above any healthy RTT so losses, not slow responses, are
+/// what expire; expired responses that arrive later are ignored.
+const EXPIRY: Duration = Duration::from_millis(150);
+
+fn run_worker(idx: usize, args: Args, stats: Arc<Stats>) -> WorkerReport {
+    // one source socket per worker so the server's SO_REUSEPORT hashing
+    // spreads the workers across its threads
+    let source = UdpSocket::bind("0.0.0.0:0").unwrap();
+    // short recv timeout: it paces the loss-expiry sweep, not the RTT budget
     source
         .set_read_timeout(Some(Duration::from_millis(50)))
         .unwrap();
 
     info!("worker {idx} starting, {source:?}");
 
-    let nonce = Nonce::from(random_bytes::<32>());
-    let request = Request::new(&nonce);
-    let request_bytes = request.as_frame_bytes().unwrap();
+    let target_addr: SocketAddr = format!("{}:{}", args.hostname, args.port)
+        .to_socket_addrs()
+        .expect("cannot resolve target")
+        .next()
+        .expect("target resolved to no addresses");
 
-    let target_addr: SocketAddr = format!("{}:{}", args.hostname, args.port).parse().unwrap();
+    // random filler keeps nonces distinct across workers and runs; the
+    // sequence number is patched into the first 8 bytes of each nonce and
+    // echoed back in the response's NONC tag for RTT correlation
+    let nonce_filler = random_bytes::<32>();
+    let in_flight_cap = args.in_flight.max(1);
+    let total = args.num_requests as u64;
+
+    let mut outstanding: HashMap<u64, Instant> = HashMap::with_capacity(in_flight_cap);
+    let mut report = WorkerReport {
+        rtt_nanos: Vec::with_capacity(args.num_requests),
+        ..WorkerReport::default()
+    };
+    let mut next_seq: u64 = 0;
+    let mut completed: u64 = 0;
     let mut buf = [0u8; 1024];
 
-    for i in 0..args.num_requests {
-        let n = source.send_to(&request_bytes, target_addr).unwrap();
-        stats.num_sent.fetch_add(1, Relaxed);
-        stats.bytes_sent.fetch_add(n, Relaxed);
+    while completed < total {
+        while outstanding.len() < in_flight_cap && next_seq < total {
+            let mut nonce_bytes = nonce_filler;
+            nonce_bytes[..8].copy_from_slice(&next_seq.to_le_bytes());
+            let request = Request::new(&Nonce::from(nonce_bytes));
+            let request_bytes = request.as_frame_bytes().unwrap();
 
-        trace!("worker {idx} sent request {i}, {n} bytes");
+            match source.send_to(&request_bytes, target_addr) {
+                Ok(n) => {
+                    stats.num_sent.fetch_add(1, Relaxed);
+                    stats.bytes_sent.fetch_add(n, Relaxed);
+                    outstanding.insert(next_seq, Instant::now());
+                    report.sent += 1;
+                    next_seq += 1;
+                }
+                Err(e) => {
+                    stats.num_errors.fetch_add(1, Relaxed);
+                    warn!("worker {idx} send error: {e:?}");
+                    // count as lost so the run cannot deadlock on send errors
+                    report.lost += 1;
+                    completed += 1;
+                    next_seq += 1;
+                }
+            }
+        }
 
         match source.recv_from(&mut buf) {
             Ok((n, _)) => {
                 stats.num_responses.fetch_add(1, Relaxed);
                 stats.bytes_received.fetch_add(n, Relaxed);
-                trace!("worker {idx} received response {i}, {n} bytes")
+
+                if let Some(seq) = response_seq(&mut buf[..n])
+                    && let Some(sent_at) = outstanding.remove(&seq)
+                {
+                    report.rtt_nanos.push(sent_at.elapsed().as_nanos() as u64);
+                    report.received += 1;
+                    completed += 1;
+                }
+                // unmatched: unparseable, duplicate, or already expired --
+                // it was (or will be) accounted through the expiry sweep
             }
             Err(e) if e.kind() == ErrorKind::TimedOut || e.kind() == ErrorKind::WouldBlock => {
                 stats.num_timeouts.fetch_add(1, Relaxed);
-                trace!("worker {idx} timed out waiting for response {i}")
+                // expire the window so losses never wedge it; timeouts are
+                // losses, never RTT samples
+                let now = Instant::now();
+                let before = outstanding.len();
+                outstanding.retain(|_, sent_at| now.duration_since(*sent_at) < EXPIRY);
+                let expired = before - outstanding.len();
+                report.lost += expired;
+                completed += expired as u64;
             }
             Err(e) => {
                 stats.num_errors.fetch_add(1, Relaxed);
-                warn!("worker {idx} error waiting for response {i}: {e:?}");
+                warn!("worker {idx} recv error: {e:?}");
             }
         }
     }
+
+    report
+}
+
+/// Extract the sequence number echoed in the response's NONC tag
+fn response_seq(bytes: &mut [u8]) -> Option<u64> {
+    let mut cursor = ParseCursor::new(bytes);
+    let response = Response::from_frame(&mut cursor).ok()?;
+    let nonce_bytes: &[u8] = response.nonc().as_ref();
+    Some(u64::from_le_bytes(nonce_bytes[..8].try_into().ok()?))
 }
 
 fn enable_logging(args: &Args) {
