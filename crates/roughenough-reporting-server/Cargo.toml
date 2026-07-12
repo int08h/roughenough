@@ -26,11 +26,9 @@ data-encoding = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
-tower = { workspace = true }
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "time"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
-ulid = { workspace = true }
 
 [dev-dependencies]
 roughenough-common = { path = "../roughenough-common" }
@@ -39,4 +37,3 @@ roughenough-keys = { path = "../roughenough-keys" }
 roughenough-merkle = { path = "../roughenough-merkle" }
 aws-lc-rs = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
-tower = { workspace = true, features = ["util"] }

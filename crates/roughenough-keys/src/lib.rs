@@ -2,6 +2,7 @@
 
 pub mod longterm;
 pub mod online;
+pub mod runtime;
 pub mod seed;
 pub mod storage;
 

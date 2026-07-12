@@ -7,11 +7,11 @@
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::{Acquire, Release};
+use std::sync::mpsc::{SyncSender, sync_channel};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use clap::Parser;
-use crossbeam_channel::{Sender, bounded};
 use mio::net::UdpSocket as MioUdpSocket;
 use roughenough_keys::seed::MemoryBackend;
 use roughenough_protocol::cursor::ParseCursor;
@@ -31,7 +31,7 @@ fn test_args() -> Args {
     Args::try_parse_from(["roughenough_server"]).expect("default args parse")
 }
 
-fn new_worker(args: Args, tx: Sender<WorkerMetrics>) -> (Worker, MioUdpSocket, SocketAddr) {
+fn new_worker(args: Args, tx: SyncSender<WorkerMetrics>) -> (Worker, MioUdpSocket, SocketAddr) {
     let seed = Box::new(MemoryBackend::from_value(&[42u8; 32]));
     let key_source = KeySource::new(seed, ClockSource::System, args.rotation_interval());
     let responder = ResponseHandler::new(args.batch_size, key_source);
@@ -63,7 +63,7 @@ fn request_bytes(nonce_value: u8) -> Vec<u8> {
 #[test]
 fn worker_answers_request_end_to_end() {
     let keep_running = AtomicBool::new(true);
-    let (tx, _rx) = bounded(4);
+    let (tx, _rx) = sync_channel(4);
     let (mut worker, sock, server_addr) = new_worker(test_args(), tx);
 
     thread::scope(|s| {
@@ -99,7 +99,7 @@ fn worker_answers_request_end_to_end() {
 #[test]
 fn worker_shuts_down_promptly() {
     let keep_running = AtomicBool::new(true);
-    let (tx, _rx) = bounded(4);
+    let (tx, _rx) = sync_channel(4);
     let (mut worker, sock, _server_addr) = new_worker(test_args(), tx);
 
     thread::scope(|s| {
@@ -125,7 +125,7 @@ fn worker_shuts_down_promptly() {
 fn worker_shuts_down_under_load() {
     let keep_running = AtomicBool::new(true);
     let stop_senders = AtomicBool::new(false);
-    let (tx, _rx) = bounded(4);
+    let (tx, _rx) = sync_channel(4);
     let (mut worker, sock, server_addr) = new_worker(test_args(), tx);
 
     thread::scope(|s| {
@@ -166,7 +166,7 @@ fn worker_shuts_down_under_load() {
 #[test]
 fn worker_publishes_metrics() {
     let keep_running = AtomicBool::new(true);
-    let (tx, rx) = bounded::<WorkerMetrics>(4);
+    let (tx, rx) = sync_channel::<WorkerMetrics>(4);
     let mut args = test_args();
     args.metrics_interval = 1;
     let (mut worker, sock, server_addr) = new_worker(args, tx);

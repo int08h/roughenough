@@ -23,7 +23,6 @@ use std::thread;
 use std::time::Duration;
 
 use clap::Parser;
-use crossbeam_channel::bounded;
 use mio::net::UdpSocket as MioUdpSocket;
 use roughenough_keys::seed::MemoryBackend;
 use roughenough_protocol::request::Request;
@@ -100,7 +99,7 @@ fn drive(client: &UdpSocket, server: SocketAddr, request: &[u8], count: usize) -
 #[test]
 fn mio_loop_steady_state_allocations_are_bounded() {
     let keep_running = AtomicBool::new(true);
-    let (tx, _rx) = bounded(4);
+    let (tx, _rx) = std::sync::mpsc::sync_channel(4);
 
     let mut args = Args::try_parse_from(["roughenough_server"]).unwrap();
     // deadline work allocates (a metrics snapshot clones a Vec-bearing

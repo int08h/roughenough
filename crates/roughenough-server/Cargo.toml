@@ -24,8 +24,6 @@ roughenough-merkle = { workspace = true }
 roughenough-protocol = { workspace = true }
 aws-lc-rs = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
-crossbeam-channel = { workspace = true }
-fastrand = { workspace = true }
 mio = { workspace = true, features = ["net", "os-poll"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

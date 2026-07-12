@@ -1,6 +1,7 @@
 //! Key management operations
 
-use std::io::ErrorKind;
+use std::fs::File;
+use std::io::{Error, ErrorKind, Read, Write};
 
 use clap::Parser;
 #[cfg(feature = "longterm-aws-kms")]
@@ -9,10 +10,8 @@ use roughenough_keys::longterm::envelope::SeedEnvelope;
 #[cfg(feature = "longterm-gcp-kms")]
 use roughenough_keys::longterm::gcpkms;
 use roughenough_keys::seed::Seed;
-use roughenough_keys::storage;
+use roughenough_keys::{runtime, storage};
 use roughenough_protocol::util::as_hex;
-use tokio::fs::File;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Error};
 use tracing::{debug, error};
 
 #[derive(clap::Parser, Debug)]
@@ -112,11 +111,10 @@ enum Commands {
     },
 }
 
-type OutFile = Box<dyn AsyncWrite + Unpin>;
-type InFile = Box<dyn AsyncRead + Unpin>;
+type OutFile = Box<dyn Write>;
+type InFile = Box<dyn Read>;
 
-#[tokio::main]
-pub async fn main() {
+pub fn main() {
     let cli = Cli::parse();
     enable_logging(&cli);
 
@@ -126,20 +124,20 @@ pub async fn main() {
             key,
             secret,
         } => {
-            let output = outfile_from_arg(output).await.unwrap();
-            handle_generate(output, key, secret).await;
+            let output = outfile_from_arg(output).unwrap();
+            runtime::block_on(handle_generate(output, key, secret));
         }
 
         Commands::Seal { input, output, key } => {
-            let input = infile_from_arg(Some(input)).await.unwrap();
-            let output = outfile_from_arg(output).await.unwrap();
-            handle_seal(input, output, key).await;
+            let input = infile_from_arg(Some(input)).unwrap();
+            let output = outfile_from_arg(output).unwrap();
+            runtime::block_on(handle_seal(input, output, key));
         }
 
         Commands::Open { input, output, key } => {
-            let input = infile_from_arg(Some(input)).await.unwrap();
-            let output = outfile_from_arg(output).await.unwrap();
-            handle_open(input, output, key).await;
+            let input = infile_from_arg(Some(input)).unwrap();
+            let output = outfile_from_arg(output).unwrap();
+            runtime::block_on(handle_open(input, output, key));
         }
 
         Commands::Store {
@@ -147,15 +145,15 @@ pub async fn main() {
             output,
             secret,
         } => {
-            let input = infile_from_arg(Some(input)).await.unwrap();
-            let output = outfile_from_arg(output).await.unwrap();
-            handle_store(input, output, secret).await;
+            let input = infile_from_arg(Some(input)).unwrap();
+            let output = outfile_from_arg(output).unwrap();
+            runtime::block_on(handle_store(input, output, secret));
         }
 
         Commands::Get { input, output } => {
-            let input = infile_from_arg(Some(input)).await.unwrap();
-            let output = outfile_from_arg(output).await.unwrap();
-            handle_get(input, output).await;
+            let input = infile_from_arg(Some(input)).unwrap();
+            let output = outfile_from_arg(output).unwrap();
+            runtime::block_on(handle_get(input, output));
         }
     }
 }
@@ -172,7 +170,7 @@ async fn handle_generate(mut output: OutFile, key: Option<String>, secret: Optio
     match storage::try_store_seed(&seed, &resource).await {
         Ok(envelope) => {
             let json = serde_json::to_string_pretty(&envelope).unwrap();
-            output.write_all(json.as_bytes()).await.unwrap();
+            output.write_all(json.as_bytes()).unwrap();
         }
         Err(e) => {
             error!("Failed to store seed: {:?}", e);
@@ -183,13 +181,13 @@ async fn handle_generate(mut output: OutFile, key: Option<String>, secret: Optio
 /// Retrieve a long-term identity seed from a Secret manager
 async fn handle_get(mut input: InFile, mut output: OutFile) {
     let mut value = String::new();
-    input.read_to_string(&mut value).await.unwrap();
+    input.read_to_string(&mut value).unwrap();
 
     match storage::try_load_seed(&value).await {
         Ok(seed) => {
             let encoded = as_hex(seed.expose());
-            output.write_all(encoded.as_bytes()).await.unwrap();
-            output.write_all(b"\n").await.unwrap();
+            output.write_all(encoded.as_bytes()).unwrap();
+            output.write_all(b"\n").unwrap();
         }
         Err(e) => {
             error!("Failed to retrieve seed: {:?}", e);
@@ -200,7 +198,7 @@ async fn handle_get(mut input: InFile, mut output: OutFile) {
 /// Store a long-term identity seed in a Secret manager
 async fn handle_store(mut input: InFile, mut output: OutFile, secret: String) {
     let mut seed_bytes = Vec::new();
-    input.read_to_end(&mut seed_bytes).await.unwrap();
+    input.read_to_end(&mut seed_bytes).unwrap();
 
     if seed_bytes.len() != 32 {
         error!(
@@ -218,8 +216,8 @@ async fn handle_store(mut input: InFile, mut output: OutFile, secret: String) {
     match storage::try_store_seed(&seed, &secret).await {
         Ok(envelope) => {
             let json = serde_json::to_string_pretty(&envelope).unwrap();
-            output.write_all(json.as_bytes()).await.unwrap();
-            output.write_all(b"\n").await.unwrap();
+            output.write_all(json.as_bytes()).unwrap();
+            output.write_all(b"\n").unwrap();
         }
         Err(e) => {
             error!("Failed to store seed: {:?}", e);
@@ -230,7 +228,7 @@ async fn handle_store(mut input: InFile, mut output: OutFile, secret: String) {
 /// Decrypt an envelope encrypted long-term identity seed
 async fn handle_open(mut input: InFile, mut output: OutFile, key: Option<String>) {
     let mut buf = Vec::new();
-    input.read_to_end(&mut buf).await.unwrap();
+    input.read_to_end(&mut buf).unwrap();
     let mut envelope: SeedEnvelope = serde_json::from_slice(&buf).unwrap();
 
     if let Some(key_id) = key {
@@ -272,14 +270,14 @@ async fn handle_open(mut input: InFile, mut output: OutFile, key: Option<String>
     };
 
     let encoded = as_hex(seed.expose());
-    output.write_all(encoded.as_bytes()).await.unwrap();
-    output.write_all(b"\n").await.unwrap();
+    output.write_all(encoded.as_bytes()).unwrap();
+    output.write_all(b"\n").unwrap();
 }
 
 /// Envelope encrypt a long-term identity seed
 async fn handle_seal(mut input: InFile, mut output: OutFile, key: String) {
     let mut seed_bytes = Vec::new();
-    input.read_to_end(&mut seed_bytes).await.unwrap();
+    input.read_to_end(&mut seed_bytes).unwrap();
 
     if seed_bytes.len() != 32 {
         error!(
@@ -294,7 +292,7 @@ async fn handle_seal(mut input: InFile, mut output: OutFile, key: String) {
     match storage::try_store_seed(&seed, &key).await {
         Ok(envelope) => {
             let json = serde_json::to_string_pretty(&envelope).unwrap();
-            output.write_all(json.as_bytes()).await.unwrap();
+            output.write_all(json.as_bytes()).unwrap();
         }
         Err(e) => {
             error!("Failed to encrypt seed: {:?}", e);
@@ -302,10 +300,10 @@ async fn handle_seal(mut input: InFile, mut output: OutFile, key: String) {
     }
 }
 
-async fn outfile_from_arg(path: Option<String>) -> tokio::io::Result<OutFile> {
+fn outfile_from_arg(path: Option<String>) -> std::io::Result<OutFile> {
     match path {
         Some(file_path) => {
-            let file = match File::create_new(&file_path).await {
+            let file = match File::create_new(&file_path) {
                 Ok(file) => file,
                 Err(e) => {
                     error!("Failed to create output file '{}': {:?}", &file_path, e);
@@ -314,15 +312,15 @@ async fn outfile_from_arg(path: Option<String>) -> tokio::io::Result<OutFile> {
             };
             Ok(Box::new(file))
         }
-        None => Ok(Box::new(tokio::io::stdout())),
+        None => Ok(Box::new(std::io::stdout())),
     }
 }
 
 // make non optional
-async fn infile_from_arg(path: Option<String>) -> tokio::io::Result<InFile> {
+fn infile_from_arg(path: Option<String>) -> std::io::Result<InFile> {
     match path {
         Some(file_path) => {
-            let file = File::open(file_path).await?;
+            let file = File::open(file_path)?;
             Ok(Box::new(file))
         }
         None => Err(Error::new(

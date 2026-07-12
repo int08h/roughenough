@@ -20,7 +20,6 @@ data-encoding = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 tracing-subscriber = { workspace = true }
 tracing = { workspace = true }
-libc = { workspace = true }
 
 [[bin]]
 name = "roughenough_integration_test"

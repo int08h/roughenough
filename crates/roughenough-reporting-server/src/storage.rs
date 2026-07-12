@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use data_encoding::HEXLOWER;
 use roughenough_client::MalfeasanceReport;
+use roughenough_common::crypto::random_bytes;
 use serde::Serialize;
 
 /// Stored report with metadata
@@ -40,7 +42,8 @@ impl ReportStorage for InMemoryStorage {
         report: MalfeasanceReport,
         source_ip: String,
     ) -> Result<String, StorageError> {
-        let id = ulid::Ulid::new().to_string();
+        // an opaque unique identifier; nothing parses or orders by it
+        let id = HEXLOWER.encode(&random_bytes::<16>());
         let stored = StoredReport {
             id: id.clone(),
             timestamp: jiff::Timestamp::now(),

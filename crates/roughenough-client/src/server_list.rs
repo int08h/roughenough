@@ -1,5 +1,6 @@
 //! Representing lists of Roughtime servers
 
+use roughenough_common::crypto::secure_shuffle;
 use serde::{Deserialize, Serialize};
 
 /// Represents a Roughtime server list
@@ -156,7 +157,7 @@ impl ServerList {
         }
 
         let mut servers = self.servers.clone();
-        fastrand::shuffle(&mut servers);
+        secure_shuffle(&mut servers);
         Ok(servers[..n].to_vec())
     }
 

@@ -30,7 +30,7 @@ jobs:
           components: clippy
 
       - name: Run Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   rustfmt:
     name: Rustfmt (Code Formatting)
@@ -131,10 +131,10 @@ jobs:
       run: ssh-agent -a $SSH_AUTH_SOCK > /dev/null
 
     - name: Build
-      run: cargo auditable build --verbose --all-features
+      run: cargo auditable build --verbose --workspace --all-features
 
     - name: Run tests
-      run: cargo test --verbose --all-features
+      run: cargo test --verbose --workspace --all-features
 
     - name: Generate code coverage
       run: |

@@ -26,7 +26,6 @@ aws-lc-rs = { workspace = true }
 jiff = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 data-encoding = { workspace = true }
-fastrand = { workspace = true }
 libc = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

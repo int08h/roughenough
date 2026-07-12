@@ -23,10 +23,9 @@ pub enum StorageError {
 }
 
 /// Loads the seed from secure long-term storage and transfers it to an online backend. This is a
-/// convenience function that uses an async runtime internally to call `try_load_seed`.
+/// convenience function that drives `try_load_seed` to completion internally.
 pub fn try_load_seed_sync(encoded_value: &str) -> Result<Seed, StorageError> {
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(try_load_seed(encoded_value))
+    crate::runtime::block_on(try_load_seed(encoded_value))
 }
 
 /// Loads the seed from secure long-term storage and transfers it to an online backend.

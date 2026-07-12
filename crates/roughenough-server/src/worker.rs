@@ -1,10 +1,11 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
+use std::sync::mpsc::SyncSender;
 use std::time::Duration;
 
-use crossbeam_channel::Sender;
 use mio::net::UdpSocket as MioUdpSocket;
 use mio::{Events, Poll, Token};
+use roughenough_common::crypto::random_bytes;
 use roughenough_protocol::util::ClockSource;
 use tracing::info;
 
@@ -15,7 +16,7 @@ use crate::network::{CollectResult, NetworkHandler};
 use crate::requests::RequestHandler;
 use crate::responses::ResponseHandler;
 
-/// Batches processed per wakeup before deadlines and the shutdown flag are re-checked. 
+/// Batches processed per wakeup before deadlines and the shutdown flag are re-checked.
 const MAX_BATCHES_PER_WAKEUP: usize = 8;
 
 pub struct Worker {
@@ -23,7 +24,7 @@ pub struct Worker {
     clock: ClockSource,
     net_handler: NetworkHandler,
     req_handler: RequestHandler,
-    metrics_channel: Sender<WorkerMetrics>,
+    metrics_channel: SyncSender<WorkerMetrics>,
     key_replacement_interval: Duration,
     metrics_publish_interval: Duration,
     next_key_replacement: u64,
@@ -36,7 +37,7 @@ impl Worker {
         args: Args,
         responder: ResponseHandler,
         clock: ClockSource,
-        metrics_channel: Sender<WorkerMetrics>,
+        metrics_channel: SyncSender<WorkerMetrics>,
         metrics_interval: Duration,
     ) -> Self {
         let batch_size = args.batch_size as usize;
@@ -124,7 +125,7 @@ impl Worker {
 
         // jitter so that all worker threads don't thundering herd and replace their
         // keys at the same time, stalling all responses
-        let jitter = fastrand::u8(0..u8::MAX) as u64;
+        let jitter = u64::from(random_bytes::<1>()[0]);
         self.next_key_replacement += self.key_replacement_interval.as_secs() - jitter;
     }
 

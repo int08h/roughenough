@@ -15,10 +15,12 @@ default = ["online-linux-krs"]
 online-linux-krs = ["dep:linux-keyutils"]
 online-pkcs11 = ["dep:cryptoki"]
 online-ssh-agent = ["dep:ssh-agent-client-rs", "dep:ssh-key"]
-longterm-aws-kms = ["dep:aws-config", "dep:aws-sdk-kms"]
-longterm-gcp-kms = ["dep:google-cloud-kms-v1", "dep:crc32c"]
-longterm-aws-secret-manager = ["dep:aws-config", "dep:aws-sdk-secretsmanager"]
-longterm-gcp-secret-manager = ["dep:google-cloud-secretmanager-v1", "dep:crc32c"]
+# The cloud backends are the only async code paths; each enables the implicit
+# "tokio" feature so tokio stays out of non-cloud builds entirely
+longterm-aws-kms = ["dep:aws-config", "dep:aws-sdk-kms", "tokio"]
+longterm-gcp-kms = ["dep:google-cloud-kms-v1", "dep:crc32c", "tokio"]
+longterm-aws-secret-manager = ["dep:aws-config", "dep:aws-sdk-secretsmanager", "tokio"]
+longterm-gcp-secret-manager = ["dep:google-cloud-secretmanager-v1", "dep:crc32c", "tokio"]
 
 [dependencies]
 roughenough-common = { workspace = true }
@@ -37,7 +39,7 @@ serde_json = { workspace = true }
 ssh-agent-client-rs = { workspace = true, optional = true }
 ssh-key = { workspace = true, optional = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
+tokio = { workspace = true, optional = true, features = ["rt", "macros"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 zeroize = { workspace = true, features = ["zeroize_derive"] }

@@ -25,6 +25,27 @@ pub fn random_bytes<const N: usize>() -> [u8; N] {
     val
 }
 
+/// Shuffle a slice in place (Fisher-Yates) using cryptographically secure randomness
+pub fn secure_shuffle<T>(slice: &mut [T]) {
+    for i in (1..slice.len()).rev() {
+        let j = random_index(i + 1);
+        slice.swap(i, j);
+    }
+}
+
+/// Uniform random index in `[0, bound)`; rejection sampling avoids modulo bias
+fn random_index(bound: usize) -> usize {
+    debug_assert!(bound > 0 && bound <= u32::MAX as usize);
+    let bound = bound as u32;
+    let zone = u32::MAX - (u32::MAX % bound);
+    loop {
+        let r = u32::from_le_bytes(random_bytes::<4>());
+        if r < zone {
+            return (r % bound) as usize;
+        }
+    }
+}
+
 /// RFC 5.1.4: The value of the SRV tag is H(0xff || public_key) where public_key is
 /// the server's long-term, 32-byte Ed25519 public key and H is SHA-512 truncated to
 /// the first 32 bytes.

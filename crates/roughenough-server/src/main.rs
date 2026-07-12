@@ -22,11 +22,11 @@ use std::net::UdpSocket as StdUdpSocket;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Release;
+use std::sync::mpsc::{SyncSender, sync_channel};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
 use clap::Parser;
-use crossbeam_channel::{Sender, bounded};
 use mio::net::UdpSocket as MioUdpSocket;
 use roughenough_keys::seed::{Seed, SeedBackend, try_choose_backend};
 use roughenough_keys::storage::try_load_seed_sync;
@@ -119,7 +119,7 @@ fn worker_task(
     key_source: KeySource,
     args: Args,
     clock: ClockSource,
-    metrics_channel: Sender<WorkerMetrics>,
+    metrics_channel: SyncSender<WorkerMetrics>,
 ) {
     let sock = bind_socket(&args).expect("Failed to bind socket");
     let responder = ResponseHandler::new(args.batch_size, key_source);
@@ -215,7 +215,7 @@ pub fn start_metrics_thread(
     args: &Args,
     clock: ClockSource,
     keep_running: &'static AtomicBool,
-) -> (JoinHandle<()>, Sender<WorkerMetrics>) {
+) -> (JoinHandle<()>, SyncSender<WorkerMetrics>) {
     let num_workers = args.num_threads as usize;
     let metrics_interval = Duration::from_secs(args.metrics_interval);
 
@@ -230,7 +230,7 @@ pub fn start_metrics_thread(
     });
 
     // Each worker pushes at most once per interval, so num_workers * 2 should be plenty
-    let (sender, receiver) = bounded(num_workers * 2);
+    let (sender, receiver) = sync_channel(num_workers * 2);
 
     let collector = MetricsAggregator::new(
         receiver,
