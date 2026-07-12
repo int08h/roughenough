@@ -99,6 +99,35 @@ jobs:
       - name: Check licenses
         run: cargo deny check licenses
 
+  # The all-features jobs above never compile roughenough-keys with a single
+  # backend enabled; this matrix guards the per-feature cfg gates (notably
+  # the optional tokio dependency of the longterm-* cloud backends)
+  keys-features:
+    name: Keys Feature Matrix
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - "--no-default-features"
+          - ""
+          - "--features online-pkcs11"
+          - "--features online-ssh-agent"
+          - "--features longterm-aws-kms"
+          - "--features longterm-gcp-kms"
+          - "--features longterm-aws-secret-manager"
+          - "--features longterm-gcp-secret-manager"
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Check feature combination
+        run: cargo check -p roughenough-keys --all-targets ${{ matrix.features }}
+
   build:
     runs-on: ubuntu-latest
 
