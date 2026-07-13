@@ -18,10 +18,10 @@ roughenough-server = { path = "crates/roughenough-server", version = "2.0.0" }
 roughenough-reporting-server = { path = "crates/roughenough-reporting-server", version = "2.0.0" }
 
 # External dependencies
-aws-config = { version = "1.8", default-features = false, features = ["default-https-client", "rt-tokio", "credentials-process"] }
+aws-config = { version = "1.9", default-features = false, features = ["default-https-client", "rt-tokio", "credentials-process"] }
 aws-lc-rs = { version = "1.17", default-features = false, features = ["aws-lc-sys", "alloc"] }
-aws-sdk-kms = { version = "1.110", default-features = false, features = ["default-https-client", "rt-tokio"] }
-aws-sdk-secretsmanager = { version = "1.107", default-features = false, features = ["default-https-client", "rt-tokio"] }
+aws-sdk-kms = { version = "1.112", default-features = false, features = ["default-https-client", "rt-tokio"] }
+aws-sdk-secretsmanager = { version = "1.109", default-features = false, features = ["default-https-client", "rt-tokio"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }
 async-trait = "0.1"
 jiff = "0.2"
@@ -30,7 +30,7 @@ crc32c = "0.6"
 cryptoki = "0.12.0"
 data-encoding = "2.11"
 divan = "0.1"
-google-cloud-kms-v1 = "1.10"
+google-cloud-kms-v1 = "1.11"
 google-cloud-secretmanager-v1 = "1.10"
 libc = "0.2.177"
 mio = { version = "1.2", default-features = false }
@@ -38,7 +38,7 @@ pastey = "0.2"
 reqwest = { version = "0.13", default-features = false }
 serde = "1.0"
 serde_json = "1.0"
-signal-hook = "0.3"
+signal-hook = "0.4"
 socket2 = "0.6"
 ssh-agent-client-rs = "1.1"
 ssh-key = "0.6"
@@ -48,7 +48,7 @@ tokio = "1"
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi"] }
 ureq = { version = "3.3", default-features = false, features = ["rustls"] }
-zeroize = "1.8"
+zeroize = "1.9"
 
 [workspace.dependencies.linux-keyutils]
 version = "0.2"
