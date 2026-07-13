@@ -4,12 +4,8 @@
 //! never the poll/recv/send loop; this test drives the real loop through a
 //! real socket and counts allocations on the worker thread only.
 //!
-//! Steady state is not literally allocation-free: each response batch makes
-//! one 64-byte allocation per distinct protocol version in the batch (the
-//! SREP signature inside aws-lc-rs), visible in the divan baseline as well.
-//! With batch_size=1 and a single client version that is exactly one
-//! allocation per datagram, so the bound below is tight: any allocation
-//! added to the recv/send path doubles the count and fails the test.
+//! After warmup, request parsing, batching, signing, response generation, and
+//! the mio recv/send path must not use Rust's global allocator.
 //!
 //! Only one measurement test lives in this binary: the counters are global,
 //! so concurrent measurement tests in one process would interfere.
@@ -97,7 +93,7 @@ fn drive(client: &UdpSocket, server: SocketAddr, request: &[u8], count: usize) -
 }
 
 #[test]
-fn mio_loop_steady_state_allocations_are_bounded() {
+fn mio_loop_steady_state_is_allocation_free() {
     let keep_running = AtomicBool::new(true);
     let (tx, _rx) = std::sync::mpsc::sync_channel(4);
 
@@ -105,8 +101,7 @@ fn mio_loop_steady_state_allocations_are_bounded() {
     // deadline work allocates (a metrics snapshot clones a Vec-bearing
     // struct; rotation regenerates the online key): pin both far beyond the
     // measurement window. Rotation still fires once at startup, inside
-    // warmup. batch_size=1 makes the per-batch signature allocation exactly
-    // one-per-datagram so the bound is tight.
+    // warmup.
     args.metrics_interval = 3600;
     args.rotation_interval = 24;
     args.batch_size = 1;
@@ -162,12 +157,10 @@ fn mio_loop_steady_state_allocations_are_bounded() {
         );
 
         let allocs = WINDOW_ALLOCS.load(Relaxed);
-        let bound = MEASURED_PACKETS + 16;
-        assert!(
-            allocs <= bound,
-            "steady-state allocations regressed: {allocs} allocations while \
-             serving {MEASURED_PACKETS} datagrams (bound {bound}: one \
-             signature allocation per size-1 batch plus slack)"
+        assert_eq!(
+            allocs, 0,
+            "steady-state allocations regressed while serving \
+             {MEASURED_PACKETS} datagrams"
         );
     });
 }

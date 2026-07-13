@@ -2861,6 +2861,7 @@ version = "2.0.0"
 dependencies = [
  "aws-config",
  "aws-lc-rs",
+ "aws-lc-sys",
  "aws-sdk-kms",
  "aws-sdk-secretsmanager",
  "clap",

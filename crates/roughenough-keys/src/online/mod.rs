@@ -1,3 +1,4 @@
+mod aws_lc_ed25519;
 #[cfg(all(target_os = "linux", feature = "online-linux-krs"))]
 pub mod linuxkrs;
 #[cfg(feature = "online-ssh-agent")]

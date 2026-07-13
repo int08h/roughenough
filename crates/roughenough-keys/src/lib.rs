@@ -1,4 +1,5 @@
-#![forbid(unsafe_code)]
+// The two FFI wrapper functions in online::aws_lc_ed25519 opt in explicitly.
+#![deny(unsafe_code)]
 
 pub mod longterm;
 pub mod online;

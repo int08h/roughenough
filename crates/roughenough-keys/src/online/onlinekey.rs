@@ -1,4 +1,3 @@
-use aws_lc_rs::signature::{Ed25519KeyPair, KeyPair};
 use roughenough_protocol::ToWire;
 use roughenough_protocol::cursor::ParseCursor;
 use roughenough_protocol::tags::{
@@ -6,6 +5,9 @@ use roughenough_protocol::tags::{
     SupportedVersions,
 };
 use roughenough_protocol::util::ClockSource;
+use zeroize::Zeroizing;
+
+use super::aws_lc_ed25519;
 
 /// RFC 5.2.6: The PUBK tag MUST contain a temporary 32-byte Ed25519 public key
 /// which is used to sign the SREP tag.
@@ -131,14 +133,24 @@ impl OnlineKey {
 }
 
 pub(crate) struct OnlineSigner {
-    key_pair: Ed25519KeyPair,
+    private_key: Zeroizing<[u8; aws_lc_ed25519::PRIVATE_KEY_LEN]>,
+    public_key: [u8; aws_lc_ed25519::PUBLIC_KEY_LEN],
 }
 
 impl OnlineSigner {
     /// Creates a new Signer using a randomly generated Ed25519 key pair.
     pub(crate) fn from_random() -> OnlineSigner {
-        let key_pair = Ed25519KeyPair::generate().unwrap();
-        OnlineSigner { key_pair }
+        let mut seed = Zeroizing::new([0; aws_lc_ed25519::SEED_LEN]);
+        aws_lc_rs::rand::fill(seed.as_mut()).expect("Ed25519 seed generation failed");
+        Self::from_seed(&seed)
+    }
+
+    fn from_seed(seed: &[u8; aws_lc_ed25519::SEED_LEN]) -> OnlineSigner {
+        let key_pair = aws_lc_ed25519::keypair_from_seed(seed);
+        OnlineSigner {
+            private_key: key_pair.private_key,
+            public_key: key_pair.public_key,
+        }
     }
 
     pub(crate) fn public_key(&self) -> PublicKey {
@@ -146,26 +158,42 @@ impl OnlineSigner {
     }
 
     pub(crate) fn public_key_bytes(&self) -> [u8; 32] {
-        self.key_pair
-            .public_key()
-            .as_ref()
-            .try_into()
-            .expect("infallible")
+        self.public_key
     }
 
     /// Signs the provided data using the private key associated with this Signer.
     pub(crate) fn sign(&self, data: &[u8]) -> [u8; 64] {
-        self.key_pair
-            .sign(data)
-            .as_ref()
-            .try_into()
-            .expect("infallible")
+        aws_lc_ed25519::sign(&self.private_key, data).expect("Ed25519 signing failed")
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn decode_hex<const N: usize>(value: &str) -> [u8; N] {
+        data_encoding::HEXLOWER_PERMISSIVE
+            .decode(value.as_bytes())
+            .unwrap()
+            .try_into()
+            .unwrap()
+    }
+
+    #[test]
+    fn rfc8032_test_vector_1() {
+        let seed = decode_hex("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60");
+        let expected_public_key =
+            decode_hex("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a");
+        let expected_signature = decode_hex(
+            "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e06522490155\
+             5fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b",
+        );
+
+        let signer = OnlineSigner::from_seed(&seed);
+
+        assert_eq!(signer.public_key_bytes(), expected_public_key);
+        assert_eq!(signer.sign(b""), expected_signature);
+    }
 
     #[test]
     fn from_random_produces_different_keys() {
