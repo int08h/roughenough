@@ -1,7 +1,9 @@
-//! This is an audited safe wrapper around aws-lc-sys Ed25519.
+//! Minimal safe wrapper around aws-lc-sys Ed25519 signing.
 //!
-//! The safe aws-lc-rs Ed25519 API makes two allocations per signature. This wrapper uses
-//! aws-lc-sys directly to avoid allocations entirely.
+//! The safe aws-lc-rs Ed25519 API heap-allocates twice per signature: a Rust-side
+//! Vec holding the signature, and a C-side EVP_PKEY_CTX inside EVP_DigestSignInit
+//! (only the Vec is visible to Rust's global allocator). AWS-LC's raw Ed25519
+//! functions are stack-only, so calling them directly keeps signing allocation-free.
 
 use zeroize::Zeroizing;
 
@@ -17,7 +19,7 @@ pub(super) struct KeyPair {
 
 #[allow(
     unsafe_code,
-    reason = "audited safe wrapper around aws-lc-sys's Ed25519"
+    reason = "FFI into AWS-LC; invariants documented at the call site"
 )]
 pub(super) fn keypair_from_seed(seed: &[u8; SEED_LEN]) -> KeyPair {
     let mut public_key = [0; PUBLIC_KEY_LEN];
@@ -41,7 +43,7 @@ pub(super) fn keypair_from_seed(seed: &[u8; SEED_LEN]) -> KeyPair {
 
 #[allow(
     unsafe_code,
-    reason = "audited safe wrapper around aws-lc-sys's Ed25519"
+    reason = "FFI into AWS-LC; invariants documented at the call site"
 )]
 pub(super) fn sign(
     private_key: &[u8; PRIVATE_KEY_LEN],

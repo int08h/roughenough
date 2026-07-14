@@ -133,8 +133,7 @@ impl OnlineKey {
 }
 
 pub(crate) struct OnlineSigner {
-    private_key: Zeroizing<[u8; aws_lc_ed25519::PRIVATE_KEY_LEN]>,
-    public_key: [u8; aws_lc_ed25519::PUBLIC_KEY_LEN],
+    key_pair: aws_lc_ed25519::KeyPair,
 }
 
 impl OnlineSigner {
@@ -146,10 +145,8 @@ impl OnlineSigner {
     }
 
     fn from_seed(seed: &[u8; aws_lc_ed25519::SEED_LEN]) -> OnlineSigner {
-        let key_pair = aws_lc_ed25519::keypair_from_seed(seed);
         OnlineSigner {
-            private_key: key_pair.private_key,
-            public_key: key_pair.public_key,
+            key_pair: aws_lc_ed25519::keypair_from_seed(seed),
         }
     }
 
@@ -158,12 +155,12 @@ impl OnlineSigner {
     }
 
     pub(crate) fn public_key_bytes(&self) -> [u8; 32] {
-        self.public_key
+        self.key_pair.public_key
     }
 
     /// Signs the provided data using the private key associated with this Signer.
     pub(crate) fn sign(&self, data: &[u8]) -> [u8; 64] {
-        aws_lc_ed25519::sign(&self.private_key, data).expect("Ed25519 signing failed")
+        aws_lc_ed25519::sign(&self.key_pair.private_key, data).expect("Ed25519 signing failed")
     }
 }
 
@@ -193,6 +190,24 @@ mod tests {
 
         assert_eq!(signer.public_key_bytes(), expected_public_key);
         assert_eq!(signer.sign(b""), expected_signature);
+    }
+
+    // Vector 1 signs the empty message; this one exercises the FFI message
+    // pointer/length path with actual data
+    #[test]
+    fn rfc8032_test_vector_3() {
+        let seed = decode_hex("c5aa8df43f9f837bedb7442f31dcb7b166d38535076f094b85ce3a2e0b4458f7");
+        let expected_public_key =
+            decode_hex("fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025");
+        let expected_signature = decode_hex(
+            "6291d657deec24024827e69c3abe01a30ce548a284743a445e3680d7db5ac3ac\
+             18ff9b538d16f290ae67f760984dc6594a7c15e9716ed28dc027beceea1ec40a",
+        );
+
+        let signer = OnlineSigner::from_seed(&seed);
+
+        assert_eq!(signer.public_key_bytes(), expected_public_key);
+        assert_eq!(signer.sign(&[0xaf, 0x82]), expected_signature);
     }
 
     #[test]
