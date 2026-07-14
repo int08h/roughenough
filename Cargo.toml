@@ -20,6 +20,9 @@ roughenough-reporting-server = { path = "crates/roughenough-reporting-server", v
 # External dependencies
 aws-config = { version = "1.9", default-features = false, features = ["default-https-client", "rt-tokio", "credentials-process"] }
 aws-lc-rs = { version = "1.17", default-features = false, features = ["aws-lc-sys", "alloc"] }
+# Keep in lockstep with the aws-lc-sys version aws-lc-rs requires: aws-lc-sys
+# version-mangles its symbols and links key, so skew does not fail the build,
+# it silently links two copies of AWS-LC (CI checks cargo tree --duplicates).
 aws-lc-sys = { version = "0.42", default-features = false }
 aws-sdk-kms = { version = "1.112", default-features = false, features = ["default-https-client", "rt-tokio"] }
 aws-sdk-secretsmanager = { version = "1.109", default-features = false, features = ["default-https-client", "rt-tokio"] }

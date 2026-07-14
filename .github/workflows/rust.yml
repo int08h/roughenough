@@ -128,6 +128,29 @@ jobs:
       - name: Check feature combination
         run: cargo check -p roughenough-keys --all-targets ${{ matrix.features }}
 
+  # roughenough-keys depends on aws-lc-sys directly (allocation-free Ed25519
+  # FFI) and its version must match what aws-lc-rs requires. Skew does not
+  # fail the build: aws-lc-sys version-mangles its symbols and links key, so
+  # two AWS-LC copies would link silently.
+  duplicate-aws-lc-sys:
+    name: Duplicate aws-lc-sys Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Check for duplicate aws-lc-sys versions
+        run: |
+          if cargo tree --workspace --all-features --duplicates | grep aws-lc-sys; then
+            echo "error: multiple aws-lc-sys versions resolved; align the" \
+                 "workspace aws-lc-sys pin with the version aws-lc-rs requires"
+            exit 1
+          fi
+
   build:
     runs-on: ubuntu-latest
 
