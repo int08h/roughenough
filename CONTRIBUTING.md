@@ -12,6 +12,7 @@ for contributing to the project.
 - Linux, MacOS, or other Unix-like operating system
 - Git
 - Optional: cloud provider credentials for KMS feature development (AWS, GCP)
+- Follow the [AI policy](AI_POLICY.md)
 
 **Clone the repository:**
 
