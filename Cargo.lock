@@ -152,21 +152,8 @@ version = "1.17.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00bdb5da18dac48ca2cc7cd4a98e533e8635a58e2361d13a1a4ee3888e0d72f1"
 dependencies = [
- "aws-lc-sys 0.43.0",
+ "aws-lc-sys",
  "zeroize",
-]
-
-[[package]]
-name = "aws-lc-sys"
-version = "0.42.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d9ceb1da931507a12f4fccea479dccd00da1943e1b4ae72d8e502d707361444"
-dependencies = [
- "cc",
- "cmake",
- "dunce",
- "fs_extra",
- "pkg-config",
 ]
 
 [[package]]
@@ -2605,7 +2592,7 @@ dependencies = [
  "itertools",
  "proc-macro2",
  "quote",
- "syn",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -2941,7 +2928,7 @@ version = "2.0.0"
 dependencies = [
  "aws-config",
  "aws-lc-rs",
- "aws-lc-sys 0.42.0",
+ "aws-lc-sys",
  "aws-sdk-kms",
  "aws-sdk-secretsmanager",
  "clap",
