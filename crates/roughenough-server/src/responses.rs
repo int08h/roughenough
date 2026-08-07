@@ -5,18 +5,44 @@ use roughenough_merkle::{MerklePath, MerkleTree};
 use roughenough_protocol::cursor::ParseCursor;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::response::Response;
-use roughenough_protocol::tags::{MerkleRoot, ProtocolVersion, PublicKey};
+use roughenough_protocol::tags::{MerkleRoot, Nonce, ProtocolVersion, PublicKey};
 use roughenough_protocol::wire::ToFrame;
 
 use crate::keysource::KeySource;
 use crate::metrics::types::ResponseMetrics;
 
+/// Serialization buffer for one framed response. Also sizes the network
+/// handler's per-batch send queue.
+pub(crate) const RESPONSE_BUF_SIZE: usize = 1024;
+
+// The `expect` on `to_frame` in `process_responses` relies on every possible
+// response fitting in `response_buf`. `batch_size` is a u8, so a batch holds
+// at most 255 leaves and the Merkle PATH is at most 8 levels deep. Largest
+// framed response:
+//   12 (framing) + 56 (7-tag header) + 64 (SIG) + 32 (NONC) + 4 (TYPE)
+//   + 8 * 32 (PATH) + 120 (SREP with an 8-entry VERS) + 152 (CERT) + 4 (INDX)
+const MAX_FRAMED_RESPONSE_SIZE: usize = 700;
+const _: () = assert!(RESPONSE_BUF_SIZE >= MAX_FRAMED_RESPONSE_SIZE);
+
+/// The response loop needs only the request's nonce (plus routing metadata),
+/// so the whole `Request` is not stored: a 64-slot pending Vec of full
+/// requests was ~70 KB of mostly zeros.
 #[derive(Debug)]
 pub struct PendingRequest {
-    request: Request,
+    nonce: Nonce,
     src_addr: SocketAddr,
     /// The protocol version negotiated for this request's response
     version: ProtocolVersion,
+}
+
+/// A per-version response template kept alive across batches. CERT persists
+/// until key rotation; SREP and SIG are re-signed once per batch (`batch_id`
+/// tracks which batch last signed them); PATH, NONC, and INDX are overwritten
+/// per request just before serialization.
+struct VersionTemplate {
+    version: ProtocolVersion,
+    batch_id: u64,
+    response: Response,
 }
 
 pub struct ResponseHandler {
@@ -30,10 +56,12 @@ pub struct ResponseHandler {
     /// Distinct negotiated versions in the pending batch, bounded by
     /// `MAX_VERSIONS_PER_BATCH`
     batch_versions: Vec<ProtocolVersion>,
-    /// Per-version response templates; the Vec is reused across batches to
-    /// avoid re-allocating the template storage
-    version_templates: Vec<(ProtocolVersion, Response)>,
-    response_buf: [u8; 1024],
+    /// Long-lived per-version templates (at most `MAX_VERSIONS_PER_BATCH`
+    /// slots); see `VersionTemplate` for the field refresh cadence
+    version_templates: Vec<VersionTemplate>,
+    /// Monotonic batch sequence number used to detect stale template slots
+    batch_id: u64,
+    response_buf: [u8; RESPONSE_BUF_SIZE],
 }
 
 impl ResponseHandler {
@@ -66,7 +94,8 @@ impl ResponseHandler {
             requests: Vec::with_capacity(batch_size),
             batch_versions: Vec::with_capacity(Self::MAX_VERSIONS_PER_BATCH),
             version_templates: Vec::with_capacity(Self::MAX_VERSIONS_PER_BATCH),
-            response_buf: [0u8; 1024],
+            batch_id: 0,
+            response_buf: [0u8; RESPONSE_BUF_SIZE],
         }
     }
 
@@ -92,7 +121,7 @@ impl ResponseHandler {
 
         self.merkle_tree.push_leaf(request_bytes);
         self.requests.push(PendingRequest {
-            request,
+            nonce: *request.nonc(),
             src_addr,
             version,
         });
@@ -118,6 +147,8 @@ impl ResponseHandler {
 
     pub fn replace_online_key(&mut self) {
         self.online_key = self.key_source.make_online_key();
+        // templates hold the old key's CERT; force re-creation
+        self.version_templates.clear();
     }
 
     /// Process all responses. `callback` receives each response as a borrowed slice that's
@@ -135,41 +166,28 @@ impl ResponseHandler {
 
         // One Merkle tree commits to every request in the batch. CERT, SREP,
         // and SIG are shared by all responses with the same negotiated version;
-        // a template (and one signature) is created lazily per distinct version
-        // present in the batch, so a homogeneous batch still signs exactly once.
+        // each distinct version present in the batch is signed exactly once,
+        // into a long-lived template slot (no per-request Response clone).
         let root_hash: [u8; 32] = self.merkle_tree.compute_root();
         let merkle_root = MerkleRoot::from(root_hash);
-        let cert = self.online_key.cert().clone();
 
-        self.version_templates.clear();
+        self.batch_id += 1;
 
-        for (index, pending_req) in self.requests.iter().enumerate() {
-            let slot = match self
-                .version_templates
-                .iter()
-                .position(|(version, _)| *version == pending_req.version)
-            {
-                Some(slot) => slot,
-                None => {
-                    let (srep, sig) = self.online_key.make_srep(pending_req.version, &merkle_root);
-                    let mut template = Response::default();
-                    template.set_cert(cert.clone());
-                    template.set_srep(srep);
-                    template.set_sig(sig);
-                    self.version_templates.push((pending_req.version, template));
-                    self.version_templates.len() - 1
-                }
-            };
+        for index in 0..self.requests.len() {
+            let version = self.requests[index].version;
+            let slot = self.template_slot_for(version, &merkle_root);
 
             // Build the Merkle path for this Request's position in the tree
+            // before mutably borrowing the template
             self.merkle_path.clear();
             self.merkle_tree.get_paths_to(index, &mut self.merkle_path);
 
-            // Copy the common response as a template and set the elements unique to this response
-            // (merkle path, nonce, and index)
-            let mut response = self.version_templates[slot].1.clone();
+            // Set the elements unique to this response directly on the
+            // template (merkle path, nonce, and index)
+            let nonce = self.requests[index].nonce;
+            let response = &mut self.version_templates[slot].response;
             response.copy_path(&self.merkle_path);
-            response.set_nonc(*pending_req.request.nonc());
+            response.set_nonc(nonce);
             response.set_indx(index as u32);
 
             // Wire-encode the response
@@ -181,8 +199,58 @@ impl ResponseHandler {
             let frame_size = response.frame_size();
             self.response_metrics.add_bytes_sent(frame_size);
 
-            callback(pending_req.src_addr, &self.response_buf[..frame_size]);
+            callback(
+                self.requests[index].src_addr,
+                &self.response_buf[..frame_size],
+            );
         }
+    }
+
+    /// Return the index of a template carrying this batch's SREP and SIG for
+    /// `version`, signing it if this batch has not yet done so. A version new
+    /// to the template array takes an empty slot, or reuses one left over from
+    /// an earlier batch (the per-batch distinct-version cap guarantees a
+    /// stale slot exists).
+    fn template_slot_for(&mut self, version: ProtocolVersion, merkle_root: &MerkleRoot) -> usize {
+        let existing = self
+            .version_templates
+            .iter()
+            .position(|t| t.version == version);
+
+        let slot = match existing {
+            Some(slot) => {
+                if self.version_templates[slot].batch_id == self.batch_id {
+                    return slot;
+                }
+                slot
+            }
+            None if self.version_templates.len() < Self::MAX_VERSIONS_PER_BATCH => {
+                let mut response = Response::default();
+                response.set_cert(self.online_key.cert().clone());
+                self.version_templates.push(VersionTemplate {
+                    version,
+                    batch_id: 0,
+                    response,
+                });
+                self.version_templates.len() - 1
+            }
+            None => {
+                let slot = self
+                    .version_templates
+                    .iter()
+                    .position(|t| t.batch_id != self.batch_id)
+                    .expect("distinct-version cap guarantees a stale slot");
+                self.version_templates[slot].version = version;
+                slot
+            }
+        };
+
+        let (srep, sig) = self.online_key.make_srep(version, merkle_root);
+        let template = &mut self.version_templates[slot];
+        template.response.set_srep(srep);
+        template.response.set_sig(sig);
+        template.batch_id = self.batch_id;
+        slot
     }
 
     pub fn public_key(&self) -> PublicKey {
@@ -203,7 +271,7 @@ impl ResponseHandler {
 
     #[allow(dead_code)] // used in worker metrics collection
     pub fn metrics(&self) -> ResponseMetrics {
-        self.response_metrics.clone()
+        self.response_metrics
     }
 
     #[allow(dead_code)] // used in worker metrics collection
@@ -236,6 +304,17 @@ mod tests {
     fn create_test_request(nonce_value: u8) -> Request {
         let nonce = Nonce::from([nonce_value; 32]);
         Request::new(&nonce)
+    }
+
+    #[test]
+    fn pending_request_stays_small() {
+        // Storing the nonce instead of the whole Request keeps the 64-slot
+        // pending Vec to a few KB; catch accidental regrowth
+        assert!(
+            size_of::<PendingRequest>() < 128,
+            "PendingRequest grew to {} bytes",
+            size_of::<PendingRequest>()
+        );
     }
 
     #[test]
@@ -365,6 +444,125 @@ mod tests {
             assert_eq!(resp.nonc(), &expected_nonces[idx]);
             assert_eq!(resp.indx(), idx as u32);
         }
+    }
+
+    #[test]
+    fn consecutive_batches_do_not_bleed_state_through_reused_templates() {
+        // Templates persist across batches (SREP/SIG re-signed per batch);
+        // this pins the new failure mode that reuse introduces: a response
+        // carrying the previous batch's ROOT, SREP, or version
+        let mut responder = new_response_handler();
+        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+
+        let run_batch = |responder: &mut ResponseHandler,
+                         requests: &[(u8, ProtocolVersion)]|
+         -> Vec<Response> {
+            for (nonce_byte, version) in requests {
+                let request = create_test_request(*nonce_byte);
+                assert!(responder.add_request(
+                    &request.as_bytes().unwrap(),
+                    request,
+                    *version,
+                    addr,
+                ));
+            }
+            let mut responses = Vec::new();
+            responder.process_responses(|_, bytes| {
+                let mut data = bytes.to_vec();
+                let mut cursor = ParseCursor::new(&mut data);
+                use roughenough_protocol::wire::FromFrame;
+                responses.push(Response::from_frame(&mut cursor).unwrap());
+            });
+            responder.clear();
+            responses
+        };
+
+        let batch1 = run_batch(&mut responder, &[(1, ProtocolVersion::DRAFT)]);
+        let batch2 = run_batch(
+            &mut responder,
+            &[(2, ProtocolVersion::RFC), (3, ProtocolVersion::DRAFT)],
+        );
+
+        assert_eq!(batch1.len(), 1);
+        assert_eq!(batch2.len(), 2);
+
+        // batch 2 responses must commit to batch 2's root, not batch 1's,
+        // including the response using the template slot batch 1 created
+        assert_ne!(batch1[0].srep().root(), batch2[0].srep().root());
+        assert_eq!(batch2[0].srep().root(), batch2[1].srep().root());
+
+        assert_eq!(*batch1[0].srep().ver(), ProtocolVersion::DRAFT);
+        assert_eq!(*batch2[0].srep().ver(), ProtocolVersion::RFC);
+        assert_eq!(*batch2[1].srep().ver(), ProtocolVersion::DRAFT);
+
+        assert_eq!(batch1[0].nonc(), &Nonce::from([1u8; 32]));
+        assert_eq!(batch2[0].nonc(), &Nonce::from([2u8; 32]));
+        assert_eq!(batch2[1].nonc(), &Nonce::from([3u8; 32]));
+
+        assert_eq!(batch2[0].indx(), 0);
+        assert_eq!(batch2[1].indx(), 1);
+
+        // distinct versions in one batch get distinct signatures; the reused
+        // DRAFT slot must have been re-signed for batch 2's root
+        assert_ne!(batch2[0].sig(), batch2[1].sig());
+        assert_ne!(batch1[0].sig(), batch2[1].sig());
+    }
+
+    #[test]
+    fn key_rotation_invalidates_reused_templates() {
+        // A template created before rotation holds the old key's CERT; the
+        // first batch after rotation must carry the new CERT
+        let mut responder = new_response_handler();
+        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+
+        let one_response = |responder: &mut ResponseHandler, nonce_byte: u8| -> Response {
+            let request = create_test_request(nonce_byte);
+            assert!(responder.add_request(
+                &request.as_bytes().unwrap(),
+                request,
+                ProtocolVersion::DRAFT,
+                addr,
+            ));
+            let mut responses = Vec::new();
+            responder.process_responses(|_, bytes| {
+                let mut data = bytes.to_vec();
+                let mut cursor = ParseCursor::new(&mut data);
+                use roughenough_protocol::wire::FromFrame;
+                responses.push(Response::from_frame(&mut cursor).unwrap());
+            });
+            responder.clear();
+            responses.pop().unwrap()
+        };
+
+        let before = one_response(&mut responder, 1);
+        responder.replace_online_key();
+        let after = one_response(&mut responder, 2);
+
+        assert_ne!(
+            before.cert().dele().pubk(),
+            after.cert().dele().pubk(),
+            "post-rotation response must carry the new online key's CERT"
+        );
+    }
+
+    #[test]
+    fn worst_case_response_fits_in_response_buf() {
+        // Guards the hand-derived MAX_FRAMED_RESPONSE_SIZE constant against
+        // drift: an 8-deep PATH (255-leaf batch, the u8 batch_size maximum)
+        // and an 8-entry VERS is the largest response this server can emit
+        use roughenough_protocol::tags::{ProtocolVersion, SignedResponse, SupportedVersions};
+
+        let path_bytes = [0u8; 8 * 32];
+        let path = roughenough_protocol::tags::MerklePath::try_from(path_bytes.as_slice()).unwrap();
+
+        let mut srep = SignedResponse::default();
+        srep.set_vers(&SupportedVersions::new(&[ProtocolVersion::DRAFT; 8]));
+
+        let mut response = Response::default();
+        response.set_path(path);
+        response.set_srep(srep);
+
+        assert_eq!(response.frame_size(), MAX_FRAMED_RESPONSE_SIZE);
     }
 
     #[test]

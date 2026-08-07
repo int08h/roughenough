@@ -59,6 +59,20 @@ pub struct RawHeader {
     raw_tags: [u32; MAX_RAW_TAGS],
 }
 
+/// Read a little-endian u32 from `msg` at `*pos`, advancing `*pos`.
+fn read_u32_le(msg: &[u8], pos: &mut usize) -> Result<u32, Error> {
+    let bytes = msg
+        .get(*pos..*pos + 4)
+        .ok_or(BufferTooSmall(4, msg.len().saturating_sub(*pos)))?;
+    *pos += 4;
+    Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+}
+
+/// Read a big-endian u32 from `msg` at `*pos`, advancing `*pos`.
+fn read_u32_be(msg: &[u8], pos: &mut usize) -> Result<u32, Error> {
+    Ok(read_u32_le(msg, pos)?.swap_bytes())
+}
+
 impl RawHeader {
     /// Parse a header and validate it against the remaining message length.
     /// On return the cursor is positioned at the start of the values section.
@@ -75,8 +89,20 @@ impl RawHeader {
             return Err(BufferTooSmall(msg_len, cursor.remaining()));
         }
 
-        let start = cursor.position();
-        let num_tags_field = cursor.try_get_u32_le()?;
+        let (header, header_size) = Self::parse(&cursor.peek()[..msg_len])?;
+        cursor.advance(header_size)?;
+        Ok(header)
+    }
+
+    /// Parse a header from the leading bytes of `msg`, whose full length is
+    /// the message length (values section included). Returns the header and
+    /// its encoded size. Read-only: signature validators walk borrowed
+    /// response bytes through here without copying them into a mutable
+    /// buffer first.
+    pub fn parse(msg: &[u8]) -> Result<(Self, usize), Error> {
+        let mut pos = 0usize;
+
+        let num_tags_field = read_u32_le(msg, &mut pos)?;
         if num_tags_field == 0 || num_tags_field as usize > MAX_RAW_TAGS {
             return Err(BadNumTags(num_tags_field));
         }
@@ -90,7 +116,7 @@ impl RawHeader {
 
         let mut prior_offset = 0;
         for idx in 0..num_tags - 1 {
-            let value = cursor.try_get_u32_le()?;
+            let value = read_u32_le(msg, &mut pos)?;
 
             // RFC 4.2: All offsets MUST be multiples of four and placed in increasing order.
             if value % 4 != 0 {
@@ -107,7 +133,7 @@ impl RawHeader {
         let mut prior_key = 0u32;
         for idx in 0..num_tags {
             // Tags are read big-endian but ordered by their little-endian value
-            let value = cursor.try_get_u32()?;
+            let value = read_u32_be(msg, &mut pos)?;
             let key = value.swap_bytes();
 
             if idx > 0 && key <= prior_key {
@@ -118,12 +144,8 @@ impl RawHeader {
             prior_key = key;
         }
 
-        let header_size = cursor.position() - start;
-        if msg_len < header_size {
-            return Err(BufferTooSmall(header_size, msg_len));
-        }
-
-        let values_len = msg_len - header_size;
+        let header_size = pos;
+        let values_len = msg.len() - header_size;
         if num_tags > 1 && header.ends[num_tags - 2] as usize > values_len {
             return Err(OutOfBoundsOffset(
                 (num_tags - 2) as u32,
@@ -132,7 +154,7 @@ impl RawHeader {
         }
         header.ends[num_tags - 1] = values_len as u32;
 
-        Ok(header)
+        Ok((header, header_size))
     }
 
     pub fn num_tags(&self) -> usize {
@@ -161,8 +183,9 @@ impl RawHeader {
 /// Signature verification must operate on the bytes as received -- a message
 /// may carry tags unknown to this implementation, which re-serialization of
 /// the parsed form would not reproduce. Validators use this to slice the
-/// signed regions out of the original bytes.
-pub fn find_value_range(msg: &mut [u8], path: &[Tag]) -> Result<std::ops::Range<usize>, Error> {
+/// signed regions out of the original bytes; taking `&[u8]` lets them do so
+/// without first copying the packet into a mutable buffer.
+pub fn find_value_range(msg: &[u8], path: &[Tag]) -> Result<std::ops::Range<usize>, Error> {
     let mut start = 0usize;
     let mut end = msg.len();
 
@@ -170,16 +193,15 @@ pub fn find_value_range(msg: &mut [u8], path: &[Tag]) -> Result<std::ops::Range<
         let raw_tag = *tag as u32;
         let mut found = None;
 
-        let mut cursor = ParseCursor::new(&mut msg[start..end]);
-        let header = RawHeader::from_wire(&mut cursor)?;
+        let (header, header_size) = RawHeader::parse(&msg[start..end])?;
 
+        let mut value_start = header_size;
         for (entry_tag, value_len) in header.entries() {
-            let value_start = cursor.position();
             if entry_tag == raw_tag {
                 found = Some((start + value_start, start + value_start + value_len));
                 break;
             }
-            cursor.set_position(value_start + value_len);
+            value_start += value_len;
         }
 
         match found {

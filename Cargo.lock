@@ -2889,6 +2889,7 @@ dependencies = [
  "roughenough-common",
  "roughenough-merkle",
  "roughenough-protocol",
+ "roughenough-reporting-server",
  "roughenough-server",
  "serde",
  "serde_json",
@@ -2967,6 +2968,7 @@ version = "2.0.0"
 dependencies = [
  "divan",
  "pastey",
+ "roughenough-protocol",
  "thiserror",
 ]
 
@@ -2977,6 +2979,7 @@ dependencies = [
  "async-trait",
  "aws-lc-rs",
  "axum",
+ "clap",
  "data-encoding",
  "jiff",
  "reqwest",
@@ -3001,11 +3004,13 @@ dependencies = [
  "aws-lc-rs",
  "clap",
  "divan",
+ "libc",
  "mio",
  "roughenough-common",
  "roughenough-keys",
  "roughenough-merkle",
  "roughenough-protocol",
+ "roughenough-server",
  "serde",
  "serde_json",
  "signal-hook",

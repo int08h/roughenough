@@ -37,7 +37,7 @@ fn create_wire_request_with_version(nonce_value: u8, version: ProtocolVersion) -
 fn create_request_handler() -> RequestHandler {
     let args = Args {
         batch_size: 64,
-        interface: "0.0.0.0".to_string(),
+        interface: "0.0.0.0".parse().unwrap(),
         port: 2002,
         num_threads: 1,
         fixed_offset: 0,
@@ -45,6 +45,7 @@ fn create_request_handler() -> RequestHandler {
         rotation_interval: 1,
         metrics_interval: 60,
         seed: "".to_string(),
+        insecure_zero_seed: false,
         seed_backend: SeedBackendArg::Memory,
         verbose: 0,
         metrics_output: None,
@@ -55,6 +56,42 @@ fn create_request_handler() -> RequestHandler {
     let responder = ResponseHandler::new(args.batch_size, ks);
 
     RequestHandler::new(responder)
+}
+
+mod network_send {
+    use mio::net::UdpSocket as MioUdpSocket;
+    use roughenough_server::network::NetworkHandler;
+
+    use super::*;
+
+    /// Deliver one batch of responses to a loopback peer that never reads
+    /// (UDP drops silently when the peer queue fills, so sends stay cheap and
+    /// uniform). Measures the per-batch syscall cost of the send path.
+    #[divan::bench(
+        min_time = 0.250,
+        args = [16, 32, 64],
+    )]
+    fn send_batch(bencher: Bencher, batch_size: usize) {
+        let server = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        server.set_nonblocking(true).unwrap();
+        let mut server = MioUdpSocket::from_std(server);
+
+        let peer = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let peer_addr: SocketAddr = peer.local_addr().unwrap();
+
+        let mut handler = NetworkHandler::new(batch_size);
+        // typical framed response size for a depth-6 PATH
+        let payload = [0u8; 600];
+
+        bencher
+            .counter(BytesCount::new(payload.len() * batch_size))
+            .bench_local(move || {
+                for _ in 0..batch_size {
+                    handler.queue_response(&payload, peer_addr);
+                }
+                handler.flush_responses(&mut server);
+            });
+    }
 }
 
 mod request_handler {

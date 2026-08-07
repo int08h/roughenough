@@ -1,37 +1,10 @@
-use std::fmt::Debug;
-
-use crate::cursor::ParseCursor;
-use crate::error::Error;
-use crate::tags::fixed_tag::FixedTag;
-use crate::util::as_hex;
-use crate::wire::{FromWire, ToWire};
+use crate::tags::fixed_tag::fixed_tag;
 
 /// RFC 5.2.6: The PUBK tag MUST contain a temporary 32-byte Ed25519 public key.
 const SIZE: usize = 32;
 
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
-pub struct PublicKey(FixedTag<SIZE>);
-
-impl Debug for PublicKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "PUBK({})", as_hex(self.0.as_slice()))
-    }
-}
-
-impl ToWire for PublicKey {
-    fn wire_size(&self) -> usize {
-        SIZE
-    }
-
-    fn to_wire(&self, cursor: &mut ParseCursor) -> Result<(), Error> {
-        self.0.to_wire(cursor)
-    }
-}
-
-impl FromWire for PublicKey {
-    fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
-        Ok(PublicKey(cursor.try_get_fixed()?.into()))
-    }
+fixed_tag! {
+    PublicKey, SIZE, "PUBK"
 }
 
 impl From<&[u8]> for PublicKey {
@@ -42,14 +15,34 @@ impl From<&[u8]> for PublicKey {
     }
 }
 
-impl From<[u8; SIZE]> for PublicKey {
-    fn from(value: [u8; SIZE]) -> Self {
-        Self(value.into())
-    }
-}
-
 impl AsRef<[u8]> for PublicKey {
     fn as_ref(&self) -> &[u8] {
         self.0.as_slice()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cursor::ParseCursor;
+    use crate::wire::{FromWire, ToWire};
+
+    #[test]
+    fn round_trip() {
+        let pubk = PublicKey::from([0x5au8; SIZE]);
+        let mut bytes = pubk.as_bytes().unwrap();
+        assert_eq!(bytes.len(), SIZE);
+
+        let mut cursor = ParseCursor::new(&mut bytes);
+        assert_eq!(PublicKey::from_wire(&mut cursor).unwrap(), pubk);
+    }
+
+    #[test]
+    fn short_buffer_is_rejected() {
+        // PUBK's enclosing DELE checks the declared tag size, so the main
+        // failure mode here is a short buffer
+        let mut bytes = vec![0u8; SIZE - 1];
+        let mut cursor = ParseCursor::new(&mut bytes);
+        assert!(PublicKey::from_wire(&mut cursor).is_err());
     }
 }

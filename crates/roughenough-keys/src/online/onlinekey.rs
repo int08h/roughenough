@@ -34,14 +34,8 @@ impl OnlineKey {
             ProtocolVersion::ADVERTISED.as_ref(),
         ));
 
-        // Reusable signing buffer sized for the largest context string among
-        // the supported versions
-        let max_prefix_len = ProtocolVersion::ADVERTISED
-            .iter()
-            .map(|version| version.srep_prefix().len())
-            .max()
-            .expect("ADVERTISED is non-empty");
-        let buf = vec![0u8; max_prefix_len + srep.wire_size()];
+        // Reusable signing buffer sized for the context string plus SREP
+        let buf = vec![0u8; ProtocolVersion::SREP_PREFIX.len() + srep.wire_size()];
 
         Self {
             signer: OnlineSigner::from_random(),
@@ -116,7 +110,7 @@ impl OnlineKey {
         }
         debug_assert_eq!(srep.wire_size(), self.template_srep.wire_size());
 
-        let prefix = version.srep_prefix();
+        let prefix = ProtocolVersion::SREP_PREFIX;
         let prefix_len = prefix.len();
         let total_len = prefix_len + srep.wire_size();
 

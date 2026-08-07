@@ -33,7 +33,6 @@ type Hash = [u8; OUTPUT_LEN];
 /// request. Leaf nodes are indexed left to right, beginning with zero.
 pub struct MerkleTree {
     levels: Vec<Vec<Hash>>,
-    algorithm: &'static digest::Algorithm,
 }
 
 impl Default for MerkleTree {
@@ -48,7 +47,6 @@ impl MerkleTree {
     pub fn new() -> MerkleTree {
         MerkleTree {
             levels: vec![vec![]],
-            algorithm: &digest::SHA512,
         }
     }
 
@@ -57,25 +55,24 @@ impl MerkleTree {
         self.levels[0].push(hash);
     }
 
-    /// Pre-allocate capacity for the given number of leaves
+    /// Pre-allocate capacity for the given number of leaves, sized so that
+    /// `compute_root` never reallocates: rounding up to the next power of two
+    /// covers both odd level counts and the padding node `compute_root`
+    /// pushes onto an odd-sized level (exact per-level counts would fall one
+    /// short there, e.g. a first batch of 48).
     pub fn reserve(&mut self, num_leaves: usize) {
         if num_leaves == 0 {
             return;
         }
 
-        // Calculate required levels: log2(num_leaves) + 1
-        let max_levels = if num_leaves.is_power_of_two() {
-            num_leaves.trailing_zeros() as usize + 1
-        } else {
-            (num_leaves - 1).ilog2() as usize + 2
-        };
+        let mut capacity = num_leaves.next_power_of_two();
+        let max_levels = capacity.trailing_zeros() as usize + 1;
 
         // Pre-allocate levels
         self.levels
             .reserve(max_levels.saturating_sub(self.levels.len()));
 
         // Pre-allocate capacity for each level
-        let mut capacity = num_leaves;
         for level in 0..max_levels {
             if level >= self.levels.len() {
                 self.levels.push(Vec::new());
@@ -180,67 +177,58 @@ impl MerkleTree {
     }
 
     fn hash_leaf(&self, leaf: &[u8]) -> Hash {
-        self.hash(&[LEAF_TWEAK, leaf])
+        hash_parts(&[LEAF_TWEAK, leaf])
     }
 
     fn hash_nodes(&self, first: &[u8], second: &[u8]) -> Hash {
-        self.hash(&[NODE_TWEAK, first, second])
+        hash_parts(&[NODE_TWEAK, first, second])
+    }
+}
+
+/// Reconstruct the root hash from a leaf's data, its index, and its Merkle path.
+///
+/// Returns `None` if any bits of `index` remain nonzero after all path elements
+/// are consumed. RFC 5.3.1: "if any of the remaining bits of INDX is non-zero,
+/// the algorithm fails."
+///
+/// A free function: it reads no tree state, and callers (client validation)
+/// should not have to build a throwaway heap-allocating `MerkleTree` to
+/// verify a proof.
+pub fn root_from_paths(mut index: usize, init_data: &[u8], paths: &MerklePath) -> Option<Hash> {
+    let mut hash = hash_parts(&[LEAF_TWEAK, init_data]);
+
+    for path in paths.elements() {
+        hash = if index & 1 == 0 {
+            // Left
+            hash_parts(&[NODE_TWEAK, &hash, path])
+        } else {
+            // Right
+            hash_parts(&[NODE_TWEAK, path, &hash])
+        };
+        index >>= 1;
     }
 
-    fn hash(&self, to_hash: &[&[u8]]) -> Hash {
-        let mut ctx = digest::Context::new(self.algorithm);
-        for &data in to_hash {
-            ctx.update(data);
-        }
-        let mut result = [0u8; OUTPUT_LEN];
-        result.copy_from_slice(&ctx.finish().as_ref()[..OUTPUT_LEN]);
-        result
+    if index != 0 {
+        return None;
     }
 
-    /// Reconstruct the root hash from a leaf's data, its index, and its Merkle path.
-    ///
-    /// Returns `None` if any bits of `index` remain nonzero after all path elements
-    /// are consumed. RFC 5.3.1: "if any of the remaining bits of INDX is non-zero,
-    /// the algorithm fails."
-    pub fn root_from_paths(
-        &self,
-        mut index: usize,
-        init_data: &[u8],
-        paths: &MerklePath,
-    ) -> Option<Hash> {
-        let mut hash = self.hash_leaf(init_data);
+    Some(hash)
+}
 
-        for path in paths.elements() {
-            let mut ctx = digest::Context::new(self.algorithm);
-            ctx.update(NODE_TWEAK);
-
-            if index & 1 == 0 {
-                // Left
-                ctx.update(&hash);
-                ctx.update(path);
-            } else {
-                // Right
-                ctx.update(path);
-                ctx.update(&hash);
-            }
-
-            let mut result = [0u8; OUTPUT_LEN];
-            result.copy_from_slice(&ctx.finish().as_ref()[..OUTPUT_LEN]);
-            hash = result;
-            index >>= 1;
-        }
-
-        if index != 0 {
-            return None;
-        }
-
-        Some(hash)
+/// First 32 bytes of SHA-512 over the concatenated parts (RFC 5.3).
+fn hash_parts(parts: &[&[u8]]) -> Hash {
+    let mut ctx = digest::Context::new(&digest::SHA512);
+    for part in parts {
+        ctx.update(part);
     }
+    let mut result = [0u8; OUTPUT_LEN];
+    result.copy_from_slice(&ctx.finish().as_ref()[..OUTPUT_LEN]);
+    result
 }
 
 #[cfg(test)]
 mod test {
-    use crate::MerkleTree;
+    use crate::{MerkleTree, root_from_paths};
 
     fn test_paths_with_num(num: usize) {
         let mut tree = MerkleTree::new();
@@ -253,7 +241,7 @@ mod test {
 
         for i in 0..num {
             let paths = tree.get_paths(i);
-            let computed_root = tree.root_from_paths(i, &[i as u8], &paths).unwrap();
+            let computed_root = root_from_paths(i, &[i as u8], &paths).unwrap();
 
             assert_eq!(
                 root, computed_root,
@@ -352,7 +340,7 @@ mod test {
         // For each leaf, get its path and verify it
         for (idx, leaf) in leaves.iter().enumerate() {
             let paths = tree.get_paths(idx);
-            let verified_root = tree.root_from_paths(idx, leaf, &paths).unwrap();
+            let verified_root = root_from_paths(idx, leaf, &paths).unwrap();
 
             assert_eq!(
                 verified_root, expected_root,
@@ -371,6 +359,35 @@ mod test {
         let root2 = tree.compute_root();
 
         assert_ne!(root1, root2, "Root should change after adding new leaves");
+    }
+
+    #[test]
+    fn reserve_prevents_reallocation_during_first_batch() {
+        // The padding node pushed onto an odd-sized level used to overflow an
+        // exact per-level reservation (e.g. a first batch of 48); the
+        // power-of-two rounding must absorb it for every first-batch size
+        for n in 1..=64usize {
+            let mut tree = MerkleTree::new();
+            tree.reserve(n);
+
+            for i in 0..n {
+                tree.push_leaf(&[i as u8]);
+            }
+
+            let num_levels = tree.levels.len();
+            let capacities: Vec<usize> = tree.levels.iter().map(|level| level.capacity()).collect();
+
+            tree.compute_root();
+
+            assert_eq!(tree.levels.len(), num_levels, "level list grew for n={n}");
+            for (idx, level) in tree.levels.iter().enumerate() {
+                assert_eq!(
+                    level.capacity(),
+                    capacities[idx],
+                    "level {idx} reallocated during compute_root for n={n}"
+                );
+            }
+        }
     }
 
     #[test]
