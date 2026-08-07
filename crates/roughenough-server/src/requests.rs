@@ -422,8 +422,7 @@ mod tests {
         use roughenough_protocol::tags::ProtocolVersion;
         use roughenough_protocol::wire::FromFrame;
 
-        // A draft revision this implementation does not enumerate, at the top
-        // of the RFC 12.2 draft/experimental range (0x80000000-0xbfffffff)
+        // top of the RFC 12.2 draft/experimental range (0x80000000-0xbfffffff)
         let draft = ProtocolVersion::from_u32(0xbfffffff).unwrap();
 
         let entries: &[(&[u8; 4], Vec<u8>)] = &[
@@ -457,9 +456,7 @@ mod tests {
 
     #[test]
     fn private_use_version_gets_no_response() {
-        // RFC 12.2: 0xc0000000-0xffffffff is private use. Answering would sign
-        // a response claiming semantics this implementation has never seen,
-        // violating RFC 5.2.5; drop the request instead (RFC 5.1.1 permits it).
+        // RFC 12.2: 0xc0000000-0xffffffff is private use.
         let entries: &[(&[u8; 4], Vec<u8>)] = &[
             (b"VER\x00", 0xc0000001u32.to_le_bytes().to_vec()),
             (b"NONC", vec![0x42; 32]),
@@ -498,8 +495,6 @@ mod tests {
     fn version_overflow_is_capped_per_batch() {
         let mut handler = create_request_handler();
 
-        // Three distinct off-list drafts: only two off-list slots exist per
-        // batch (MAX_VERSIONS_PER_BATCH minus the reserved advertised slots)
         let offlist_drafts = [0x80000009u32, 0x8000000a, 0x8000000b];
 
         for (i, wire_ver) in offlist_drafts.iter().enumerate() {
@@ -537,9 +532,7 @@ mod tests {
         let entries: &[(&[u8; 4], Vec<u8>)] = &[
             (
                 b"VER\x00",
-                (roughenough_protocol::tags::ProtocolVersion::DRAFT.as_u32())
-                    .to_le_bytes()
-                    .to_vec(),
+                ProtocolVersion::DRAFT.as_u32().to_le_bytes().to_vec(),
             ),
             (b"NONC", vec![0x42; 32]),
             (b"TYPE", 0u32.to_le_bytes().to_vec()),

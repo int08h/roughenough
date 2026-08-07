@@ -38,11 +38,7 @@ pub struct VersionList {
 impl VersionList {
     /// Maximum # of versions to hold. Excess versions (if present) will be discarded.
     ///
-    /// Deliberate deviation from RFC 5.1.1, which allows up to 32 entries in
-    /// VER: parsing is capped at 8 to bound stack usage (32 slots would waste
-    /// 1024 mostly-empty bytes per list), and because version 1 and the draft
-    /// versions sort within the first 8 slots in practice, so nothing
-    /// negotiable is lost. Do not raise this.
+    /// Deliberate deviation from RFC 5.1.1 to bound mem usage and effort.
     pub const MAX_VERSIONS: usize = 8;
 }
 

@@ -11,14 +11,12 @@ use crate::wire::{FromWire, ToWire};
 /// A `ProtocolVersion` is a u32 version number identifying a specific Roughtime
 /// protocol variant.
 ///
-/// RFC draft revisions use version numbers from the draft/experimental range
-/// (`0x80000000 | draft identifier`). RFC 12.2 splits the high-bit space:
-/// 0x80000000-0xbfffffff is reserved for draft/experimental use and
-/// 0xc0000000-0xffffffff for private use. This implementation accepts *any*
-/// version in the draft/experimental range and handles them all uniformly,
-/// on the assumption that no pre-8 clients remain. Private-use versions are
-/// rejected: their semantics are unknown here, and RFC 5.2.5 requires the
-/// version number to correspond with the rest of the packet contents.
+/// RFC 12.2 splits the high-bit space:
+///   * 0x80000000-0xbfffffff is reserved for draft/experimental use and
+///   * 0xc0000000-0xffffffff for private use
+///
+/// This implementation accepts *any* version in the draft/experimental range and
+/// rejects private-use versions.
 #[repr(transparent)]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ProtocolVersion(u32);
@@ -47,15 +45,12 @@ impl ProtocolVersion {
     }
 
     /// True when this version is in the RFC 12.2 draft/experimental range
-    /// (0x80000000-0xbfffffff). Private-use values (0xc0000000-0xffffffff)
-    /// are excluded: signing a response bearing one would claim semantics
-    /// this implementation has never seen (RFC 5.2.5).
+    /// (0x80000000-0xbfffffff).
     pub const fn is_draft(&self) -> bool {
         Self::DRAFT_MIN <= self.0 && self.0 <= Self::DRAFT_MAX
     }
 
-    /// True when this implementation can respond using this version: RFC version 1
-    /// or any draft revision.
+    /// True when this implementation can respond using this version.
     pub const fn is_supported(&self) -> bool {
         self.0 == Self::RFC.0 || self.is_draft()
     }
@@ -80,7 +75,7 @@ impl ProtocolVersion {
     }
 
     /// Rank for version negotiation: a higher value is preferred. RFC version 1
-    /// outranks every draft despite its smaller wire value; among drafts the
+    /// outranks every draft despite its smaller wire value. Among drafts the
     /// highest wire value (the most recent draft) wins.
     pub fn preference(&self) -> u64 {
         if *self == Self::RFC {
@@ -92,14 +87,10 @@ impl ProtocolVersion {
         }
     }
 
-    /// RFC 5.2.2: context string for the long-term key's signature over DELE,
-    /// including the terminating zero byte. The same string applies to every
-    /// supported version (RFC version 1 and all draft revisions), so it is a
-    /// constant rather than a per-version accessor.
+    /// RFC 5.2.2: context string for the long-term key's signature over DELE.
     pub const DELE_PREFIX: &'static [u8] = b"RoughTime v1 delegation signature\x00";
 
-    /// RFC 5.2.6: context string for the online key's signature over SREP,
-    /// including the terminating zero byte. Version-independent like
+    /// RFC 5.2.6: context string for the online key's signature over SREP.
     /// [`Self::DELE_PREFIX`].
     pub const SREP_PREFIX: &'static [u8] = b"RoughTime v1 response signature\x00";
 }
@@ -139,9 +130,6 @@ impl FromStr for ProtocolVersion {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_ascii_lowercase().as_str() {
             "1" | "ietf-roughtime" => Ok(Self::RFC),
-            // "19" is historical: it names the draft that assigned 0x8000000c.
-            // If DRAFT is ever bumped to a different wire value, re-pin "19"
-            // to the literal 0x8000000c or retire it.
             "19" => Ok(Self::DRAFT),
             _ => Err(InvalidVersion(u32::MAX)),
         }
