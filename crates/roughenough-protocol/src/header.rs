@@ -10,8 +10,7 @@ use crate::tag::Tag;
 use crate::wire::ToWire;
 
 /// Serialization-side view of a message header with a fixed, known tag set.
-/// Parsing always goes through [`RawHeader`], which tolerates unknown tags as
-/// the RFC requires.
+/// Parsing always goes through [`RawHeader`], which tolerates unknown tags.
 pub trait Header {
     fn num_tags() -> u32;
     fn offsets(&self) -> &[u32];
@@ -47,8 +46,8 @@ pub const MAX_RAW_TAGS: usize = 16;
 /// tags as raw u32 values (in the same big-endian interpretation as [`Tag`])
 /// instead of rejecting values this implementation does not recognize.
 ///
-/// RFC 4.2 tag ordering is enforced on the little-endian value of each tag;
-/// the ordering is strict, which also rejects duplicate tags ("A tag MUST NOT
+/// RFC 4.2 tag ordering is enforced on the little-endian value of each tag.
+/// The ordering is strict and rejects duplicate tags ("A tag MUST NOT
 /// appear more than once in a header").
 #[derive(Debug, Clone)]
 pub struct RawHeader {
@@ -96,9 +95,7 @@ impl RawHeader {
 
     /// Parse a header from the leading bytes of `msg`, whose full length is
     /// the message length (values section included). Returns the header and
-    /// its encoded size. Read-only: signature validators walk borrowed
-    /// response bytes through here without copying them into a mutable
-    /// buffer first.
+    /// its encoded size.
     pub fn parse(msg: &[u8]) -> Result<(Self, usize), Error> {
         let mut pos = 0usize;
 
@@ -179,12 +176,6 @@ impl RawHeader {
 /// Locate the value of nested tags within a Roughtime message (without
 /// framing). `path` descends into nested messages: `[Tag::CERT, Tag::DELE]`
 /// returns the byte range of the DELE value within `msg`.
-///
-/// Signature verification must operate on the bytes as received -- a message
-/// may carry tags unknown to this implementation, which re-serialization of
-/// the parsed form would not reproduce. Validators use this to slice the
-/// signed regions out of the original bytes; taking `&[u8]` lets them do so
-/// without first copying the packet into a mutable buffer.
 pub fn find_value_range(msg: &[u8], path: &[Tag]) -> Result<std::ops::Range<usize>, Error> {
     let mut start = 0usize;
     let mut end = msg.len();

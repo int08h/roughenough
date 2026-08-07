@@ -7,6 +7,7 @@ use roughenough_protocol::request;
 
 use crate::metrics::types::NetworkMetrics;
 use crate::network::CollectResult::{Empty, MoreData};
+use crate::responses;
 
 /// One response staged for a batched flush: its bytes live in
 /// `NetworkHandler::send_bufs` at `range`.
@@ -18,16 +19,8 @@ struct QueuedResponse {
 pub struct NetworkHandler {
     batch_size: usize,
     metrics: NetworkMetrics,
-    /// Receive buffer, one byte larger than the largest valid request:
-    /// recv_from silently truncates bigger datagrams, and answering a
-    /// truncated request would Merkle-hash bytes differing from what the
-    /// client sent (RFC 5.3 hashes the full request packet), manufacturing a
-    /// false proof of malfeasance. The extra byte distinguishes "exactly
-    /// MAX_REQUEST_SIZE" from "truncated". A field rather than a
-    /// `collect_requests` local so the 1473 bytes are not re-zeroed on every
-    /// call (up to 8x per wakeup).
+    // Extra byte to distinguish "exactly MAX_REQUEST_SIZE" from "truncated".
     recv_buf: [u8; request::MAX_REQUEST_SIZE + 1],
-    /// Flat storage for queued response bytes, drained by `flush_responses`
     send_bufs: Vec<u8>,
     send_msgs: Vec<QueuedResponse>,
     #[cfg(target_os = "linux")]
@@ -58,10 +51,7 @@ impl NetworkHandler {
             batch_size,
             metrics: NetworkMetrics::default(),
             recv_buf: [0u8; request::MAX_REQUEST_SIZE + 1],
-            // sized so a full batch of maximum-size responses queues without
-            // reallocating: the worker loop must stay allocation-free in
-            // steady state (tests/alloc_tests.rs)
-            send_bufs: Vec::with_capacity(batch_size * crate::responses::RESPONSE_BUF_SIZE),
+            send_bufs: Vec::with_capacity(batch_size * responses::RESPONSE_BUF_SIZE),
             send_msgs: Vec::with_capacity(batch_size),
             #[cfg(target_os = "linux")]
             mmsg_state: mmsg::MmsgState::with_capacity(batch_size),

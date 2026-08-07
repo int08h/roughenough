@@ -81,10 +81,7 @@ impl<const N: usize> FromWire for FixedTag<N> {
     }
 }
 
-/// Declare a fixed-size tag newtype over [`FixedTag`], generating the shared
-/// trait surface (`Debug` with the wire label, `ToWire`, `FromWire`,
-/// `FromWireN` with a strict size check, byte-array conversions). Tag-specific
-/// conversions stay in the tag's own module.
+/// Declare a fixed-size tag newtype over [`FixedTag`].
 macro_rules! fixed_tag {
     ($(#[$meta:meta])* $name:ident, $size:expr, $label:literal) => {
         $(#[$meta])*

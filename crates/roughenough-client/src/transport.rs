@@ -81,9 +81,7 @@ mod tests {
 
     #[test]
     fn recv_from_silent_server_is_server_timeout() {
-        // A bound socket that never answers: recv must surface the read
-        // timeout as ServerTimeout (the sole construction site of that
-        // variant) within the configured budget, not block forever
+        // A bound socket that never answers
         let silent = UdpSocket::bind("127.0.0.1:0").unwrap();
         let silent_addr = silent.local_addr().unwrap();
 
@@ -99,7 +97,7 @@ mod tests {
             Err(ClientError::ServerTimeout) => {}
             other => panic!("expected ServerTimeout, got {other:?}"),
         }
-        // Generous upper bound; only guards against an unbounded block
+
         assert!(start.elapsed() < Duration::from_secs(5));
     }
 

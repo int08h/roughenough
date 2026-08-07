@@ -5,11 +5,6 @@ use crate::error::Error;
 use crate::error::Error::UnexpectedFraming;
 
 /// Magic value 'ROUGHTIM' for framed Requests and Responses.
-///
-/// RFC 5 specifies the field as a uint64 with little-endian value
-/// 0x4d49544847554f52. This constant is that value byte-swapped: it is
-/// written and read big-endian (`try_put_u64`/`try_get_u64`), which puts
-/// the identical bytes on the wire ('R' 'O' 'U' 'G' 'H' 'T' 'I' 'M').
 pub const FRAME_MAGIC: u64 = 0x524f55474854494d;
 
 /// Overhead of framing: 8-byte magic + 4-byte length

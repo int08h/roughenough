@@ -4,9 +4,6 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::Duration;
 
-/// Ask the OS for a currently free UDP port. The probe socket is dropped
-/// before the server binds, so a parallel process could race for the port,
-/// but this removes the guaranteed collision of a hardcoded 2003.
 fn pick_free_udp_port() -> u16 {
     UdpSocket::bind("127.0.0.1:0")
         .expect("binding an ephemeral UDP port should succeed")
@@ -16,7 +13,6 @@ fn pick_free_udp_port() -> u16 {
 }
 
 /// Start a server, run a client against it, and ensure the client exits cleanly.
-/// This is a live end-to-end integration test to catch bugs missed by unit tests.
 fn main() {
     println!("=== Running end-to-end integration test...");
 
@@ -35,8 +31,7 @@ fn main() {
 }
 
 /// Negative test: with an empty --seed and no --insecure-zero-seed the server
-/// must exit nonzero quickly with a clear error instead of serving with an
-/// all-zero (publicly known) identity.
+/// must exit nonzero
 fn test_seedless_server_refuses_to_start(server_path: &str) -> bool {
     println!("=== Starting server with no seed (expecting refusal)...");
     let port = pick_free_udp_port();
@@ -106,14 +101,10 @@ fn test_build_mode(build_mode: &str) -> bool {
     let server_path = format!("target/{build_mode}/roughenough_server");
     let client_path = format!("target/{build_mode}/roughenough_client");
 
-    // A server started with neither --seed nor --insecure-zero-seed must
-    // refuse to run; verify before starting the real test server
     if !test_seedless_server_refuses_to_start(&server_path) {
         return false;
     }
 
-    // Start the server. The all-zero test identity now requires the explicit
-    // opt-in flag. The port is dynamic so parallel runs cannot collide.
     let port = pick_free_udp_port();
     let port_str = port.to_string();
     println!("=== Starting server on port {port}...");
@@ -219,8 +210,7 @@ fn test_build_mode(build_mode: &str) -> bool {
         }
     }
 
-    // Negative test: --set-clock without a public key must be rejected at
-    // argument parsing; an unauthenticated response must never set the clock
+    // Negative test: --set-clock without a public key must be rejected
     println!("=== Running client with --set-clock and no key (expecting clap error)...");
     let set_clock_result = Command::new(&client_path)
         .args(["127.0.0.1", &port_str, "-s"])

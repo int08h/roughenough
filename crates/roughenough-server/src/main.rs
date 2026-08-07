@@ -86,9 +86,8 @@ fn main() {
     }
     drop(exit_tx);
 
-    // A worker exiting while shutdown was not requested means it died
-    // (likely a panic). Serving silently at reduced capacity is worse than a
-    // loud restart, so treat any early exit as fatal for the whole process.
+    // An unexpected worker exit probably means a panic. To be safe,
+    // shutdown and let the server's parent restart it.
     let mut worker_died = false;
     for _ in 0..args.num_threads {
         match exit_rx.recv() {
@@ -117,9 +116,6 @@ fn main() {
     info!("Server finished");
 }
 
-// Seed and backend failures (bad credentials, unreachable KMS, missing
-// feature, ...) are operator errors: report them cleanly and exit nonzero
-// instead of unwinding with a backtrace
 fn load_seed(args: &Args) -> Box<dyn SeedBackend> {
     let seed = if args.seed.is_empty() {
         if !args.insecure_zero_seed {

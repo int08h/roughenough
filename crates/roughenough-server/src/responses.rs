@@ -11,22 +11,15 @@ use roughenough_protocol::wire::ToFrame;
 use crate::keysource::KeySource;
 use crate::metrics::types::ResponseMetrics;
 
-/// Serialization buffer for one framed response. Also sizes the network
-/// handler's per-batch send queue.
+/// Serialization buffer for one framed response.
 pub(crate) const RESPONSE_BUF_SIZE: usize = 1024;
 
-// The `expect` on `to_frame` in `process_responses` relies on every possible
-// response fitting in `response_buf`. `batch_size` is a u8, so a batch holds
-// at most 255 leaves and the Merkle PATH is at most 8 levels deep. Largest
-// framed response:
+// Largest framed response:
 //   12 (framing) + 56 (7-tag header) + 64 (SIG) + 32 (NONC) + 4 (TYPE)
 //   + 8 * 32 (PATH) + 120 (SREP with an 8-entry VERS) + 152 (CERT) + 4 (INDX)
 const MAX_FRAMED_RESPONSE_SIZE: usize = 700;
 const _: () = assert!(RESPONSE_BUF_SIZE >= MAX_FRAMED_RESPONSE_SIZE);
 
-/// The response loop needs only the request's nonce (plus routing metadata),
-/// so the whole `Request` is not stored: a 64-slot pending Vec of full
-/// requests was ~70 KB of mostly zeros.
 #[derive(Debug)]
 pub struct PendingRequest {
     nonce: Nonce,
@@ -35,10 +28,10 @@ pub struct PendingRequest {
     version: ProtocolVersion,
 }
 
-/// A per-version response template kept alive across batches. CERT persists
-/// until key rotation; SREP and SIG are re-signed once per batch (`batch_id`
-/// tracks which batch last signed them); PATH, NONC, and INDX are overwritten
-/// per request just before serialization.
+/// Per-version response template. CERT persists until key rotation.
+/// SREP and SIG are re-signed once per batch (`batch_id` tracks which
+/// batch last signed them); PATH, NONC, and INDX are overwritten
+/// per request.
 struct VersionTemplate {
     version: ProtocolVersion,
     batch_id: u64,
@@ -53,27 +46,18 @@ pub struct ResponseHandler {
     online_key: OnlineKey,
     response_metrics: ResponseMetrics,
     requests: Vec<PendingRequest>,
-    /// Distinct negotiated versions in the pending batch, bounded by
-    /// `MAX_VERSIONS_PER_BATCH`
     batch_versions: Vec<ProtocolVersion>,
-    /// Long-lived per-version templates (at most `MAX_VERSIONS_PER_BATCH`
-    /// slots); see `VersionTemplate` for the field refresh cadence
     version_templates: Vec<VersionTemplate>,
-    /// Monotonic batch sequence number used to detect stale template slots
     batch_id: u64,
     response_buf: [u8; RESPONSE_BUF_SIZE],
 }
 
 impl ResponseHandler {
-    /// Maximum distinct protocol versions signed per batch. Each distinct
-    /// version requires its own SREP signature; without a bound, an adversary
-    /// offering a unique draft version per request would force one signature
-    /// per request.
+    /// Maximum distinct protocol versions signed per batch.
     pub const MAX_VERSIONS_PER_BATCH: usize = 4;
 
     /// Off-list draft versions compete for the slots left after reserving a slot
-    /// for each advertised version, so a flood of unique draft values can never
-    /// starve clients requesting an advertised version.
+    /// for each advertised version.
     const MAX_OFFLIST_VERSIONS: usize =
         Self::MAX_VERSIONS_PER_BATCH - ProtocolVersion::ADVERTISED.len();
 
@@ -147,7 +131,6 @@ impl ResponseHandler {
 
     pub fn replace_online_key(&mut self) {
         self.online_key = self.key_source.make_online_key();
-        // templates hold the old key's CERT; force re-creation
         self.version_templates.clear();
     }
 
@@ -164,10 +147,6 @@ impl ResponseHandler {
         self.response_metrics
             .add_batch_size(self.requests.len() as u8);
 
-        // One Merkle tree commits to every request in the batch. CERT, SREP,
-        // and SIG are shared by all responses with the same negotiated version;
-        // each distinct version present in the batch is signed exactly once,
-        // into a long-lived template slot (no per-request Response clone).
         let root_hash: [u8; 32] = self.merkle_tree.compute_root();
         let merkle_root = MerkleRoot::from(root_hash);
 
@@ -177,20 +156,15 @@ impl ResponseHandler {
             let version = self.requests[index].version;
             let slot = self.template_slot_for(version, &merkle_root);
 
-            // Build the Merkle path for this Request's position in the tree
-            // before mutably borrowing the template
             self.merkle_path.clear();
             self.merkle_tree.get_paths_to(index, &mut self.merkle_path);
 
-            // Set the elements unique to this response directly on the
-            // template (merkle path, nonce, and index)
             let nonce = self.requests[index].nonce;
             let response = &mut self.version_templates[slot].response;
             response.copy_path(&self.merkle_path);
             response.set_nonc(nonce);
             response.set_indx(index as u32);
 
-            // Wire-encode the response
             let mut cursor = ParseCursor::new(&mut self.response_buf);
             response
                 .to_frame(&mut cursor)
@@ -207,10 +181,7 @@ impl ResponseHandler {
     }
 
     /// Return the index of a template carrying this batch's SREP and SIG for
-    /// `version`, signing it if this batch has not yet done so. A version new
-    /// to the template array takes an empty slot, or reuses one left over from
-    /// an earlier batch (the per-batch distinct-version cap guarantees a
-    /// stale slot exists).
+    /// `version`, signing it if this batch has not yet done so.
     fn template_slot_for(&mut self, version: ProtocolVersion, merkle_root: &MerkleRoot) -> usize {
         let existing = self
             .version_templates
@@ -257,8 +228,6 @@ impl ResponseHandler {
         self.online_key.public_key()
     }
 
-    /// The server's long-term identity public key (the key clients commit to
-    /// with the SRV tag)
     pub fn long_term_public_key(&self) -> PublicKey {
         self.key_source.public_key()
     }
@@ -308,8 +277,6 @@ mod tests {
 
     #[test]
     fn pending_request_stays_small() {
-        // Storing the nonce instead of the whole Request keeps the 64-slot
-        // pending Vec to a few KB; catch accidental regrowth
         assert!(
             size_of::<PendingRequest>() < 128,
             "PendingRequest grew to {} bytes",
@@ -448,9 +415,6 @@ mod tests {
 
     #[test]
     fn consecutive_batches_do_not_bleed_state_through_reused_templates() {
-        // Templates persist across batches (SREP/SIG re-signed per batch);
-        // this pins the new failure mode that reuse introduces: a response
-        // carrying the previous batch's ROOT, SREP, or version
         let mut responder = new_response_handler();
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
 
@@ -510,8 +474,6 @@ mod tests {
 
     #[test]
     fn key_rotation_invalidates_reused_templates() {
-        // A template created before rotation holds the old key's CERT; the
-        // first batch after rotation must carry the new CERT
         let mut responder = new_response_handler();
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
 
@@ -547,9 +509,6 @@ mod tests {
 
     #[test]
     fn worst_case_response_fits_in_response_buf() {
-        // Guards the hand-derived MAX_FRAMED_RESPONSE_SIZE constant against
-        // drift: an 8-deep PATH (255-leaf batch, the u8 batch_size maximum)
-        // and an 8-entry VERS is the largest response this server can emit
         use roughenough_protocol::tags::{ProtocolVersion, SignedResponse, SupportedVersions};
 
         let path_bytes = [0u8; 8 * 32];

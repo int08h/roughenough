@@ -197,8 +197,6 @@ mod tests {
 
     #[test]
     fn wrong_pubk_size_is_rejected() {
-        // Rebuild the wire bytes with a 31-byte PUBK; offsets shift so the
-        // remaining tags mis-parse and the whole message must be rejected
         let dele = test_dele();
         let bytes = dele.as_bytes().unwrap();
 

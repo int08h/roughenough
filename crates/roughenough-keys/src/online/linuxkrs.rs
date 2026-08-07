@@ -1,5 +1,3 @@
-// This module is compiled only on Linux (see online/mod.rs), so no
-// non-Linux stub is needed here.
 pub use krs_backend::LinuxKrsBackend;
 
 // It would be nice if only the **signing operation** was available to the thread, not the seed

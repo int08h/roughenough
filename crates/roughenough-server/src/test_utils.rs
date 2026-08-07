@@ -61,9 +61,6 @@ impl TestContext {
         midpoint: u64,
         nonce: &Nonce,
     ) -> (Request, Response) {
-        // In production the worker clears batch state after process_responses;
-        // do the same here so one context can create multiple pairs without
-        // tripping add_request's batch-size assertion
         self.response_handler.clear();
         self.clock.set_time(midpoint);
 

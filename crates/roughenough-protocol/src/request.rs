@@ -23,12 +23,9 @@ pub const REQUEST_SIZE: usize = 1024;
 /// (1500 - 20 IP - 8 UDP), so any non-fragmented datagram can be received.
 pub const MAX_REQUEST_SIZE: usize = 1472;
 
-/// Largest response the client must be able to receive. A maximal conforming
-/// response is the fixed overhead (headers, SIG, NONC, TYPE, SREP, CERT, INDX;
-/// about 404 bytes) plus a 32-element PATH (RFC 5.2.4 maximum, 32 * 32 = 1024
-/// bytes) plus 12 bytes of framing -- about 1440 bytes -- rounded up to a
-/// typical Ethernet MTU. Receive buffers smaller than this silently truncate.
-pub const MAX_RESPONSE_SIZE: usize = 1500;
+/// Largest response the client must be able to receive: a full Ethernet-MTU UDP payload
+/// (1500 - 20 IP - 8 UDP), so any non-fragmented datagram can be received.
+pub const MAX_RESPONSE_SIZE: usize = 1472;
 
 #[derive(Clone, Eq, PartialEq)]
 pub enum Request {
@@ -195,18 +192,13 @@ impl Debug for Request {
     }
 }
 
-/// VER list offered when the caller does not specify versions: the current
-/// draft version (the former `RequestedVersions::default()` value; the plain
-/// `VersionList` default is an empty list).
 fn default_offered_versions() -> RequestedVersions {
     RequestedVersions::new(&[ProtocolVersion::DRAFT])
 }
 
-/// ZZZZ padding bytes are always zero: parsing discards the received value
-/// and serialization writes from this shared constant, so the structs do not
-/// carry a padding array (it saved nothing and made every parsed `Request`
-/// about a kilobyte of zeros). Sized for the larger (`RequestPlain`) padding;
-/// `RequestSrv` slices a shorter prefix.
+/// ZZZZ padding bytes are always zero. Parsing discards the received value
+/// and serialization writes from this shared constant, so structs do not
+/// carry a useless padding array.
 const ZERO_PADDING: [u8; RequestPlain::MAX_PADDING] = [0; RequestPlain::MAX_PADDING];
 
 /// RFC 5.1: A request MUST contain the tags VER, NONC, and TYPE. It SHOULD
@@ -222,8 +214,7 @@ pub struct RequestPlain {
 impl RequestPlain {
     const TAGS: [Tag; 4] = [Tag::VER, Tag::NONC, Tag::TYPE, Tag::ZZZZ];
 
-    /// ZZZZ padding when the VER list is empty; each version offered uses 4 of
-    /// these bytes so the message stays exactly 1012 bytes (1024 framed)
+    /// ZZZZ padding when the VER list is empty.
     const MAX_PADDING: usize = REQUEST_SIZE
         - FRAME_OVERHEAD
         - size_of::<Header4>()
@@ -722,8 +713,6 @@ mod tests {
 
     #[test]
     fn parsed_requests_are_small() {
-        // The padding field removal took Request from ~1064 bytes of mostly
-        // zeros to about a tenth of that; catch regressions
         assert!(
             size_of::<Request>() <= 160,
             "Request grew to {} bytes",
@@ -806,9 +795,8 @@ mod tests {
 
     #[test]
     fn golden_wire_bytes_are_reproduced() {
-        // Byte-identity gate for request serialization refactors: parsing a
-        // known-good frame and re-serializing it must reproduce the frame
-        // exactly, ZZZZ padding included
+        // Parsing a known-good frame and re-serializing it must reproduce the frame
+        // exactly.
         use crate::wire::{FromFrame, ToFrame};
 
         let fixtures: [&[u8]; 2] = [
@@ -827,8 +815,6 @@ mod tests {
 
     #[test]
     fn serialized_zzzz_region_is_all_zeros() {
-        // The ZZZZ value occupies the tail of the frame; padding math must
-        // keep the frame at exactly REQUEST_SIZE with a zeroed ZZZZ region
         use crate::wire::ToFrame;
 
         let nonce = Nonce::from([0x42; 32]);

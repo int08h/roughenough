@@ -55,11 +55,8 @@ impl MerkleTree {
         self.levels[0].push(hash);
     }
 
-    /// Pre-allocate capacity for the given number of leaves, sized so that
-    /// `compute_root` never reallocates: rounding up to the next power of two
-    /// covers both odd level counts and the padding node `compute_root`
-    /// pushes onto an odd-sized level (exact per-level counts would fall one
-    /// short there, e.g. a first batch of 48).
+    /// Pre-allocate capacity for the given number of leaves, rounding up
+    /// to the next power of two.
     pub fn reserve(&mut self, num_leaves: usize) {
         if num_leaves == 0 {
             return;
@@ -190,10 +187,6 @@ impl MerkleTree {
 /// Returns `None` if any bits of `index` remain nonzero after all path elements
 /// are consumed. RFC 5.3.1: "if any of the remaining bits of INDX is non-zero,
 /// the algorithm fails."
-///
-/// A free function: it reads no tree state, and callers (client validation)
-/// should not have to build a throwaway heap-allocating `MerkleTree` to
-/// verify a proof.
 pub fn root_from_paths(mut index: usize, init_data: &[u8], paths: &MerklePath) -> Option<Hash> {
     let mut hash = hash_parts(&[LEAF_TWEAK, init_data]);
 
@@ -363,9 +356,6 @@ mod test {
 
     #[test]
     fn reserve_prevents_reallocation_during_first_batch() {
-        // The padding node pushed onto an odd-sized level used to overflow an
-        // exact per-level reservation (e.g. a first batch of 48); the
-        // power-of-two rounding must absorb it for every first-batch size
         for n in 1..=64usize {
             let mut tree = MerkleTree::new();
             tree.reserve(n);

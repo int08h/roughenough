@@ -91,29 +91,18 @@ impl MeasurementSequence {
     }
 
     /// Receive datagrams until one validates against this round's request.
-    ///
-    /// A duplicated or delayed datagram from an earlier round parses and
-    /// carries valid signatures but fails the Merkle-proof check for the
-    /// current nonce; treating that as fatal would let a single stray
-    /// datagram abort the whole measurement sequence. Such datagrams are
-    /// drained and the receive retried; the transport's timeout bounds the
-    /// loop and surfaces as `ServerTimeout`.
     fn recv_validated(
         client: &Client,
         request_bytes: &[u8],
     ) -> Result<(Response, Vec<u8>), ClientError> {
         loop {
-            // A conforming response with a 32-element PATH exceeds 1024 bytes;
-            // recv_from silently truncates anything larger than the buffer
             let mut buf = [0u8; MAX_RESPONSE_SIZE];
             let (nbytes, _addr) = client.transport.recv(&mut buf)?;
             let response_bytes = buf[..nbytes].to_vec();
 
-            // Parsing only advances the cursor; buf still holds the bytes as received
             let mut cursor = ParseCursor::new(&mut buf[..nbytes]);
             let response = Response::from_frame(&mut cursor)?;
 
-            // Validate the response against the bytes as received
             match client
                 .validator
                 .validate(request_bytes, &response_bytes, &response)
@@ -157,10 +146,6 @@ mod tests {
         "127.0.0.1:2003".parse().unwrap()
     }
 
-    /// Transport backed by an in-process test server. Optionally delivers
-    /// canned datagrams (e.g. stale responses from an earlier round) before
-    /// the real answer; with `starve` set the real answer never comes and the
-    /// transport times out instead.
     struct InProcessTransport {
         ctx: RefCell<TestContext>,
         last_request: RefCell<Vec<u8>>,
@@ -272,7 +257,6 @@ mod tests {
         assert!(measurements[0].rand_value().is_none());
 
         // The second request's nonce must be derived from the first response
-        // packet exactly as received
         let rand = measurements[1].rand_value().expect("chained rand");
         let expected = calculate_chained_nonce(measurements[0].response_bytes(), rand);
         assert_eq!(*measurements[1].request().nonc(), expected);

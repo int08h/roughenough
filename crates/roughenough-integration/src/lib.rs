@@ -47,15 +47,11 @@ mod integration_tests {
     }
 
     /// Tests that a single request generates a valid response.
-    /// For single-element trees, the Merkle path is empty since there are no siblings, and the
-    /// client will verify that the request nonce hashes to the signed root.
     #[test]
     fn single_request_validation() {
         let mut test_context = TestContext::new(64);
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
 
-        // Framed bytes: the server hashes the datagram exactly as received,
-        // which includes the ROUGHTIM framing (RFC 5.3)
         let request = create_test_request(42);
         let request_bytes = request.as_frame_bytes().unwrap();
         assert!(test_context.response_handler.add_request(
@@ -119,8 +115,6 @@ mod integration_tests {
         validate_response(&request_bytes, response_bytes, pub_key).unwrap();
     }
 
-    /// Stress tests the responder with a batch of 64 requests. This is an expected (but maximum)
-    /// batch size that the server supports.
     #[test]
     fn large_batch_validation() {
         let num_requests = 64;
@@ -152,8 +146,6 @@ mod integration_tests {
 
         assert_eq!(responses.len(), num_requests);
 
-        // All requests were batched into one Merkle tree: every response must
-        // carry a non-empty PATH proving membership under one shared ROOT
         let mut shared_root: Option<Vec<u8>> = None;
 
         for (idx, (response_addr, response_bytes)) in responses.iter().enumerate() {
