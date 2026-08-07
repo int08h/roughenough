@@ -11,6 +11,6 @@ repos:
       - id: cargo-clippy
         name: cargo clippy
         language: system
-        entry: cargo clippy -- -D warnings
+        entry: cargo clippy --workspace --all-targets --all-features -- -D warnings
         pass_filenames: false
         files: '\.rs$'

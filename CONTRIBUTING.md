@@ -55,7 +55,7 @@ cargo +nightly fmt --check
 
 - **crates/roughenough-protocol**: Core wire format, request/response types, TLV encoding
 - **crates/roughenough-merkle**: Merkle tree with Roughtime-specific tweaks
-- **crates/roughenough-server**: Asynchronous UDP server with batching
+- **crates/roughenough-server**: mio-based UDP server with batching
 - **crates/roughenough-client**: Command-line client and library
 - **crates/roughenough-common**: Shared cryptography and encoding utilities
 - **crates/roughenough-keys**: Key material handling with multiple secure backends
@@ -63,7 +63,6 @@ cargo +nightly fmt --check
 - **crates/roughenough-integration**: End-to-end integration tests
 - **fuzz**: Fuzzing harness (separate crate, requires nightly)
 - **doc/**: Protocol documentation and implementation guides
-- **tasks/**: Project management and task tracking
 
 ### Running Tests
 
@@ -148,11 +147,19 @@ cargo +nightly fuzz run <target> <path-to-crash-artifact>
 
 ### Unsafe Code Policy
 
-**Roughenough maintains a no-unsafe policy.** Use `#![forbid(unsafe_code)]`.
+**Roughenough maintains a minimal-unsafe policy.** Use `#![forbid(unsafe_code)]`.
+The `protocol`, `common`, `merkle`, `client` (library), `reporting-server`, 
+and `integration` crates all carry `#![forbid(unsafe_code)]`.
 
 **Exceptions:**
-- The `server` crate implements `unsafe impl Send/Sync` on its `KeySource` type for manual thread safety
-- The `client` binary (`main.rs`) uses unsafe for system clock manipulation via `libc::clock_settime`
+- The `keys` crate has two unsafe uses:
+  - `src/online/aws_lc_ed25519.rs`: FFI calls into AWS-LC for Ed25519 key derivation and signing.
+  - `src/online/sshagent.rs`: `unsafe impl Send for SshAgentBackend`; the ssh-agent client's 
+    boxed transport is a `UnixStream` (or pipe on Windows), both of which are `Send`.
+- The `server` crate has one unsafe usage: 
+  - The Linux-only `mmsg` module in `src/network.rs`, which wraps the `libc::sendmmsg` syscall for batched
+    response sends. 
+- The `client` binary (`main.rs`) uses unsafe for system clock manipulation via `libc::clock_settime`.
 
 **For new contributions:**
 - Avoid introducing unsafe code

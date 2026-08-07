@@ -10,7 +10,6 @@ use crate::header::{Header4, Header5, RawHeader};
 use crate::tag::Tag;
 use crate::tags::ver::RequestedVersions;
 use crate::tags::{MessageType, Nonce, ProtocolVersion, SrvCommitment};
-use crate::util::as_hex;
 use crate::wire::{FRAME_OVERHEAD, FromFrame, FromWire, ToFrame, ToWire};
 
 /// RFC 5.1: The size of the request message SHOULD be at least 1024 bytes when
@@ -23,6 +22,10 @@ pub const REQUEST_SIZE: usize = 1024;
 /// Largest request the server accepts: a full Ethernet-MTU UDP payload
 /// (1500 - 20 IP - 8 UDP), so any non-fragmented datagram can be received.
 pub const MAX_REQUEST_SIZE: usize = 1472;
+
+/// Largest response the client must be able to receive: a full Ethernet-MTU UDP payload
+/// (1500 - 20 IP - 8 UDP), so any non-fragmented datagram can be received.
+pub const MAX_RESPONSE_SIZE: usize = 1472;
 
 #[derive(Clone, Eq, PartialEq)]
 pub enum Request {
@@ -64,7 +67,7 @@ impl Request {
         assert!(!versions.is_empty(), "at least one version is required");
         Srv(RequestSrv::from_parts(
             RequestedVersions::new(versions),
-            server.clone(),
+            *server,
             *nonce,
             MessageType::Request,
         ))
@@ -189,23 +192,29 @@ impl Debug for Request {
     }
 }
 
+fn default_offered_versions() -> RequestedVersions {
+    RequestedVersions::new(&[ProtocolVersion::DRAFT])
+}
+
+/// ZZZZ padding bytes are always zero. Parsing discards the received value
+/// and serialization writes from this shared constant, so structs do not
+/// carry a useless padding array.
+const ZERO_PADDING: [u8; RequestPlain::MAX_PADDING] = [0; RequestPlain::MAX_PADDING];
+
 /// RFC 5.1: A request MUST contain the tags VER, NONC, and TYPE. It SHOULD
 /// include the tag SRV.
-#[repr(C)]
 #[derive(Clone, Eq, PartialEq)]
 pub struct RequestPlain {
     header: Header4,
     version: RequestedVersions,
     nonce: Nonce,
     msg_type: MessageType,
-    padding: [u8; Self::MAX_PADDING],
 }
 
 impl RequestPlain {
     const TAGS: [Tag; 4] = [Tag::VER, Tag::NONC, Tag::TYPE, Tag::ZZZZ];
 
-    /// ZZZZ padding when the VER list is empty; each version offered uses 4 of
-    /// these bytes so the message stays exactly 1012 bytes (1024 framed)
+    /// ZZZZ padding when the VER list is empty.
     const MAX_PADDING: usize = REQUEST_SIZE
         - FRAME_OVERHEAD
         - size_of::<Header4>()
@@ -274,7 +283,7 @@ impl ToWire for RequestPlain {
         self.version.to_wire(cursor)?;
         self.nonce.to_wire(cursor)?;
         self.msg_type.to_wire(cursor)?;
-        cursor.put_slice(&self.padding[..self.padding_len()]);
+        cursor.put_slice(&ZERO_PADDING[..self.padding_len()]);
 
         Ok(())
     }
@@ -284,10 +293,9 @@ impl Default for RequestPlain {
     fn default() -> Self {
         let mut request = Self {
             header: Header4::default(),
-            version: RequestedVersions::default(),
+            version: default_offered_versions(),
             nonce: Nonce::default(),
             msg_type: MessageType::Request,
-            padding: [0; Self::MAX_PADDING],
         };
 
         request.header.tags = Self::TAGS;
@@ -303,7 +311,7 @@ impl Debug for RequestPlain {
             .field("VER", &self.version)
             .field("NONC", &self.nonce)
             .field("TYPE", &self.msg_type)
-            .field("ZZZZ", &as_hex(&self.padding))
+            .field("ZZZZ", &format_args!("{} zero bytes", self.padding_len()))
             .finish()
     }
 }
@@ -315,7 +323,6 @@ pub struct RequestSrv {
     server: SrvCommitment,
     nonce: Nonce,
     msg_type: MessageType,
-    padding: [u8; Self::MAX_PADDING],
 }
 
 impl RequestSrv {
@@ -337,7 +344,7 @@ impl RequestSrv {
 
     pub fn new(nonce: &Nonce, server: &SrvCommitment) -> Self {
         Self {
-            server: server.clone(),
+            server: *server,
             nonce: *nonce,
             ..Self::default()
         }
@@ -390,11 +397,10 @@ impl Default for RequestSrv {
     fn default() -> Self {
         let mut request = Self {
             header: Header5::default(),
-            version: RequestedVersions::default(),
+            version: default_offered_versions(),
             server: SrvCommitment::default(),
             nonce: Nonce::default(),
             msg_type: MessageType::Request,
-            padding: [0; Self::MAX_PADDING],
         };
 
         request.header.tags = Self::TAGS;
@@ -424,7 +430,7 @@ impl ToWire for RequestSrv {
         self.server.to_wire(cursor)?;
         self.nonce.to_wire(cursor)?;
         self.msg_type.to_wire(cursor)?;
-        cursor.put_slice(&self.padding[..self.padding_len()]);
+        cursor.put_slice(&ZERO_PADDING[..self.padding_len()]);
 
         Ok(())
     }
@@ -437,7 +443,7 @@ impl Debug for RequestSrv {
             .field("SRV", &self.server)
             .field("NONC", &self.nonce)
             .field("TYPE", &self.msg_type)
-            .field("ZZZZ", &as_hex(&self.padding))
+            .field("ZZZZ", &format_args!("{} zero bytes", self.padding_len()))
             .finish()
     }
 }
@@ -469,7 +475,6 @@ mod tests {
         assert_eq!(decoded.ver(), req.ver());
         assert_eq!(decoded.nonc(), req.nonc());
         assert_eq!(decoded.msg_type(), req.msg_type());
-        assert_eq!(decoded.padding, req.padding);
         assert_eq!(decoded.header, req.header);
     }
 
@@ -707,6 +712,15 @@ mod tests {
     }
 
     #[test]
+    fn parsed_requests_are_small() {
+        assert!(
+            size_of::<Request>() <= 160,
+            "Request grew to {} bytes",
+            size_of::<Request>()
+        );
+    }
+
+    #[test]
     fn request_plain_wire_error() {
         let req = RequestPlain::default();
         let mut small_buf = [0u8; 10];
@@ -719,10 +733,9 @@ mod tests {
     #[test]
     fn request_plain_defaults() {
         let req = RequestPlain::default();
-        assert_eq!(req.version, RequestedVersions::default());
+        assert_eq!(req.version, default_offered_versions());
         assert_eq!(req.msg_type, MessageType::Request);
         assert_eq!(req.nonce, Nonce::from([0u8; 32]));
-        assert_eq!(req.padding, [0u8; RequestPlain::MAX_PADDING]);
         assert_eq!(req.padding_len(), 940);
 
         // Verify offsets and tags
@@ -749,11 +762,10 @@ mod tests {
     #[test]
     fn request_srv_defaults() {
         let req = RequestSrv::default();
-        assert_eq!(req.ver(), &RequestedVersions::default());
+        assert_eq!(req.ver(), &default_offered_versions());
         assert_eq!(req.msg_type(), MessageType::Request);
         assert_eq!(req.srv(), &SrvCommitment::from([0u8; 32]));
         assert_eq!(req.nonc(), &Nonce::from([0u8; 32]));
-        assert_eq!(req.padding, [0u8; RequestSrv::MAX_PADDING]);
         assert_eq!(req.padding_len(), 900);
 
         assert_eq!(req.header.offsets[0], req.ver().wire_size() as u32);
@@ -782,6 +794,46 @@ mod tests {
     }
 
     #[test]
+    fn golden_wire_bytes_are_reproduced() {
+        // Parsing a known-good frame and re-serializing it must reproduce the frame
+        // exactly.
+        use crate::wire::{FromFrame, ToFrame};
+
+        let fixtures: [&[u8]; 2] = [
+            include_bytes!("../testdata/rfc-request.071039e5"),
+            include_bytes!("../testdata/rfc-request.SRV.417aa962"),
+        ];
+
+        for raw in fixtures {
+            let mut data = raw.to_vec();
+            let mut cursor = ParseCursor::new(&mut data);
+            let parsed = Request::from_frame(&mut cursor).unwrap();
+            let reserialized = parsed.as_frame_bytes().unwrap();
+            assert_eq!(reserialized, raw, "wire bytes changed");
+        }
+    }
+
+    #[test]
+    fn serialized_zzzz_region_is_all_zeros() {
+        use crate::wire::ToFrame;
+
+        let nonce = Nonce::from([0x42; 32]);
+
+        let plain = Request::new(&nonce);
+        let bytes = plain.as_frame_bytes().unwrap();
+        assert_eq!(bytes.len(), REQUEST_SIZE);
+        // 12 framing + 32 header + 4 VER + 32 NONC + 4 TYPE = 84
+        assert!(bytes[84..].iter().all(|b| *b == 0));
+
+        let srv = SrvCommitment::from([0x77; 32]);
+        let with_srv = Request::new_with_server(&nonce, &srv);
+        let bytes = with_srv.as_frame_bytes().unwrap();
+        assert_eq!(bytes.len(), REQUEST_SIZE);
+        // 12 framing + 40 header + 4 VER + 32 SRV + 32 NONC + 4 TYPE = 124
+        assert!(bytes[124..].iter().all(|b| *b == 0));
+    }
+
+    #[test]
     fn from_wire_known_bytes() {
         // Request = RtMessage|4|{
         //   VER(4) = 0c000080
@@ -800,7 +852,7 @@ mod tests {
             Srv(_) => panic!("expected Plain variant"),
         };
 
-        assert_eq!(request.version, RequestedVersions::default());
+        assert_eq!(request.version, default_offered_versions());
         assert_eq!(
             request.nonce.as_ref()[..8],
             [0x07, 0x10, 0x39, 0xe5, 0x72, 0x33, 0x23, 0x19]

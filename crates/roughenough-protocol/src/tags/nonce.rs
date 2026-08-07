@@ -1,53 +1,11 @@
-use std::fmt::Debug;
-
-use crate::cursor::ParseCursor;
-use crate::error::Error;
-use crate::tags::fixed_tag::FixedTag;
-use crate::util::as_hex;
-use crate::wire::{FromWire, FromWireN, ToWire};
+use crate::tags::fixed_tag::fixed_tag;
 
 /// RFC 5.1.2: The value of the NONC tag is a 32-byte nonce.
 const SIZE: usize = 32;
 
-/// A random "number used once" (nonce) used to ensure that requests are unique.
-#[derive(Clone, Copy, PartialEq, Eq, Default, Hash)]
-pub struct Nonce(FixedTag<SIZE>);
-
-impl Debug for Nonce {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "NONC({})", as_hex(self.0.as_slice()))
-    }
-}
-
-impl ToWire for Nonce {
-    fn wire_size(&self) -> usize {
-        SIZE
-    }
-
-    fn to_wire(&self, cursor: &mut ParseCursor) -> Result<(), Error> {
-        self.0.to_wire(cursor)
-    }
-}
-
-impl FromWire for Nonce {
-    fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
-        Ok(Nonce(cursor.try_get_fixed()?.into()))
-    }
-}
-
-impl FromWireN for Nonce {
-    fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error> {
-        if n != SIZE {
-            return Err(Error::WrongTagSize(SIZE, n));
-        }
-        Self::from_wire(cursor)
-    }
-}
-
-impl From<[u8; 32]> for Nonce {
-    fn from(bytes: [u8; SIZE]) -> Self {
-        Nonce(bytes.into())
-    }
+fixed_tag! {
+    /// A random "number used once" (nonce) used to ensure that requests are unique.
+    Nonce, SIZE, "NONC"
 }
 
 impl From<&[u8]> for Nonce {
@@ -73,5 +31,48 @@ impl From<Nonce> for [u8; SIZE] {
 impl AsRef<[u8]> for Nonce {
     fn as_ref(&self) -> &[u8] {
         self.0.as_slice()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cursor::ParseCursor;
+    use crate::error::Error;
+    use crate::wire::{FromWire, FromWireN, ToWire};
+
+    #[test]
+    fn round_trip() {
+        let nonce = Nonce::from([0x42u8; SIZE]);
+        let mut bytes = nonce.as_bytes().unwrap();
+        assert_eq!(bytes.len(), SIZE);
+
+        let mut cursor = ParseCursor::new(&mut bytes);
+        assert_eq!(Nonce::from_wire(&mut cursor).unwrap(), nonce);
+    }
+
+    #[test]
+    fn wrong_length_is_rejected() {
+        let mut bytes = vec![0u8; 64];
+        for bad_len in [0usize, 31, 33, 64] {
+            let mut cursor = ParseCursor::new(&mut bytes);
+            assert!(matches!(
+                Nonce::from_wire_n(&mut cursor, bad_len),
+                Err(Error::WrongTagSize(SIZE, n)) if n == bad_len
+            ));
+        }
+    }
+
+    #[test]
+    fn short_buffer_is_rejected() {
+        let mut bytes = vec![0u8; SIZE - 1];
+        let mut cursor = ParseCursor::new(&mut bytes);
+        assert!(Nonce::from_wire(&mut cursor).is_err());
+    }
+
+    #[test]
+    fn debug_label() {
+        let nonce = Nonce::from([0xabu8; SIZE]);
+        assert!(format!("{nonce:?}").starts_with("NONC(abab"));
     }
 }

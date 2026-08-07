@@ -8,10 +8,14 @@ reference the code; see `doc/RFC-PROTOCOL.md` for the wire format and
 
 - The server runs N worker threads, each owning its own UDP socket via
   `SO_REUSEPORT`; we lean on the kernel to load-balance datagrams across them. 
-  No shared state or allocations on the hot path.
-- Each worker drains batches of requests, commits them all to a single Merkle
-  tree, signs once per distinct protocol version, and emits one response per
-  request (differing only in PATH, NONC, INDX across responses in a batch).
+  No shared state and no steady-state allocations on the hot path (see
+  `crates/roughenough-server/tests/alloc_tests.rs`).
+- Per READABLE wakeup, a worker processes up to `MAX_BATCHES_PER_WAKEUP`
+  batches. Each batch drains up to `batch_size` requests, commits them all to
+  a single Merkle tree, then builds responses in one loop over the pending
+  requests: a response template (and one signature) is created lazily per
+  distinct protocol version present in the batch, and each response differs
+  only in PATH, NONC, INDX.
 - The client reconstructs the Merkle root from its own request and walks the 
   signature chain back to the server's long-term key, which it knows
   out-of-band.
@@ -37,32 +41,30 @@ sequenceDiagram
 
     loop event loop (mio poll, 350ms)
         Sock-->>W: READABLE event
-        loop drain up to batch_size datagrams
-            W->>N: collect_requests(sock)
-            N->>Sock: recv_from
-            Sock-->>N: datagram bytes
-            N->>RH: collect_request(bytes, src_addr)
-            Note over RH: size gate (>=1024)<br/>Request::from_frame parse<br/>SRV check (RFC 5.2)<br/>version negotiate (RFC 5.1.1)
-            RH->>RS: add_request(bytes, request, version, addr)
-            RS->>M: push_leaf(request_bytes)
-        end
+        loop up to MAX_BATCHES_PER_WAKEUP batches per wakeup
+            loop drain up to batch_size datagrams
+                W->>N: collect_requests(sock)
+                N->>Sock: recv_from
+                Sock-->>N: datagram bytes
+                N->>RH: collect_request(bytes, src_addr)
+                Note over RH: size gate (>=1024)<br/>Request::from_frame parse<br/>SRV check (RFC 5.2)<br/>version negotiate (RFC 5.1.1)
+                RH->>RS: add_request(bytes, request, version, addr)
+                RS->>M: push_leaf(request_bytes)
+            end
 
-        W->>RH: generate_responses(callback)
-        RH->>RS: process_responses(callback)
-        RS->>M: compute_root()
-        M-->>RS: root_hash (one per batch)
-        loop per distinct version in batch
-            RS->>K: make_srep(version, root)
-            Note over K: SREP = {VER, RADI, MIDP, VERS, ROOT}<br/>sign(srep_prefix || SREP)
-            K-->>RS: (SREP, SIG) template + CERT
-        end
-        loop per pending request
-            RS->>M: get_paths_to(index)
-            M-->>RS: Merkle path (siblings)
-            Note over RS: clone version template<br/>set PATH, NONC, INDX<br/>Response::to_frame
-            RS->>N: callback(addr, response_bytes)
-            N->>Sock: send_to(response, addr)
-            Sock-->>C: framed Response
+            W->>RH: generate_responses(callback)
+            RH->>RS: process_responses(callback)
+            RS->>M: compute_root()
+            M-->>RS: root_hash (one per batch)
+            loop per pending request (single loop)
+                Note over RS,K: on first sight of a version in this batch,<br/>lazily build its template: make_srep(version, root),<br/>SREP = {VER, RADI, MIDP, VERS, ROOT},<br/>sign(srep_prefix || SREP) -> (SREP, SIG) + CERT
+                RS->>M: get_paths_to(index)
+                M-->>RS: Merkle path (siblings)
+                Note over RS: clone version template<br/>set PATH, NONC, INDX<br/>Response::to_frame
+                RS->>N: callback(addr, response_bytes)
+                N->>Sock: send_to(response, addr)
+                Sock-->>C: framed Response
+            end
         end
     end
 

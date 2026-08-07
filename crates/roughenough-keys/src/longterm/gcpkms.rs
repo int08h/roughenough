@@ -2,50 +2,54 @@ use roughenough_common::crypto::random_bytes;
 
 use crate::longterm::envelope::{SeedEnvelope, open_seed, seal_seed};
 use crate::seed::Seed;
-use crate::storage::Protection;
+use crate::storage::{Protection, StorageError};
 
 pub struct GcpKms {}
 
 impl GcpKms {
     const AAD: &'static [u8] = b"roughenough-seed";
+    const BACKEND: &'static str = "GCP KMS";
+
+    fn error(detail: impl Into<String>) -> StorageError {
+        StorageError::CloudBackend {
+            backend: Self::BACKEND,
+            detail: detail.into(),
+        }
+    }
 
     /// Envelope encrypts the `seed` using a random DEK and the KMS key `key_id`
-    pub async fn encrypt_seed(key_id: &str, seed: &Seed) -> SeedEnvelope {
+    pub async fn encrypt_seed(key_id: &str, seed: &Seed) -> Result<SeedEnvelope, StorageError> {
         let dek: [u8; 32] = random_bytes();
 
-        let dek_ciphertext = Self::seal_dek(dek, key_id).await;
-        let seed_ciphertext = seal_seed(dek, seed, Self::AAD);
+        let dek_ciphertext = Self::seal_dek(dek, key_id).await?;
+        let seed_ciphertext = seal_seed(dek, seed, Self::AAD)
+            .map_err(|_| Self::error("local seed encryption failed"))?;
 
         let mut kid = Protection::GcpKms.prefix().to_string();
         kid.push_str(key_id);
 
-        SeedEnvelope {
+        Ok(SeedEnvelope {
             key_id: kid,
             dek_ct: dek_ciphertext,
             seed_ct: seed_ciphertext,
-        }
+        })
     }
 
-    pub async fn decrypt_seed(envelope: &SeedEnvelope) -> Seed {
-        // Extract the GCP KMS key ID from the envelope
-        let key_id = envelope
-            .key_id
-            .strip_prefix(Protection::GcpKms.prefix())
-            .unwrap_or_else(|| panic!("invalid GCP KMS key ID prefix: {}", envelope.key_id));
+    pub async fn decrypt_seed(envelope: &SeedEnvelope) -> Result<Seed, StorageError> {
+        let key_id = strip_key_prefix(&envelope.key_id)?;
 
-        // Decrypt the DEK using GCP KMS
-        let dek = Self::open_dek(&envelope.dek_ct, key_id).await;
-
-        // Use the DEK to decrypt the seed
-        open_seed(dek, &envelope.seed_ct, Self::AAD).expect("failed to decrypt seed")
+        // Decrypt the DEK using GCP KMS, then use the DEK to decrypt the seed
+        let dek = Self::open_dek(&envelope.dek_ct, key_id).await?;
+        open_seed(dek, &envelope.seed_ct, Self::AAD)
+            .map_err(|_| Self::error("failed to decrypt seed (wrong key or corrupt envelope)"))
     }
 
-    async fn seal_dek(dek: [u8; 32], key_id: &str) -> Vec<u8> {
+    async fn seal_dek(dek: [u8; 32], key_id: &str) -> Result<Vec<u8>, StorageError> {
         let client = google_cloud_kms_v1::client::KeyManagementService::builder()
             .with_tracing()
             .build()
             .await
-            .expect("failed to create GCP KMS client");
+            .map_err(|e| Self::error(format!("failed to create client: {e}")))?;
 
         let dek_crc32c = crc32c::crc32c(&dek);
 
@@ -57,32 +61,36 @@ impl GcpKms {
             .set_additional_authenticated_data(Self::AAD)
             .send()
             .await
-            .expect("call to GCP KMS encrypt failed");
+            .map_err(|e| Self::error(format!("encrypt failed: {e}")))?;
 
-        let ciphertext_crc32c = crc32c::crc32c(&dek_result.ciphertext);
-        assert_eq!(
-            dek_result.ciphertext_crc32c.unwrap() as u32,
-            ciphertext_crc32c,
-            "GCP ciphertext crc32c mismatch"
-        );
-        assert!(
-            dek_result.name.starts_with(key_id),
-            "mismatched key ID in GCP response"
-        );
-        assert!(
-            dek_result.verified_plaintext_crc32c,
-            "GCP KMS did not verify plaintext crc32c"
-        );
+        verify_crc32c(
+            "ciphertext",
+            dek_result.ciphertext_crc32c,
+            &dek_result.ciphertext,
+        )?;
 
-        dek_result.ciphertext.to_vec()
+        if !dek_result.name.starts_with(key_id) {
+            return Err(Self::error(format!(
+                "mismatched key ID in response: requested '{}', response used '{}'",
+                key_id, dek_result.name
+            )));
+        }
+
+        if !dek_result.verified_plaintext_crc32c {
+            return Err(StorageError::IntegrityCheckFailed(
+                "GCP KMS did not verify the plaintext crc32c".to_string(),
+            ));
+        }
+
+        Ok(dek_result.ciphertext.to_vec())
     }
 
-    async fn open_dek(dek_ciphertext: &[u8], key_id: &str) -> [u8; 32] {
+    async fn open_dek(dek_ciphertext: &[u8], key_id: &str) -> Result<[u8; 32], StorageError> {
         let client = google_cloud_kms_v1::client::KeyManagementService::builder()
             .with_tracing()
             .build()
             .await
-            .expect("failed to create GCP KMS client");
+            .map_err(|e| Self::error(format!("failed to create client: {e}")))?;
 
         let ciphertext_crc32c = crc32c::crc32c(dek_ciphertext);
 
@@ -94,19 +102,41 @@ impl GcpKms {
             .set_additional_authenticated_data(Self::AAD)
             .send()
             .await
-            .expect("call to GCP KMS decrypt failed");
+            .map_err(|e| Self::error(format!("decrypt failed: {e}")))?;
 
-        let plaintext_crc32c = crc32c::crc32c(&result.plaintext);
-        assert_eq!(
-            result.plaintext_crc32c.unwrap() as u32,
-            plaintext_crc32c,
-            "GCP plaintext crc32c mismatch"
-        );
+        verify_crc32c("plaintext", result.plaintext_crc32c, &result.plaintext)?;
 
-        let mut dek = [0u8; 32];
-        dek.copy_from_slice(&result.plaintext);
-        dek
+        dek_from_plaintext(&result.plaintext)
     }
+}
+
+fn strip_key_prefix(key_id: &str) -> Result<&str, StorageError> {
+    let prefix = Protection::GcpKms.prefix();
+    key_id.strip_prefix(prefix).ok_or_else(|| {
+        StorageError::InvalidResource(format!("key id '{key_id}' lacks the '{prefix}' prefix"))
+    })
+}
+
+fn verify_crc32c(label: &str, expected: Option<i64>, data: &[u8]) -> Result<(), StorageError> {
+    let computed = crc32c::crc32c(data) as i64;
+    match expected {
+        Some(expected) if expected == computed => Ok(()),
+        Some(expected) => Err(StorageError::IntegrityCheckFailed(format!(
+            "GCP KMS {label} crc32c mismatch: response says {expected:#x}, computed {computed:#x}"
+        ))),
+        None => Err(StorageError::IntegrityCheckFailed(format!(
+            "GCP KMS response omitted the {label} crc32c"
+        ))),
+    }
+}
+
+fn dek_from_plaintext(plaintext: &[u8]) -> Result<[u8; 32], StorageError> {
+    plaintext.try_into().map_err(|_| {
+        GcpKms::error(format!(
+            "expected a 32-byte DEK, response contained {} bytes",
+            plaintext.len()
+        ))
+    })
 }
 
 #[cfg(test)]
@@ -114,7 +144,49 @@ mod tests {
     use super::*;
     use crate::seed::Seed;
 
-    #[cfg(feature = "longterm-gcp-kms")]
+    #[test]
+    fn crc32c_mismatch_is_an_error_not_a_panic() {
+        let data = b"some response bytes";
+        let good = crc32c::crc32c(data) as i64;
+
+        assert!(verify_crc32c("ciphertext", Some(good), data).is_ok());
+
+        let result = verify_crc32c("ciphertext", Some(good + 1), data);
+        assert!(matches!(result, Err(StorageError::IntegrityCheckFailed(_))));
+    }
+
+    #[test]
+    fn missing_crc32c_is_an_error() {
+        let result = verify_crc32c("plaintext", None, b"anything");
+        assert!(matches!(result, Err(StorageError::IntegrityCheckFailed(_))));
+    }
+
+    #[test]
+    fn bad_key_prefix_is_an_error_not_a_panic() {
+        assert!(matches!(
+            strip_key_prefix("aws-kms://wrong-cloud"),
+            Err(StorageError::InvalidResource(_))
+        ));
+
+        let good = format!(
+            "{}projects/p/locations/l/keyRings/r/cryptoKeys/k",
+            Protection::GcpKms.prefix()
+        );
+        assert_eq!(
+            strip_key_prefix(&good).unwrap(),
+            "projects/p/locations/l/keyRings/r/cryptoKeys/k"
+        );
+    }
+
+    #[test]
+    fn wrong_length_dek_is_an_error_not_a_panic() {
+        assert!(matches!(
+            dek_from_plaintext(&[0u8; 31]),
+            Err(StorageError::CloudBackend { .. })
+        ));
+        assert_eq!(dek_from_plaintext(&[9u8; 32]).unwrap(), [9u8; 32]);
+    }
+
     #[tokio::test]
     #[ignore = "requires GCP credentials"]
     async fn encrypt_decrypt_seed_roundtrip() {
@@ -126,7 +198,9 @@ mod tests {
         let original_bytes = original_seed.expose().to_vec();
 
         // Encrypt the seed
-        let envelope = GcpKms::encrypt_seed(key_id, &original_seed).await;
+        let envelope = GcpKms::encrypt_seed(key_id, &original_seed)
+            .await
+            .expect("encrypt_seed should succeed");
 
         // Verify the envelope contains the expected key ID
         assert!(envelope.key_id.starts_with(Protection::GcpKms.prefix()));
@@ -137,13 +211,14 @@ mod tests {
         assert!(!envelope.seed_ct.is_empty());
 
         // Decrypt the seed
-        let decrypted_seed = GcpKms::decrypt_seed(&envelope).await;
+        let decrypted_seed = GcpKms::decrypt_seed(&envelope)
+            .await
+            .expect("decrypt_seed should succeed");
 
         // Verify the decrypted seed matches the original
         assert_eq!(decrypted_seed.expose(), &original_bytes);
     }
 
-    #[cfg(feature = "longterm-gcp-kms")]
     #[test]
     fn envelope_serialization() {
         use serde_json;

@@ -1,3 +1,9 @@
+//! Web server that collects and stores Roughtime malfeasance reports.
+//!
+//! The listen address defaults to `0.0.0.0:3000` and is configurable with `--listen <ADDR:PORT>`.
+//!
+//! TODO(stuart): Report storage is in-memory only
+
 #![forbid(unsafe_code)]
 
 pub mod storage;
@@ -8,13 +14,15 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::Json;
-use axum::extract::{ConnectInfo, Path, State};
+use axum::extract::{ConnectInfo, DefaultBodyLimit, Path, State};
 use axum::http::StatusCode;
 use roughenough_client::MalfeasanceReport;
 use serde::{Deserialize, Serialize};
 
-pub use crate::storage::{InMemoryStorage, ReportStorage, StoredReport};
+pub use crate::storage::{InMemoryStorage, ReportStorage, StorageError, StoredReport};
 pub use crate::validation::validate_report;
+
+pub const MAX_REPORT_BODY_BYTES: usize = 256 * 1024;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -34,12 +42,21 @@ pub async fn handle_report(
     // Validate
     validate_report(&report).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
 
-    // Store
+    // Store. A full store rejects the submission (503) instead of evicting,
+    // so a report flood cannot displace stored evidence; per-source rate
+    // limiting maps to 429.
     let id = state
         .storage
         .store(report, addr.ip().to_string())
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| {
+            let status = match e {
+                StorageError::Full => StatusCode::SERVICE_UNAVAILABLE,
+                StorageError::RateLimited => StatusCode::TOO_MANY_REQUESTS,
+                StorageError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            (status, e.to_string())
+        })?;
 
     Ok((StatusCode::CREATED, Json(CreationResponse { id })))
 }
@@ -61,11 +78,11 @@ pub async fn health_check() -> &'static str {
     "OK"
 }
 
-/// Create the Axum router with all routes configured
 pub fn create_app(state: AppState) -> axum::Router {
     axum::Router::new()
         .route("/api/v1/reports", axum::routing::post(handle_report))
         .route("/api/v1/reports/{id}", axum::routing::get(get_report))
         .route("/health", axum::routing::get(health_check))
+        .layer(DefaultBodyLimit::max(MAX_REPORT_BODY_BYTES))
         .with_state(state)
 }

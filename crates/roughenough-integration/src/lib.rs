@@ -19,7 +19,7 @@ mod integration_tests {
     use roughenough_protocol::request::Request;
     use roughenough_protocol::response::Response;
     use roughenough_protocol::tags::{Nonce, ProtocolVersion, PublicKey};
-    use roughenough_protocol::wire::{FromWire, ToWire};
+    use roughenough_protocol::wire::{FromWire, ToFrame};
     use roughenough_server::test_utils::TestContext;
 
     /// Validates a response against its originating request using the client `ResponseValidator`
@@ -47,15 +47,13 @@ mod integration_tests {
     }
 
     /// Tests that a single request generates a valid response.
-    /// For single-element trees, the Merkle path is empty since there are no siblings, and the
-    /// client will verify that the request nonce hashes to the signed root.
     #[test]
     fn single_request_validation() {
         let mut test_context = TestContext::new(64);
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
 
         let request = create_test_request(42);
-        let request_bytes = request.as_bytes().unwrap();
+        let request_bytes = request.as_frame_bytes().unwrap();
         assert!(test_context.response_handler.add_request(
             &request_bytes,
             request,
@@ -89,7 +87,7 @@ mod integration_tests {
 
         let draft = ProtocolVersion::from_u32(0x8000000b).unwrap();
         let request = create_test_request(43);
-        let request_bytes = request.as_bytes().unwrap();
+        let request_bytes = request.as_frame_bytes().unwrap();
         assert!(
             test_context
                 .response_handler
@@ -117,8 +115,6 @@ mod integration_tests {
         validate_response(&request_bytes, response_bytes, pub_key).unwrap();
     }
 
-    /// Stress tests the responder with a batch of 64 requests. This is an expected (but maximum)
-    /// batch size that the server supports.
     #[test]
     fn large_batch_validation() {
         let num_requests = 64;
@@ -130,7 +126,7 @@ mod integration_tests {
         for i in 0..num_requests {
             let addr: SocketAddr = format!("127.0.0.1:{}", 8000 + i).parse().unwrap();
             let request = create_test_request((i * 37) as u8);
-            let request_bytes = request.as_bytes().unwrap();
+            let request_bytes = request.as_frame_bytes().unwrap();
 
             request_data.push((request_bytes.clone(), addr));
             assert!(test_context.response_handler.add_request(
@@ -150,11 +146,28 @@ mod integration_tests {
 
         assert_eq!(responses.len(), num_requests);
 
+        let mut shared_root: Option<Vec<u8>> = None;
+
         for (idx, (response_addr, response_bytes)) in responses.iter().enumerate() {
             let expected_addr = format!("127.0.0.1:{}", 8000 + idx)
                 .parse::<SocketAddr>()
                 .unwrap();
             assert_eq!(*response_addr, expected_addr);
+
+            let mut buf = response_bytes[12..].to_vec();
+            let mut cursor = ParseCursor::new(&mut buf);
+            let response = Response::from_wire(&mut cursor).unwrap();
+            assert_eq!(response.indx(), idx as u32);
+            assert!(
+                !response.path().as_ref().is_empty(),
+                "batched response {idx} must carry a non-empty Merkle PATH"
+            );
+
+            let root = response.srep().root().as_ref().to_vec();
+            match &shared_root {
+                Some(expected) => assert_eq!(*expected, root, "response {idx} ROOT differs"),
+                None => shared_root = Some(root),
+            }
 
             let (request_bytes, _) = &request_data[idx];
             let public_key = test_context.key_source.public_key();
@@ -178,8 +191,7 @@ mod integration_tests {
                     );
 
                     // Compare with what the client computes to identify mismatch source
-                    let tree = roughenough_merkle::MerkleTree::new();
-                    let computed_root = tree.root_from_paths(
+                    let computed_root = roughenough_merkle::root_from_paths(
                         response.indx() as usize,
                         request_bytes,
                         response.path(),

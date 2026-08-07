@@ -9,6 +9,8 @@ homepage = "https://github.com/int08h/roughenough"
 readme = "../../README.md"
 keywords = ["roughtime", "malfeasance", "reporting", "server", "web"]
 categories = ["network-programming", "web-programming"]
+# Not published to crates.io
+publish = false
 
 [[bin]]
 name = "roughenough_reporting_server"
@@ -21,6 +23,7 @@ roughenough-protocol = { path = "../roughenough-protocol" }
 async-trait = { workspace = true }
 aws-lc-rs = { workspace = true }
 axum = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
 jiff = { workspace = true, features = ["serde"] }
 data-encoding = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

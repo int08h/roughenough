@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use data_encoding::HEXLOWER;
-    use roughenough_merkle::MerkleTree;
+    use roughenough_merkle::{MerkleTree, root_from_paths};
     use roughenough_protocol::tags::{MerklePath, MerkleRoot, Nonce};
 
     // Helper to create a nonce from hex string
@@ -25,7 +25,7 @@ mod tests {
         assert_eq!(path.depth(), 0);
 
         // Verify we can reconstruct the root
-        let computed_root = tree.root_from_paths(0, nonce.as_ref(), &path).unwrap();
+        let computed_root = root_from_paths(0, nonce.as_ref(), &path).unwrap();
         assert_eq!(computed_root, root);
     }
 
@@ -46,7 +46,7 @@ mod tests {
         assert_eq!(path0.depth(), 1);
 
         // Verify reconstruction
-        let computed_root0 = tree.root_from_paths(0, nonce1.as_ref(), &path0).unwrap();
+        let computed_root0 = root_from_paths(0, nonce1.as_ref(), &path0).unwrap();
         assert_eq!(computed_root0, root);
 
         // Get paths for second leaf
@@ -54,7 +54,7 @@ mod tests {
         assert_eq!(path1.depth(), 1);
 
         // Verify reconstruction
-        let computed_root1 = tree.root_from_paths(1, nonce2.as_ref(), &path1).unwrap();
+        let computed_root1 = root_from_paths(1, nonce2.as_ref(), &path1).unwrap();
         assert_eq!(computed_root1, root);
     }
 
@@ -77,7 +77,7 @@ mod tests {
         let path = tree.get_paths(0);
         assert_eq!(path.depth(), 1);
 
-        let computed_root = tree.root_from_paths(2, nonce1.as_ref(), &path);
+        let computed_root = root_from_paths(2, nonce1.as_ref(), &path);
         assert_eq!(
             computed_root, None,
             "an INDX with leftover nonzero bits must fail the root check"
@@ -90,7 +90,7 @@ mod tests {
         let empty_path = single.get_paths(0);
         assert_eq!(empty_path.depth(), 0);
 
-        let computed_root = single.root_from_paths(1, nonce1.as_ref(), &empty_path);
+        let computed_root = root_from_paths(1, nonce1.as_ref(), &empty_path);
         assert_eq!(
             computed_root, None,
             "a nonzero INDX with an empty PATH must fail the root check"
@@ -113,7 +113,7 @@ mod tests {
         let path = tree.get_paths(0);
 
         // Try to verify with wrong index
-        let computed_root = tree.root_from_paths(1, nonce1.as_ref(), &path);
+        let computed_root = root_from_paths(1, nonce1.as_ref(), &path);
 
         // Should NOT match the actual root
         assert_ne!(computed_root, Some(root));
@@ -137,7 +137,7 @@ mod tests {
         let path = tree.get_paths(0);
 
         // Try to verify with wrong leaf data
-        let computed_root = tree.root_from_paths(0, wrong_nonce.as_ref(), &path);
+        let computed_root = root_from_paths(0, wrong_nonce.as_ref(), &path);
 
         // Should NOT match the actual root
         assert_ne!(computed_root, Some(root));
@@ -168,7 +168,7 @@ mod tests {
         }
 
         // Try to verify with corrupted path
-        let computed_root = tree.root_from_paths(0, nonce1.as_ref(), &corrupted_path);
+        let computed_root = root_from_paths(0, nonce1.as_ref(), &corrupted_path);
 
         // Should NOT match the actual root
         assert_ne!(computed_root, Some(root));
@@ -196,7 +196,7 @@ mod tests {
         // Verify proof for each leaf
         for (index, nonce) in nonces.iter().enumerate() {
             let path = tree.get_paths(index);
-            let computed_root = tree.root_from_paths(index, nonce.as_ref(), &path).unwrap();
+            let computed_root = root_from_paths(index, nonce.as_ref(), &path).unwrap();
             assert_eq!(computed_root, root, "Failed for index {index}");
 
             // Path length should be log2(8) = 3
@@ -226,7 +226,7 @@ mod tests {
         // Verify proof for each leaf
         for (index, nonce) in nonces.iter().enumerate() {
             let path = tree.get_paths(index);
-            let computed_root = tree.root_from_paths(index, nonce.as_ref(), &path).unwrap();
+            let computed_root = root_from_paths(index, nonce.as_ref(), &path).unwrap();
             assert_eq!(computed_root, root, "Failed for index {index}");
         }
     }
@@ -251,7 +251,7 @@ mod tests {
         }
 
         // This should still compute something, but won't match the actual root
-        let computed_root = tree.root_from_paths(0, &[0u8; 32], &long_path);
+        let computed_root = root_from_paths(0, &[0u8; 32], &long_path);
         let actual_root = tree.compute_root();
         assert_ne!(computed_root, Some(actual_root));
     }
@@ -276,13 +276,13 @@ mod tests {
         // Try to use the valid path with a different nonce at the same index
         let fake_nonce =
             nonce_from_hex("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-        let computed_root = tree.root_from_paths(1, fake_nonce.as_ref(), &valid_path);
+        let computed_root = root_from_paths(1, fake_nonce.as_ref(), &valid_path);
 
         // Should NOT produce the same root
         assert_ne!(computed_root, Some(root));
 
         // Try to use the valid path with wrong index
-        let computed_root2 = tree.root_from_paths(0, target_nonce.as_ref(), &valid_path);
+        let computed_root2 = root_from_paths(0, target_nonce.as_ref(), &valid_path);
         assert_ne!(computed_root2, Some(root));
     }
 

@@ -227,7 +227,6 @@ impl Server {
             });
         }
 
-        // Validate each address
         for address in &self.addresses {
             address.validate()?;
         }
@@ -241,6 +240,10 @@ impl Server {
 
     pub fn first_address(&self) -> &Address {
         &self.addresses[0]
+    }
+
+    pub fn first_udp_address(&self) -> Option<&Address> {
+        self.addresses.iter().find(|a| a.protocol == Protocol::Udp)
     }
 
     pub fn name(&self) -> &str {
@@ -268,37 +271,38 @@ impl Address {
     }
 
     pub fn validate(&self) -> Result<(), Error> {
-        // Parse host:port
-        let parts: Vec<&str> = self.address.splitn(2, ':').collect();
-        if parts.len() != 2 {
-            return Err(Error::InvalidAddress {
-                address: self.address.clone(),
-            });
+        // IP literals -- including bracketed IPv6 like "[2001:db8::1]:2003" --
+        // parse as socket addresses.
+        if self.address.parse::<std::net::SocketAddr>().is_ok() {
+            return Ok(());
         }
 
-        // Validate port is a valid number
-        let port_str = parts[1];
-        match port_str.parse::<u16>() {
-            Ok(_) => Ok(()),
-            Err(_) => Err(Error::InvalidAddress {
+        match self.address.rsplit_once(':') {
+            Some((host, port)) if !host.is_empty() && port.parse::<u16>().is_ok() => Ok(()),
+            _ => Err(Error::InvalidAddress {
                 address: self.address.clone(),
             }),
         }
     }
 
     pub fn host(&self) -> &str {
-        self.address
-            .split(':')
-            .next()
-            .expect("was validated at construction")
+        // Strip brackets from IPv6 literals
+        match self.address.rsplit_once(':') {
+            Some((host, _port)) => host.trim_start_matches('[').trim_end_matches(']'),
+            None => &self.address,
+        }
     }
 
     pub fn port(&self) -> u16 {
         self.address
-            .split(':')
-            .nth(1)
-            .and_then(|p| p.parse().ok())
+            .rsplit_once(':')
+            .and_then(|(_host, port)| port.parse().ok())
             .expect("was validated at construction")
+    }
+
+    /// The transport protocol of this address
+    pub fn protocol(&self) -> &Protocol {
+        &self.protocol
     }
 }
 
@@ -367,6 +371,70 @@ mod tests {
             Err(e) => panic!("expected Error::InvalidAddress, got {e:?}"),
             Ok(_) => panic!("expected validation to fail"),
         }
+    }
+
+    #[test]
+    fn test_ipv6_address_parses() {
+        // A bracketed IPv6 literal must not poison the whole list
+        let json = r#"{
+            "servers": [{
+                "name": "V6 Server",
+                "version": "1",
+                "publicKeyType": "ed25519",
+                "publicKey": "key==",
+                "addresses": [{"protocol": "udp", "address": "[2001:db8::1]:2003"}]
+            }]
+        }"#;
+
+        let server_list = ServerList::from_json(json).unwrap();
+        let address = server_list.servers()[0].first_address();
+        assert_eq!(address.host(), "2001:db8::1");
+        assert_eq!(address.port(), 2003);
+    }
+
+    #[test]
+    fn test_ipv4_and_hostname_addresses_still_parse() {
+        let v4 = Address::new(Protocol::Udp, "192.0.2.7:2003".to_string()).unwrap();
+        assert_eq!(v4.host(), "192.0.2.7");
+        assert_eq!(v4.port(), 2003);
+
+        let hostname =
+            Address::new(Protocol::Udp, "roughtime.example.com:2002".to_string()).unwrap();
+        assert_eq!(hostname.host(), "roughtime.example.com");
+        assert_eq!(hostname.port(), 2002);
+    }
+
+    #[test]
+    fn test_tcp_only_server_has_no_udp_address() {
+        let tcp = Address::new(Protocol::Tcp, "example.com:2003".to_string()).unwrap();
+        let server = Server::new(
+            "TCP Only".to_string(),
+            "1".to_string(),
+            "ed25519".to_string(),
+            "key==".to_string(),
+            vec![tcp],
+        )
+        .unwrap();
+
+        assert!(server.first_udp_address().is_none());
+    }
+
+    #[test]
+    fn test_mixed_addresses_select_udp() {
+        let tcp = Address::new(Protocol::Tcp, "example.com:2003".to_string()).unwrap();
+        let udp = Address::new(Protocol::Udp, "example.com:2004".to_string()).unwrap();
+        let server = Server::new(
+            "Mixed".to_string(),
+            "1".to_string(),
+            "ed25519".to_string(),
+            "key==".to_string(),
+            vec![tcp, udp],
+        )
+        .unwrap();
+
+        let selected = server.first_udp_address().unwrap();
+        assert_eq!(*selected.protocol(), Protocol::Udp);
+        assert_eq!(selected.port(), 2004);
     }
 
     #[test]

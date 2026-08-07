@@ -44,3 +44,43 @@ impl FromWireN for MessageType {
         Self::from_wire(cursor)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn round_trip() {
+        for msg_type in [MessageType::Request, MessageType::Response] {
+            let mut bytes = msg_type.as_bytes().unwrap();
+            let mut cursor = ParseCursor::new(&mut bytes);
+            assert_eq!(MessageType::from_wire(&mut cursor).unwrap(), msg_type);
+        }
+    }
+
+    #[test]
+    fn undefined_values_are_rejected() {
+        // Only 0 (request) and 1 (response) are defined; 0xffffffff is the
+        // Invalid sentinel and must not parse either
+        for bad in [2u32, 0x8000_0000, 0xffff_ffff] {
+            let mut bytes = bad.to_le_bytes().to_vec();
+            let mut cursor = ParseCursor::new(&mut bytes);
+            assert!(matches!(
+                MessageType::from_wire(&mut cursor),
+                Err(InvalidMessageType(v)) if v == bad
+            ));
+        }
+    }
+
+    #[test]
+    fn wrong_length_is_rejected() {
+        let mut bytes = vec![0u8; 8];
+        for bad_len in [0usize, 3, 5, 8] {
+            let mut cursor = ParseCursor::new(&mut bytes);
+            assert!(matches!(
+                MessageType::from_wire_n(&mut cursor, bad_len),
+                Err(Error::WrongTagSize(4, n)) if n == bad_len
+            ));
+        }
+    }
+}

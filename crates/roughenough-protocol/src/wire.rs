@@ -4,8 +4,6 @@ use crate::cursor::ParseCursor;
 use crate::error::Error;
 use crate::error::Error::UnexpectedFraming;
 
-/// RFC 5: The first field is a uint64 with the value 0x4d49544847554f52 ("ROUGHTIM" in ASCII).
-///
 /// Magic value 'ROUGHTIM' for framed Requests and Responses.
 pub const FRAME_MAGIC: u64 = 0x524f55474854494d;
 

@@ -159,3 +159,62 @@ impl Debug for Delegation {
             .finish()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_dele() -> Delegation {
+        let pubk = PublicKey::from([0x42u8; 32]);
+        Delegation::new(pubk, 1000, Duration::from_secs(500))
+    }
+
+    #[test]
+    fn round_trip() {
+        let dele = test_dele();
+        let mut bytes = dele.as_bytes().unwrap();
+
+        let mut cursor = ParseCursor::new(&mut bytes);
+        let decoded = Delegation::from_wire(&mut cursor).unwrap();
+
+        assert_eq!(decoded, dele);
+        assert_eq!(decoded.mint(), 1000);
+        assert_eq!(decoded.maxt(), 1500);
+    }
+
+    #[test]
+    fn truncated_value_is_rejected() {
+        let dele = test_dele();
+        let bytes = dele.as_bytes().unwrap();
+
+        // Cutting the MAXT value short must fail, not panic
+        for cut in [1usize, 4, 8] {
+            let mut short = bytes[..bytes.len() - cut].to_vec();
+            let mut cursor = ParseCursor::new(&mut short);
+            assert!(Delegation::from_wire(&mut cursor).is_err());
+        }
+    }
+
+    #[test]
+    fn wrong_pubk_size_is_rejected() {
+        let dele = test_dele();
+        let bytes = dele.as_bytes().unwrap();
+
+        let mut bad = bytes.clone();
+        // offsets[0] is MINT's start (byte 4 of the message); shrink it below
+        // the 32 bytes PUBK requires
+        bad[4..8].copy_from_slice(&28u32.to_le_bytes());
+
+        let mut cursor = ParseCursor::new(&mut bad);
+        assert!(matches!(
+            Delegation::from_wire(&mut cursor),
+            Err(WrongTagSize(32, 28))
+        ));
+    }
+
+    #[test]
+    fn maxt_saturates() {
+        let dele = Delegation::new(PublicKey::default(), u64::MAX - 1, Duration::from_secs(10));
+        assert_eq!(dele.maxt(), u64::MAX);
+    }
+}

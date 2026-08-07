@@ -37,8 +37,8 @@ pub struct VersionList {
 
 impl VersionList {
     /// Maximum # of versions to hold. Excess versions (if present) will be discarded.
-    /// This is intentionally less than the RFC recommended value of 32 which here would
-    /// waste an entire 1024 bytes on a mostly empty array.
+    ///
+    /// Deliberate deviation from RFC 5.1.1 to bound mem usage and effort.
     pub const MAX_VERSIONS: usize = 8;
 }
 

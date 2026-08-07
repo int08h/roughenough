@@ -1,7 +1,4 @@
-#[cfg(target_os = "linux")]
 pub use krs_backend::LinuxKrsBackend;
-#[cfg(not(target_os = "linux"))]
-pub use stub_backend::LinuxKrsBackend;
 
 // It would be nice if only the **signing operation** was available to the thread, not the seed
 // contents. However, Linux doesn't support Ed25519 as a PKCS8 parsable asymmetric private key type.
@@ -461,48 +458,6 @@ pub mod krs_backend {
             let backend = handle.join().unwrap();
             let seed = backend.get_seed().unwrap();
             assert_eq!(seed.len(), 32);
-        }
-    }
-}
-
-#[cfg(not(target_os = "linux"))]
-pub mod stub_backend {
-    use roughenough_protocol::tags::PublicKey;
-
-    use crate::seed::{BackendError, Seed, SeedBackend};
-
-    /// Stub implementation for non-Linux platforms
-    pub struct LinuxKrsBackend;
-
-    impl LinuxKrsBackend {
-        pub fn new() -> Result<LinuxKrsBackend, BackendError> {
-            unimplemented!("Linux Key Retention Service is not available on this platform");
-        }
-    }
-
-    impl SeedBackend for LinuxKrsBackend {
-        fn store_seed(&mut self, _seed: Seed) -> Result<(), BackendError> {
-            unimplemented!("Linux Key Retention Service is not available on this platform");
-        }
-
-        fn get_seed(&self) -> Result<Seed, BackendError> {
-            unimplemented!("Linux Key Retention Service is not available on this platform");
-        }
-
-        fn sign(&mut self, _data: &[u8]) -> Result<[u8; 64], BackendError> {
-            unimplemented!("Linux Key Retention Service is not available on this platform");
-        }
-
-        fn seed_len(&self) -> usize {
-            unimplemented!("Linux Key Retention Service is not available on this platform");
-        }
-
-        fn public_key(&self) -> PublicKey {
-            unimplemented!("Linux Key Retention Service is not available on this platform");
-        }
-
-        fn public_key_bytes(&self) -> [u8; 32] {
-            unimplemented!("Linux Key Retention Service is not available on this platform");
         }
     }
 }

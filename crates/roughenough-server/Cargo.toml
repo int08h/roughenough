@@ -1,6 +1,6 @@
 [package]
 name = "roughenough-server"
-description = "High-performance asynchronous Roughtime server with batching support"
+description = "High-performance Roughtime UDP server with request batching"
 license = "Apache-2.0 OR MIT"
 edition.workspace = true
 version.workspace = true
@@ -16,6 +16,9 @@ path = "src/main.rs"
 
 [features]
 test-utils = []
+# Makes the pkcs11 seed backend available at runtime; without it, selecting
+# pkcs11 fails with a "recompile with the feature" error
+online-pkcs11 = ["roughenough-keys/online-pkcs11"]
 
 [dependencies]
 roughenough-common = { workspace = true }
@@ -33,9 +36,16 @@ time-format = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# sendmmsg for batched response sends (network.rs mmsg module)
+libc = { workspace = true }
+
 [dev-dependencies]
 divan = { workspace = true }
 roughenough-protocol = { workspace = true, features = ["test-utils"] }
+# self-dependency: enables test-utils (worker panic injection, TestContext)
+# when building this crate's own tests/ targets
+roughenough-server = { path = ".", features = ["test-utils"] }
 
 [[bench]]
 name = "server_ops"

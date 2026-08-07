@@ -1,12 +1,20 @@
+#![deny(unsafe_code)]
+
+#[doc(hidden)]
 pub mod args;
+#[doc(hidden)]
 pub mod keysource;
+#[doc(hidden)]
 pub mod metrics;
+#[doc(hidden)]
 pub mod network;
+#[doc(hidden)]
 pub mod requests;
+#[doc(hidden)]
 pub mod responses;
-// public so the bin crate and tests/ can drive it; hidden from the API surface
 #[doc(hidden)]
 pub mod worker;
 
 #[cfg(any(test, feature = "test-utils"))]
+#[doc(hidden)]
 pub mod test_utils;

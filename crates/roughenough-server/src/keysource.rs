@@ -21,11 +21,7 @@ pub struct KeySource {
     clock_source: ClockSource,
 }
 
-unsafe impl Send for KeySource {}
-unsafe impl Sync for KeySource {}
-
 impl KeySource {
-    #[allow(clippy::arc_with_non_send_sync)]
     pub fn new(
         seed: Box<dyn SeedBackend>,
         clock_source: ClockSource,
@@ -74,6 +70,16 @@ mod tests {
     use roughenough_protocol::util::ClockSource;
 
     use crate::keysource::KeySource;
+
+    fn assert_send_sync<T: Send + Sync>() {}
+
+    // Compile-time proof of the thread-safety the deleted `unsafe impl
+    // Send/Sync for KeySource` used to assert by hand; holds because
+    // `SeedBackend: Send` is now a supertrait bound
+    #[test]
+    fn keysource_is_send_sync() {
+        assert_send_sync::<KeySource>();
+    }
 
     #[test]
     #[should_panic]

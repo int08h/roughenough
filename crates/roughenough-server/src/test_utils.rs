@@ -61,6 +61,7 @@ impl TestContext {
         midpoint: u64,
         nonce: &Nonce,
     ) -> (Request, Response) {
+        self.response_handler.clear();
         self.clock.set_time(midpoint);
 
         let request = Request::new(nonce);

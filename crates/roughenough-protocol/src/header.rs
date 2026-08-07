@@ -10,8 +10,7 @@ use crate::tag::Tag;
 use crate::wire::ToWire;
 
 /// Serialization-side view of a message header with a fixed, known tag set.
-/// Parsing always goes through [`RawHeader`], which tolerates unknown tags as
-/// the RFC requires.
+/// Parsing always goes through [`RawHeader`], which tolerates unknown tags.
 pub trait Header {
     fn num_tags() -> u32;
     fn offsets(&self) -> &[u32];
@@ -47,8 +46,8 @@ pub const MAX_RAW_TAGS: usize = 16;
 /// tags as raw u32 values (in the same big-endian interpretation as [`Tag`])
 /// instead of rejecting values this implementation does not recognize.
 ///
-/// RFC 4.2 tag ordering is enforced on the little-endian value of each tag;
-/// the ordering is strict, which also rejects duplicate tags ("A tag MUST NOT
+/// RFC 4.2 tag ordering is enforced on the little-endian value of each tag.
+/// The ordering is strict and rejects duplicate tags ("A tag MUST NOT
 /// appear more than once in a header").
 #[derive(Debug, Clone)]
 pub struct RawHeader {
@@ -57,6 +56,20 @@ pub struct RawHeader {
     /// entry is the total length of the message values section
     ends: [u32; MAX_RAW_TAGS],
     raw_tags: [u32; MAX_RAW_TAGS],
+}
+
+/// Read a little-endian u32 from `msg` at `*pos`, advancing `*pos`.
+fn read_u32_le(msg: &[u8], pos: &mut usize) -> Result<u32, Error> {
+    let bytes = msg
+        .get(*pos..*pos + 4)
+        .ok_or(BufferTooSmall(4, msg.len().saturating_sub(*pos)))?;
+    *pos += 4;
+    Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+}
+
+/// Read a big-endian u32 from `msg` at `*pos`, advancing `*pos`.
+fn read_u32_be(msg: &[u8], pos: &mut usize) -> Result<u32, Error> {
+    Ok(read_u32_le(msg, pos)?.swap_bytes())
 }
 
 impl RawHeader {
@@ -75,8 +88,18 @@ impl RawHeader {
             return Err(BufferTooSmall(msg_len, cursor.remaining()));
         }
 
-        let start = cursor.position();
-        let num_tags_field = cursor.try_get_u32_le()?;
+        let (header, header_size) = Self::parse(&cursor.peek()[..msg_len])?;
+        cursor.advance(header_size)?;
+        Ok(header)
+    }
+
+    /// Parse a header from the leading bytes of `msg`, whose full length is
+    /// the message length (values section included). Returns the header and
+    /// its encoded size.
+    pub fn parse(msg: &[u8]) -> Result<(Self, usize), Error> {
+        let mut pos = 0usize;
+
+        let num_tags_field = read_u32_le(msg, &mut pos)?;
         if num_tags_field == 0 || num_tags_field as usize > MAX_RAW_TAGS {
             return Err(BadNumTags(num_tags_field));
         }
@@ -90,7 +113,7 @@ impl RawHeader {
 
         let mut prior_offset = 0;
         for idx in 0..num_tags - 1 {
-            let value = cursor.try_get_u32_le()?;
+            let value = read_u32_le(msg, &mut pos)?;
 
             // RFC 4.2: All offsets MUST be multiples of four and placed in increasing order.
             if value % 4 != 0 {
@@ -107,7 +130,7 @@ impl RawHeader {
         let mut prior_key = 0u32;
         for idx in 0..num_tags {
             // Tags are read big-endian but ordered by their little-endian value
-            let value = cursor.try_get_u32()?;
+            let value = read_u32_be(msg, &mut pos)?;
             let key = value.swap_bytes();
 
             if idx > 0 && key <= prior_key {
@@ -118,12 +141,8 @@ impl RawHeader {
             prior_key = key;
         }
 
-        let header_size = cursor.position() - start;
-        if msg_len < header_size {
-            return Err(BufferTooSmall(header_size, msg_len));
-        }
-
-        let values_len = msg_len - header_size;
+        let header_size = pos;
+        let values_len = msg.len() - header_size;
         if num_tags > 1 && header.ends[num_tags - 2] as usize > values_len {
             return Err(OutOfBoundsOffset(
                 (num_tags - 2) as u32,
@@ -132,7 +151,7 @@ impl RawHeader {
         }
         header.ends[num_tags - 1] = values_len as u32;
 
-        Ok(header)
+        Ok((header, header_size))
     }
 
     pub fn num_tags(&self) -> usize {
@@ -157,12 +176,7 @@ impl RawHeader {
 /// Locate the value of nested tags within a Roughtime message (without
 /// framing). `path` descends into nested messages: `[Tag::CERT, Tag::DELE]`
 /// returns the byte range of the DELE value within `msg`.
-///
-/// Signature verification must operate on the bytes as received -- a message
-/// may carry tags unknown to this implementation, which re-serialization of
-/// the parsed form would not reproduce. Validators use this to slice the
-/// signed regions out of the original bytes.
-pub fn find_value_range(msg: &mut [u8], path: &[Tag]) -> Result<std::ops::Range<usize>, Error> {
+pub fn find_value_range(msg: &[u8], path: &[Tag]) -> Result<std::ops::Range<usize>, Error> {
     let mut start = 0usize;
     let mut end = msg.len();
 
@@ -170,16 +184,15 @@ pub fn find_value_range(msg: &mut [u8], path: &[Tag]) -> Result<std::ops::Range<
         let raw_tag = *tag as u32;
         let mut found = None;
 
-        let mut cursor = ParseCursor::new(&mut msg[start..end]);
-        let header = RawHeader::from_wire(&mut cursor)?;
+        let (header, header_size) = RawHeader::parse(&msg[start..end])?;
 
+        let mut value_start = header_size;
         for (entry_tag, value_len) in header.entries() {
-            let value_start = cursor.position();
             if entry_tag == raw_tag {
                 found = Some((start + value_start, start + value_start + value_len));
                 break;
             }
-            cursor.set_position(value_start + value_len);
+            value_start += value_len;
         }
 
         match found {

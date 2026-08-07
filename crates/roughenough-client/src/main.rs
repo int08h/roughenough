@@ -6,7 +6,7 @@ use std::time::Duration;
 use clap::Parser;
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
-use roughenough_client::ClientError::DnsLookupFailed;
+use roughenough_client::ClientError::{DnsLookupFailed, InvalidConfiguration};
 use roughenough_client::args::Args;
 use roughenough_client::measurement::Measurement;
 use roughenough_client::reporting::MalfeasanceReport;
@@ -57,6 +57,11 @@ fn main() {
 
 fn query_single_server(args: &Args, hostname: &String) -> u64 {
     let port = args.port.unwrap();
+
+    if args.pub_key.is_none() {
+        // bypasses the logger on purpose to be loud
+        eprintln!("WARNING: no public key provided (-k); responses are NOT authenticated");
+    }
 
     let versions = args.protocol.offered();
     let client =
@@ -179,12 +184,15 @@ fn clients_from_list(server_list: &ServerList, args: &Args) -> Result<Vec<Client
     let timeout = Duration::from_secs(args.timeout as u64);
     let mut clients = Vec::new();
 
-    for server in target_servers {
-        // resolve the address
-        let host = server.first_address().host();
-        let port = server.first_address().port();
-        let addr_str = format!("{host}:{port}");
-        let sock_addr = addr_str
+    for server in &target_servers {
+        let Some(address) = server.first_udp_address() else {
+            info!("Server '{}' has no UDP address, skipping it", server.name());
+            continue;
+        };
+
+        let host = address.host();
+        let port = address.port();
+        let sock_addr = (host, port)
             .to_socket_addrs()?
             .next()
             .ok_or_else(|| DnsLookupFailed(host.to_string()))?;
@@ -192,7 +200,6 @@ fn clients_from_list(server_list: &ServerList, args: &Args) -> Result<Vec<Client
         let encoded_key = server.public_key();
         let public_key = try_decode_key(encoded_key)?;
 
-        // Build client with all settings
         let mut builder = Client::builder(sock_addr)
             .hostname(server.name())
             .timeout(timeout)
@@ -203,6 +210,12 @@ fn clients_from_list(server_list: &ServerList, args: &Args) -> Result<Vec<Client
         }
 
         clients.push(builder.build());
+    }
+
+    if clients.is_empty() {
+        return Err(CliError::Client(InvalidConfiguration(
+            "no server has a UDP address".to_string(),
+        )));
     }
 
     Ok(clients)
@@ -226,16 +239,11 @@ fn clients_from_list(server_list: &ServerList, args: &Args) -> Result<Vec<Client
 //      requirements
 //
 fn display_violation(args: &Args, violation: &CausalityViolation) {
-    let m1 = &violation.measurement_i;
-    let m2 = &violation.measurement_j;
+    let m1 = violation.measurement_i();
+    let m2 = violation.measurement_j();
 
-    let m1_lower = m1.midpoint() - m1.radius() as u64;
-    let m2_upper = m2.midpoint() + m2.radius() as u64;
-
-    let m1_lower_dt = Timestamp::from_second(m1_lower as i64).unwrap();
-    let m1_midpoint_dt = Timestamp::from_second(m1.midpoint() as i64).unwrap();
-    let m2_upper_dt = Timestamp::from_second(m2_upper as i64).unwrap();
-    let m2_midpoint_dt = Timestamp::from_second(m2.midpoint() as i64).unwrap();
+    let m1_lower = m1.lower_bound();
+    let m2_upper = m2.upper_bound();
 
     error!("=== Causality violation ===");
     error!("");
@@ -243,24 +251,30 @@ fn display_violation(args: &Args, violation: &CausalityViolation) {
     error!("  Server:   {}", m1.server());
     error!(
         "  Time:     {} +/- {}s",
-        m1_midpoint_dt.strftime(&args.time_format),
+        format_seconds(m1.midpoint(), &args.time_format),
         m1.radius()
     );
-    error!("  Earliest: {}", m1_lower_dt.strftime(&args.time_format));
+    error!(
+        "  Earliest: {}",
+        format_seconds(m1_lower, &args.time_format)
+    );
     error!("");
     error!("Measurement B (requested second from {}):", m2.hostname());
     error!("  Server:   {}", m2.server());
     error!(
         "  Time:     {} +/- {}s",
-        m2_midpoint_dt.strftime(&args.time_format),
+        format_seconds(m2.midpoint(), &args.time_format),
         m2.radius()
     );
-    error!("  Latest:   {}", m2_upper_dt.strftime(&args.time_format));
+    error!(
+        "  Latest:   {}",
+        format_seconds(m2_upper, &args.time_format)
+    );
     error!("");
     error!(
         "Problem: A earliest ({}) > B latest ({})",
-        m1_lower_dt.strftime("%H:%M:%S"),
-        m2_upper_dt.strftime("%H:%M:%S")
+        format_seconds(m1_lower, "%H:%M:%S"),
+        format_seconds(m2_upper, "%H:%M:%S")
     );
 
     if m1.server() == m2.server() {
@@ -271,23 +285,98 @@ fn display_violation(args: &Args, violation: &CausalityViolation) {
     error!("===========================");
 }
 
-fn display_measurement(args: &Args, measurement: &Measurement) {
+/// Format an epoch-seconds value from a (possibly hostile) server.
+fn format_seconds(seconds: u64, time_format: &str) -> String {
+    let timestamp = i64::try_from(seconds)
+        .ok()
+        .and_then(|s| Timestamp::from_second(s).ok());
+
+    match timestamp {
+        Some(ts) => ts.strftime(time_format).to_string(),
+        None => format!("<unrepresentable time: {seconds} sec>"),
+    }
+}
+
+fn format_measurement(measurement: &Measurement, zulu: bool, epoch: bool, fmt: &str) -> String {
     let midpoint = measurement.midpoint();
     let radius = measurement.radius();
-    let timestamp = Timestamp::from_second(midpoint as i64).unwrap();
 
-    let output = match (args.zulu, args.epoch) {
-        (true, false) => format!("{} (+/-{}s)", timestamp.strftime(&args.time_format), radius),
-        (false, false) => {
-            let local_time = timestamp.to_zoned(TimeZone::system());
-            format!(
-                "{} (+/-{}s)",
-                local_time.strftime(&args.time_format),
-                radius
-            )
-        }
-        (_, true) => format!("{}", timestamp.as_second()),
+    let Some(timestamp) = measurement.midpoint_datetime() else {
+        return format!("<unrepresentable midpoint: {midpoint} sec> (+/-{radius}s)");
     };
 
+    match (zulu, epoch) {
+        (true, false) => format!("{} (+/-{}s)", timestamp.strftime(fmt), radius),
+        (false, false) => {
+            let local_time = timestamp.to_zoned(TimeZone::system());
+            format!("{} (+/-{}s)", local_time.strftime(fmt), radius)
+        }
+        (_, true) => format!("{}", timestamp.as_second()),
+    }
+}
+
+fn display_measurement(args: &Args, measurement: &Measurement) {
+    let output = format_measurement(measurement, args.zulu, args.epoch, &args.time_format);
     info!("{}", output);
+}
+
+#[cfg(test)]
+mod tests {
+    use roughenough_protocol::ToFrame;
+    use roughenough_protocol::tags::PublicKey;
+    use roughenough_server::test_utils::TestContext;
+
+    use super::*;
+
+    fn create_measurement(midpoint: u64) -> Measurement {
+        let mut ctx = TestContext::new(64);
+        let (req, resp) = ctx.create_interaction_pair(midpoint);
+        let resp_bytes = resp.as_frame_bytes().unwrap();
+        let pubkey = PublicKey::from(ctx.key_source.public_key_bytes());
+
+        Measurement::builder()
+            .server("127.0.0.1:8000".parse().unwrap())
+            .request(req)
+            .response(resp)
+            .response_bytes(resp_bytes)
+            .hostname("test".to_string())
+            .public_key(Some(pubkey))
+            .rand_value(None)
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn unrepresentable_midpoint_falls_back_to_raw_value() {
+        let measurement = create_measurement(300_000_000_000);
+        let output = format_measurement(&measurement, true, false, "%Y-%m-%d %H:%M:%S %Z");
+        assert!(
+            output.contains("<unrepresentable midpoint: 300000000000 sec>"),
+            "unexpected output: {output}"
+        );
+    }
+
+    #[test]
+    fn sane_midpoint_formats_normally() {
+        let measurement = create_measurement(1_748_359_193);
+        let output = format_measurement(&measurement, true, false, "%Y-%m-%d");
+        assert!(
+            output.starts_with("2025-05-27"),
+            "unexpected output: {output}"
+        );
+    }
+
+    #[test]
+    fn format_seconds_falls_back_on_unrepresentable_values() {
+        assert_eq!(
+            format_seconds(300_000_000_000, "%H:%M:%S"),
+            "<unrepresentable time: 300000000000 sec>"
+        );
+        // u64 values beyond i64::MAX must not wrap into the valid range
+        assert_eq!(
+            format_seconds(u64::MAX, "%H:%M:%S"),
+            format!("<unrepresentable time: {} sec>", u64::MAX)
+        );
+        assert_eq!(format_seconds(0, "%Y-%m-%d"), "1970-01-01");
+    }
 }

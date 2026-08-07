@@ -422,8 +422,8 @@ mod tests {
         use roughenough_protocol::tags::ProtocolVersion;
         use roughenough_protocol::wire::FromFrame;
 
-        // A draft revision this implementation does not enumerate
-        let draft = ProtocolVersion::from_u32(0x8000000b).unwrap();
+        // top of the RFC 12.2 draft/experimental range (0x80000000-0xbfffffff)
+        let draft = ProtocolVersion::from_u32(0xbfffffff).unwrap();
 
         let entries: &[(&[u8; 4], Vec<u8>)] = &[
             (b"VER\x00", draft.as_u32().to_le_bytes().to_vec()),
@@ -454,6 +454,31 @@ mod tests {
         );
     }
 
+    #[test]
+    fn private_use_version_gets_no_response() {
+        // RFC 12.2: 0xc0000000-0xffffffff is private use.
+        let entries: &[(&[u8; 4], Vec<u8>)] = &[
+            (b"VER\x00", 0xc0000001u32.to_le_bytes().to_vec()),
+            (b"NONC", vec![0x42; 32]),
+            (b"TYPE", 0u32.to_le_bytes().to_vec()),
+            (b"ZZZZ", vec![0; 940]),
+        ];
+        let mut request_bytes = build_raw_request(entries);
+        assert_eq!(request_bytes.len(), REQUEST_SIZE);
+
+        let mut handler = create_request_handler();
+        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        handler.collect_request(&mut request_bytes, addr);
+
+        let metrics = handler.metrics();
+        assert_eq!(metrics.num_ok_requests, 0);
+        assert_eq!(metrics.num_no_common_version, 1);
+
+        let mut responses = Vec::new();
+        handler.generate_responses(|_, bytes| responses.push(bytes.to_vec()));
+        assert!(responses.is_empty(), "private-use version: not answered");
+    }
+
     fn collect_one_version(handler: &mut RequestHandler, wire_ver: u32, nonce_byte: u8, port: u16) {
         let entries: &[(&[u8; 4], Vec<u8>)] = &[
             (b"VER\x00", wire_ver.to_le_bytes().to_vec()),
@@ -470,8 +495,6 @@ mod tests {
     fn version_overflow_is_capped_per_batch() {
         let mut handler = create_request_handler();
 
-        // Three distinct off-list drafts: only two off-list slots exist per
-        // batch (MAX_VERSIONS_PER_BATCH minus the reserved advertised slots)
         let offlist_drafts = [0x80000009u32, 0x8000000a, 0x8000000b];
 
         for (i, wire_ver) in offlist_drafts.iter().enumerate() {
@@ -509,9 +532,7 @@ mod tests {
         let entries: &[(&[u8; 4], Vec<u8>)] = &[
             (
                 b"VER\x00",
-                (roughenough_protocol::tags::ProtocolVersion::DRAFT.as_u32())
-                    .to_le_bytes()
-                    .to_vec(),
+                ProtocolVersion::DRAFT.as_u32().to_le_bytes().to_vec(),
             ),
             (b"NONC", vec![0x42; 32]),
             (b"TYPE", 0u32.to_le_bytes().to_vec()),

@@ -140,11 +140,25 @@ impl Measurement {
 
     /// The server's time measurement, in [Timestamp] UTC.
     ///
+    /// Returns `None` if the midpoint is outside the range representable by [Timestamp].
+    ///
     /// The server's "true time" lies within `(midpoint - radius, midpoint + radius)` when
     /// the response was generated.
-    pub fn midpoint_datetime(&self) -> Timestamp {
-        let midpoint = self.midpoint();
-        Timestamp::from_second(midpoint as i64).unwrap()
+    pub fn midpoint_datetime(&self) -> Option<Timestamp> {
+        let seconds = i64::try_from(self.midpoint()).ok()?;
+        Timestamp::from_second(seconds).ok()
+    }
+
+    /// Earliest time consistent with this measurement (`MIDP - RADI`),
+    /// saturating at zero.
+    pub fn lower_bound(&self) -> u64 {
+        self.midpoint().saturating_sub(self.radius() as u64)
+    }
+
+    /// Latest time consistent with this measurement (`MIDP + RADI`),
+    /// saturating at `u64::MAX`.
+    pub fn upper_bound(&self) -> u64 {
+        self.midpoint().saturating_add(self.radius() as u64)
     }
 
     /// The servers estimate of uncertainty, in seconds. The radius value represents the
@@ -164,5 +178,47 @@ impl Measurement {
     /// The response packet exactly as received, including the "ROUGHTIM" framing
     pub fn response_bytes(&self) -> &[u8] {
         &self.response_bytes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use roughenough_protocol::ToFrame;
+    use roughenough_protocol::tags::PublicKey;
+    use roughenough_server::test_utils::TestContext;
+
+    use super::Measurement;
+
+    fn create_measurement(midpoint: u64) -> Measurement {
+        let mut ctx = TestContext::new(64);
+        let (req, resp) = ctx.create_interaction_pair(midpoint);
+        let resp_bytes = resp.as_frame_bytes().unwrap();
+        let pubkey = PublicKey::from(ctx.key_source.public_key_bytes());
+
+        Measurement::builder()
+            .server("127.0.0.1:8000".parse().unwrap())
+            .request(req)
+            .response(resp)
+            .response_bytes(resp_bytes)
+            .hostname("test".to_string())
+            .public_key(Some(pubkey))
+            .rand_value(None)
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn unrepresentable_midpoint_datetime_is_none() {
+        // jiff's Timestamp range ends near year 9999; a signed response can
+        // carry any MIDP, so conversion must fail cleanly, not panic
+        let measurement = create_measurement(300_000_000_000);
+        assert!(measurement.midpoint_datetime().is_none());
+    }
+
+    #[test]
+    fn sane_midpoint_datetime_is_some() {
+        let measurement = create_measurement(1_748_359_193);
+        let timestamp = measurement.midpoint_datetime().unwrap();
+        assert_eq!(timestamp.as_second(), 1_748_359_193);
     }
 }

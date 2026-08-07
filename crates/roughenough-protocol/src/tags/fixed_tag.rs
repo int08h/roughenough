@@ -80,3 +80,59 @@ impl<const N: usize> FromWire for FixedTag<N> {
         Ok(Self(cursor.try_get_fixed()?))
     }
 }
+
+/// Declare a fixed-size tag newtype over [`FixedTag`].
+macro_rules! fixed_tag {
+    ($(#[$meta:meta])* $name:ident, $size:expr, $label:literal) => {
+        $(#[$meta])*
+        #[derive(Clone, Copy, PartialEq, Eq, Default, Hash)]
+        pub struct $name($crate::tags::fixed_tag::FixedTag<$size>);
+
+        impl std::fmt::Debug for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, concat!($label, "({})"), $crate::util::as_hex(self.0.as_slice()))
+            }
+        }
+
+        impl $crate::wire::ToWire for $name {
+            fn wire_size(&self) -> usize {
+                $size
+            }
+
+            fn to_wire(
+                &self,
+                cursor: &mut $crate::cursor::ParseCursor,
+            ) -> Result<(), $crate::error::Error> {
+                self.0.to_wire(cursor)
+            }
+        }
+
+        impl $crate::wire::FromWire for $name {
+            fn from_wire(
+                cursor: &mut $crate::cursor::ParseCursor,
+            ) -> Result<Self, $crate::error::Error> {
+                Ok($name(cursor.try_get_fixed()?.into()))
+            }
+        }
+
+        impl $crate::wire::FromWireN for $name {
+            fn from_wire_n(
+                cursor: &mut $crate::cursor::ParseCursor,
+                n: usize,
+            ) -> Result<Self, $crate::error::Error> {
+                if n != $size {
+                    return Err($crate::error::Error::WrongTagSize($size, n));
+                }
+                <Self as $crate::wire::FromWire>::from_wire(cursor)
+            }
+        }
+
+        impl From<[u8; $size]> for $name {
+            fn from(bytes: [u8; $size]) -> Self {
+                $name(bytes.into())
+            }
+        }
+    };
+}
+
+pub(crate) use fixed_tag;

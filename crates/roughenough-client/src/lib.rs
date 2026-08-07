@@ -13,7 +13,7 @@ pub mod server_list;
 pub mod transport;
 pub mod validation;
 
-pub use reporting::{MalfeasanceReport, ReportEntry};
+pub use reporting::{MalfeasanceReport, REPORT_MEDIA_TYPE, ReportEntry};
 pub use validation::*;
 
 pub use crate::client::*;

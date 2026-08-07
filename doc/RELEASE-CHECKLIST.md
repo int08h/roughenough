@@ -12,14 +12,14 @@ Use this checklist when preparing a new release of Roughenough for publication t
 - [ ] Code is formatted: `cargo +nightly fmt --check`
 - [ ] Integration tests pass: `target/debug/roughenough_integration_test`
 - [ ] Optional features build correctly:
-  - [ ] `cargo build -p keys --features online-linux-krs`
-  - [ ] `cargo build -p keys --features online-ssh-agent`
-  - [ ] `cargo build -p keys --features online-pkcs11`
-  - [ ] `cargo build -p keys --features longterm-aws-kms`
-  - [ ] `cargo build -p keys --features longterm-gcp-kms`
-  - [ ] `cargo build -p keys --features longterm-aws-secret-manager`
-  - [ ] `cargo build -p keys --features longterm-gcp-secret-manager`
-  - [ ] `cargo build -p client --features reporting`
+  - [ ] `cargo build -p roughenough-keys --features online-linux-krs`
+  - [ ] `cargo build -p roughenough-keys --features online-ssh-agent`
+  - [ ] `cargo build -p roughenough-keys --features online-pkcs11`
+  - [ ] `cargo build -p roughenough-keys --features longterm-aws-kms`
+  - [ ] `cargo build -p roughenough-keys --features longterm-gcp-kms`
+  - [ ] `cargo build -p roughenough-keys --features longterm-aws-secret-manager`
+  - [ ] `cargo build -p roughenough-keys --features longterm-gcp-secret-manager`
+  - [ ] `cargo build -p roughenough-client --features reporting`
 
 ### Documentation
 
@@ -40,6 +40,12 @@ Use this checklist when preparing a new release of Roughenough for publication t
 - [ ] Breaking changes documented in CHANGELOG for MAJOR releases
 
 ### Metadata Verification
+
+The publishable crates are `roughenough-protocol`, `roughenough-common`,
+`roughenough-merkle`, `roughenough-keys`, `roughenough-server`, and
+`roughenough-client`. The `roughenough-integration-test` and
+`roughenough-reporting-server` crates are marked `publish = false` and are
+never published.
 
 For each publishable crate, verify `Cargo.toml` contains:
 

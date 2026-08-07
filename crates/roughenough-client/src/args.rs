@@ -1,11 +1,12 @@
 #![doc(hidden)]
 
+use clap::builder::RangedU64ValueParser;
 use clap::{Parser, ValueEnum};
 use roughenough_protocol::tags::ProtocolVersion;
 
 /// Arguments for the client CLI
 #[derive(Parser, Debug)]
-#[command(version = "2.0.0", about = "Roughenough roughtime client")]
+#[command(version, about = "Roughenough roughtime client")]
 pub struct Args {
     #[clap(
         required = false,
@@ -17,7 +18,7 @@ pub struct Args {
     #[clap(
         required = false,
         requires = "hostname",
-        help = "Server port (e.g. 2002)"
+        help = "Server port (e.g. 2003)"
     )]
     pub port: Option<u16>,
 
@@ -46,7 +47,8 @@ pub struct Args {
         long,
         value_name = "N",
         help = "Number of requests to send",
-        default_value_t = 1
+        default_value_t = 1,
+        value_parser = RangedU64ValueParser::<usize>::new().range(1..)
     )]
     pub num_requests: usize,
 
@@ -74,7 +76,8 @@ pub struct Args {
         value_name = "N",
         help = "Number of different servers to query",
         requires = "server_list",
-        default_value_t = 3
+        default_value_t = 3,
+        value_parser = RangedU64ValueParser::<usize>::new().range(1..)
     )]
     pub num_unique_servers: usize,
 
@@ -84,7 +87,8 @@ pub struct Args {
         value_name = "N",
         help = "Number of times to repeat the chained measurement sequence",
         requires = "server_list",
-        default_value_t = 2
+        default_value_t = 2,
+        value_parser = RangedU64ValueParser::<usize>::new().range(1..)
     )]
     pub num_measurement_rounds: usize,
 
@@ -107,7 +111,8 @@ pub struct Args {
     #[clap(
         short = 's',
         long = "set-clock",
-        help = "Set the system's clock to the received time",
+        requires = "pub_key",
+        help = "Set the system's clock to the received time (requires -k)",
         default_value_t = false
     )]
     pub set_clock: bool,
@@ -139,10 +144,6 @@ pub struct Args {
 }
 
 /// Roughtime protocol version(s) the client offers in its requests.
-///
-/// The default offers only the draft version: deployed servers that predate
-/// RFC version negotiation reject requests containing version numbers they do
-/// not recognize.
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VersionArg {
     /// Offer only draft version 0x8000000c (the default)
@@ -164,5 +165,63 @@ impl VersionArg {
             VersionArg::V1 => Some(vec![ProtocolVersion::RFC]),
             VersionArg::Both => Some(vec![ProtocolVersion::RFC, ProtocolVersion::DRAFT]),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+    use clap::error::ErrorKind;
+
+    use super::Args;
+
+    #[test]
+    fn set_clock_without_pub_key_is_rejected() {
+        let err = Args::try_parse_from(["prog", "host", "2003", "-s"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
+        assert!(err.to_string().contains("--pub-key"));
+    }
+
+    #[test]
+    fn set_clock_with_pub_key_parses() {
+        let args = Args::try_parse_from(["prog", "host", "2003", "-s", "-k", "abc123"]).unwrap();
+        assert!(args.set_clock);
+        assert_eq!(args.pub_key.as_deref(), Some("abc123"));
+    }
+
+    #[test]
+    fn zero_num_requests_is_rejected() {
+        let err = Args::try_parse_from(["prog", "host", "2003", "-n", "0"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::ValueValidation);
+    }
+
+    #[test]
+    fn zero_num_unique_servers_is_rejected() {
+        let err = Args::try_parse_from(["prog", "-l", "servers.json", "-u", "0"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::ValueValidation);
+    }
+
+    #[test]
+    fn zero_num_measurement_rounds_is_rejected() {
+        let err = Args::try_parse_from(["prog", "-l", "servers.json", "-r", "0"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::ValueValidation);
+    }
+
+    #[test]
+    fn version_output_matches_crate_version() {
+        let err = Args::try_parse_from(["prog", "--version"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::DisplayVersion);
+        assert!(err.to_string().contains(env!("CARGO_PKG_VERSION")));
+    }
+
+    #[test]
+    fn nonzero_counts_parse() {
+        let args = Args::try_parse_from(["prog", "host", "2003", "-n", "1"]).unwrap();
+        assert_eq!(args.num_requests, 1);
+
+        let args =
+            Args::try_parse_from(["prog", "-l", "servers.json", "-u", "2", "-r", "3"]).unwrap();
+        assert_eq!(args.num_unique_servers, 2);
+        assert_eq!(args.num_measurement_rounds, 3);
     }
 }

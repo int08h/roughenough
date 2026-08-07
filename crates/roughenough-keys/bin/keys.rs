@@ -15,7 +15,7 @@ use roughenough_protocol::util::as_hex;
 use tracing::{debug, error};
 
 #[derive(clap::Parser, Debug)]
-#[command(version = "2.0.0")]
+#[command(version)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -89,10 +89,17 @@ enum Commands {
     Store {
         #[clap(short, long, help = "File or data of long-term identity seed")]
         input: String,
-        #[clap(short, long, help = "Output file for json encoded storage envelope")]
+        #[clap(short, long, help = "Output file for the storage envelope")]
         output: Option<String>,
         #[clap(short, long, help = "Secret ID to store seed in")]
         secret: String,
+        #[clap(
+            short,
+            long,
+            default_value_t = false,
+            help = "Output pretty-printed JSON instead of the single-line form that --seed accepts"
+        )]
+        json: bool,
     },
     /// Retrieve a long-term identity seed from a Secret manager
     Get {
@@ -144,10 +151,11 @@ pub fn main() {
             input,
             output,
             secret,
+            json,
         } => {
             let input = infile_from_arg(Some(input)).unwrap();
             let output = outfile_from_arg(output).unwrap();
-            runtime::block_on(handle_store(input, output, secret));
+            runtime::block_on(handle_store(input, output, secret, json));
         }
 
         Commands::Get { input, output } => {
@@ -196,7 +204,7 @@ async fn handle_get(mut input: InFile, mut output: OutFile) {
 }
 
 /// Store a long-term identity seed in a Secret manager
-async fn handle_store(mut input: InFile, mut output: OutFile, secret: String) {
+async fn handle_store(mut input: InFile, mut output: OutFile, secret: String, json: bool) {
     let mut seed_bytes = Vec::new();
     input.read_to_end(&mut seed_bytes).unwrap();
 
@@ -210,17 +218,33 @@ async fn handle_store(mut input: InFile, mut output: OutFile, secret: String) {
 
     let seed = Seed::new(&seed_bytes);
 
-    // TODO(stuart) need to encode this output into a format that can be read:
-    //    aws-secret://...HEX ENCODED JSON...
-    // awkward, but it will work
     match storage::try_store_seed(&seed, &secret).await {
         Ok(envelope) => {
-            let json = serde_json::to_string_pretty(&envelope).unwrap();
-            output.write_all(json.as_bytes()).unwrap();
+            // Default output is the single-line prefixed form that
+            // `try_load_seed` accepts, so it pastes directly into --seed
+            let text = if json {
+                serde_json::to_string_pretty(&envelope).unwrap()
+            } else {
+                let method = match storage::Protection::from_prefix(&secret) {
+                    Some(method) => method,
+                    None => {
+                        error!("no protection method specified in '{}'", secret);
+                        return;
+                    }
+                };
+                match method.encode_envelope(&envelope) {
+                    Ok(encoded) => encoded,
+                    Err(e) => {
+                        error!("Failed to encode envelope: {e}");
+                        return;
+                    }
+                }
+            };
+            output.write_all(text.as_bytes()).unwrap();
             output.write_all(b"\n").unwrap();
         }
         Err(e) => {
-            error!("Failed to store seed: {:?}", e);
+            error!("Failed to store seed: {e}");
         }
     }
 }
@@ -249,7 +273,13 @@ async fn handle_open(mut input: InFile, mut output: OutFile, key: Option<String>
     {
         use crate::storage::Protection;
         if envelope.key_id.starts_with(Protection::GcpKms.prefix()) {
-            seed = gcpkms::GcpKms::decrypt_seed(&envelope).await
+            seed = match gcpkms::GcpKms::decrypt_seed(&envelope).await {
+                Ok(seed) => seed,
+                Err(e) => {
+                    error!("Failed to decrypt seed: {e}");
+                    return;
+                }
+            }
         }
     }
 
@@ -257,7 +287,13 @@ async fn handle_open(mut input: InFile, mut output: OutFile, key: Option<String>
     {
         use crate::storage::Protection;
         if envelope.key_id.starts_with(Protection::AwsKms.prefix()) {
-            seed = awskms::AwsKms::decrypt_seed(&envelope).await
+            seed = match awskms::AwsKms::decrypt_seed(&envelope).await {
+                Ok(seed) => seed,
+                Err(e) => {
+                    error!("Failed to decrypt seed: {e}");
+                    return;
+                }
+            }
         }
     }
 
@@ -364,4 +400,16 @@ fn enable_logging(cli: &Cli) {
         .with_filter(filters);
 
     tracing_subscriber::registry().with(fmt_layer).init();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn version_output_matches_crate_version() {
+        let err = Cli::try_parse_from(["prog", "--version"]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
+        assert!(err.to_string().contains(env!("CARGO_PKG_VERSION")));
+    }
 }

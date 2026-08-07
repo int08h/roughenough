@@ -1,43 +1,10 @@
-use std::fmt::Debug;
-
-use crate::cursor::ParseCursor;
-use crate::error::Error;
-use crate::tags::fixed_tag::FixedTag;
-use crate::util::as_hex;
-use crate::wire::{FromWire, ToWire};
+use crate::tags::fixed_tag::fixed_tag;
 
 /// RFC 5.2.5: The ROOT tag MUST contain a 32-byte value of a Merkle tree root.
 const SIZE: usize = 32;
 
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
-pub struct MerkleRoot(FixedTag<SIZE>);
-
-impl Debug for MerkleRoot {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ROOT({})", as_hex(self.0.as_slice()))
-    }
-}
-
-impl ToWire for MerkleRoot {
-    fn wire_size(&self) -> usize {
-        SIZE
-    }
-
-    fn to_wire(&self, cursor: &mut ParseCursor) -> Result<(), Error> {
-        self.0.to_wire(cursor)
-    }
-}
-
-impl FromWire for MerkleRoot {
-    fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
-        Ok(MerkleRoot(cursor.try_get_fixed()?.into()))
-    }
-}
-
-impl From<[u8; SIZE]> for MerkleRoot {
-    fn from(bytes: [u8; SIZE]) -> Self {
-        MerkleRoot(bytes.into())
-    }
+fixed_tag! {
+    MerkleRoot, SIZE, "ROOT"
 }
 
 impl AsRef<[u8; SIZE]> for MerkleRoot {
@@ -49,6 +16,9 @@ impl AsRef<[u8; SIZE]> for MerkleRoot {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cursor::ParseCursor;
+    use crate::error::Error;
+    use crate::wire::{FromWire, ToWire};
 
     #[test]
     fn wire_roundtrip() {
