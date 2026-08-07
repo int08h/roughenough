@@ -32,6 +32,24 @@ updates:
       prefix: "deps"
       include: "scope"
 
+  # The fuzz crate is excluded from the workspace and has its own lockfile
+  - package-ecosystem: "cargo"
+    directory: "/fuzz"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "rust"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
   # Maintain GitHub Actions dependencies
   - package-ecosystem: "github-actions"
     directory: "/"

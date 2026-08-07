@@ -1,7 +1,19 @@
 use std::io::{BufReader, Read};
+use std::net::UdpSocket;
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::Duration;
+
+/// Ask the OS for a currently free UDP port. The probe socket is dropped
+/// before the server binds, so a parallel process could race for the port,
+/// but this removes the guaranteed collision of a hardcoded 2003.
+fn pick_free_udp_port() -> u16 {
+    UdpSocket::bind("127.0.0.1:0")
+        .expect("binding an ephemeral UDP port should succeed")
+        .local_addr()
+        .expect("bound socket has a local address")
+        .port()
+}
 
 /// Start a server, run a client against it, and ensure the client exits cleanly.
 /// This is a live end-to-end integration test to catch bugs missed by unit tests.
@@ -22,13 +34,92 @@ fn main() {
     println!("\n=== All end-to-end integration tests PASSED");
 }
 
+/// Negative test: with an empty --seed and no --insecure-zero-seed the server
+/// must exit nonzero quickly with a clear error instead of serving with an
+/// all-zero (publicly known) identity.
+fn test_seedless_server_refuses_to_start(server_path: &str) -> bool {
+    println!("=== Starting server with no seed (expecting refusal)...");
+    let port = pick_free_udp_port();
+    let mut child = match Command::new(server_path)
+        .args(["-p", &port.to_string()])
+        .env_remove("ROUGHENOUGH_SEED")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(e) => {
+            eprintln!("=== Failed to start server: {e}");
+            return false;
+        }
+    };
+
+    // The refusal happens during startup; poll briefly for exit
+    let mut status = None;
+    for _ in 0..30 {
+        match child.try_wait() {
+            Ok(Some(s)) => {
+                status = Some(s);
+                break;
+            }
+            Ok(None) => thread::sleep(Duration::from_millis(100)),
+            Err(e) => {
+                eprintln!("=== Error checking server status: {e}");
+                let _ = child.kill();
+                let _ = child.wait();
+                return false;
+            }
+        }
+    }
+
+    let Some(status) = status else {
+        eprintln!("=== Server with no seed kept running; it must refuse to start");
+        let _ = child.kill();
+        let _ = child.wait();
+        return false;
+    };
+
+    if status.success() {
+        eprintln!("=== Server with no seed exited zero; expected nonzero");
+        return false;
+    }
+
+    let mut output = String::new();
+    if let Some(mut stdout) = child.stdout.take() {
+        let _ = stdout.read_to_string(&mut output);
+    }
+    if let Some(mut stderr) = child.stderr.take() {
+        let _ = stderr.read_to_string(&mut output);
+    }
+
+    if !output.contains("no seed provided") {
+        eprintln!("=== Expected 'no seed provided' error, got: {output}");
+        return false;
+    }
+
+    println!("=== Server refused to start without a seed, as expected");
+    true
+}
+
 fn test_build_mode(build_mode: &str) -> bool {
     let server_path = format!("target/{build_mode}/roughenough_server");
     let client_path = format!("target/{build_mode}/roughenough_client");
 
-    // Start the server
-    println!("=== Starting server...");
-    let mut server_process = match Command::new(server_path)
+    // A server started with neither --seed nor --insecure-zero-seed must
+    // refuse to run; verify before starting the real test server
+    if !test_seedless_server_refuses_to_start(&server_path) {
+        return false;
+    }
+
+    // Start the server. The all-zero test identity now requires the explicit
+    // opt-in flag. The port is dynamic so parallel runs cannot collide.
+    let port = pick_free_udp_port();
+    let port_str = port.to_string();
+    println!("=== Starting server on port {port}...");
+    let mut server_process = match Command::new(&server_path)
+        .args(["-p", &port_str, "--insecure-zero-seed"])
+        .env_remove("ROUGHENOUGH_SEED")
         .stdin(Stdio::null())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -79,7 +170,7 @@ fn test_build_mode(build_mode: &str) -> bool {
         // -k is the pubkey for test seed [0u8; 32]
         .args([
             "127.0.0.1",
-            "2003",
+            &port_str,
             "-n",
             "50",
             "-k",
@@ -94,7 +185,7 @@ fn test_build_mode(build_mode: &str) -> bool {
         let version_result = Command::new(&client_path)
             .args([
                 "127.0.0.1",
-                "2003",
+                &port_str,
                 "-P",
                 version_arg,
                 "-k",
@@ -128,6 +219,40 @@ fn test_build_mode(build_mode: &str) -> bool {
         }
     }
 
+    // Negative test: --set-clock without a public key must be rejected at
+    // argument parsing; an unauthenticated response must never set the clock
+    println!("=== Running client with --set-clock and no key (expecting clap error)...");
+    let set_clock_result = Command::new(&client_path)
+        .args(["127.0.0.1", &port_str, "-s"])
+        .output();
+
+    match set_clock_result {
+        Ok(output) if output.status.success() => {
+            eprintln!("=== Client with --set-clock and no key unexpectedly succeeded");
+            let _ = server_process.kill();
+            let _ = server_process.wait();
+            return false;
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if !stderr.contains("the following required arguments were not provided")
+                || !stderr.contains("--pub-key")
+            {
+                eprintln!("=== Expected clap error naming --pub-key, got: {stderr}");
+                let _ = server_process.kill();
+                let _ = server_process.wait();
+                return false;
+            }
+            println!("=== Client with --set-clock and no key was rejected, as expected");
+        }
+        Err(e) => {
+            eprintln!("=== Failed to run client: {e}");
+            let _ = server_process.kill();
+            let _ = server_process.wait();
+            return false;
+        }
+    }
+
     // Negative test: a client committing to a different long-term key sends an
     // SRV the server does not hold; RFC 5.2 requires the server to ignore the
     // request, so the client must time out
@@ -135,7 +260,7 @@ fn test_build_mode(build_mode: &str) -> bool {
     let wrong_key_result = Command::new(&client_path)
         .args([
             "127.0.0.1",
-            "2003",
+            &port_str,
             "-t",
             "1",
             "-k",
@@ -152,7 +277,21 @@ fn test_build_mode(build_mode: &str) -> bool {
             eprintln!("=== Client with wrong public key unexpectedly got a response");
             return false;
         }
-        Ok(_) => println!("=== Client with wrong public key was ignored, as expected"),
+        Ok(output) => {
+            // The specific failure mode matters: the server ignores the
+            // mismatched SRV commitment so the client must time out; a crash
+            // or any other error must not pass this test
+            let combined = format!(
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            if !combined.contains("timeout waiting for server response") {
+                eprintln!("=== Expected a server timeout, got: {combined}");
+                return false;
+            }
+            println!("=== Client with wrong public key timed out, as expected");
+        }
         Err(e) => {
             eprintln!("=== Failed to run client: {e}");
             return false;

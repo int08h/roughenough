@@ -1,13 +1,13 @@
 #![no_main]
 
-use libfuzzer_sys::fuzz_target;
 use arbitrary::{Arbitrary, Unstructured};
+use libfuzzer_sys::fuzz_target;
 use roughenough_protocol::cursor::ParseCursor;
-use roughenough_protocol::request::{Request, REQUEST_SIZE};
+use roughenough_protocol::request::{REQUEST_SIZE, Request};
 use roughenough_protocol::response::Response;
 use roughenough_protocol::tags::{
-    Certificate, Delegation, MerklePath, Nonce, PublicKey, 
-    ProtocolVersion, Signature, SignedResponse, SrvCommitment, SupportedVersions,
+    Certificate, Delegation, MerklePath, Nonce, ProtocolVersion, PublicKey, Signature,
+    SignedResponse, SrvCommitment, SupportedVersions,
 };
 use roughenough_protocol::wire::{FromWire, ToWire};
 
@@ -83,12 +83,13 @@ struct FuzzMerklePath {
 impl FuzzMerklePath {
     fn to_merkle_path(&self) -> MerklePath {
         // Limit to max 32 elements (2^5 leaves), per protocol spec
-        let limited_elements: Vec<[u8; 32]> = self.elements
+        let limited_elements: Vec<[u8; 32]> = self
+            .elements
             .iter()
             .take(MerklePath::MAX_PATHS)
             .cloned()
             .collect();
-        
+
         let mut path = MerklePath::default();
         for element in limited_elements {
             path.push_element(&element);
@@ -104,13 +105,14 @@ struct FuzzSupportedVersions {
 
 impl FuzzSupportedVersions {
     fn to_supported_versions(&self) -> SupportedVersions {
-        let versions: Vec<ProtocolVersion> = self.versions
+        let versions: Vec<ProtocolVersion> = self
+            .versions
             .iter()
             .take(roughenough_protocol::version_list::VersionList::MAX_VERSIONS) // Limit number of versions
             .map(|v| ProtocolVersion::from(v.clone()))
             .filter(|v| *v != ProtocolVersion::INVALID)
             .collect();
-        
+
         if versions.is_empty() {
             SupportedVersions::from(&[ProtocolVersion::DRAFT][..])
         } else {
@@ -150,8 +152,14 @@ impl FuzzDelegation {
     fn to_delegation(&self) -> Delegation {
         let pubk = PublicKey::from(self.public_key.clone());
         // Ensure max_time >= min_time
-        let max_time = self.min_time.saturating_add(self.max_time.saturating_sub(self.min_time));
-        Delegation::new(pubk, self.min_time, std::time::Duration::from_secs(max_time - self.min_time))
+        let max_time = self
+            .min_time
+            .saturating_add(self.max_time.saturating_sub(self.min_time));
+        Delegation::new(
+            pubk,
+            self.min_time,
+            std::time::Duration::from_secs(max_time - self.min_time),
+        )
     }
 }
 
@@ -220,20 +228,20 @@ impl FuzzResponse {
 fuzz_target!(|data: &[u8]| {
     // Try to parse the data as structured input
     let mut u = Unstructured::new(data);
-    
+
     // Fuzz Request parsing and encoding
     if let Ok(fuzz_req) = FuzzRequest::arbitrary(&mut u) {
         let request = fuzz_req.to_request();
-        
+
         // Test encoding
         let mut buffer = vec![0u8; REQUEST_SIZE];
         let mut cursor = ParseCursor::new(&mut buffer);
-        
+
         // Write frame header
         // Write ROUGHTIM magic in big-endian
         cursor.put_slice(&[0x52, 0x4f, 0x55, 0x47, 0x48, 0x54, 0x49, 0x4d]);
         cursor.put_u32_le(1012); // Fixed frame length for requests
-        
+
         // Write request
         if request.to_wire(&mut cursor).is_ok() {
             // Try to parse it back
@@ -241,11 +249,11 @@ fuzz_target!(|data: &[u8]| {
             let _ = Request::from_wire(&mut parse_cursor);
         }
     }
-    
+
     // Fuzz Delegation
     if let Ok(fuzz_dele) = FuzzDelegation::arbitrary(&mut u) {
         let delegation = fuzz_dele.to_delegation();
-        
+
         // Test round-trip
         if let Ok(encoded) = delegation.as_bytes() {
             let mut encoded_copy = encoded.clone();
@@ -253,11 +261,11 @@ fuzz_target!(|data: &[u8]| {
             let _ = Delegation::from_wire(&mut cursor);
         }
     }
-    
+
     // Fuzz SignedResponse
     if let Ok(fuzz_srep) = FuzzSignedResponse::arbitrary(&mut u) {
         let srep = fuzz_srep.to_signed_response();
-        
+
         // Test encoding
         if let Ok(encoded) = srep.as_bytes() {
             let mut encoded_copy = encoded.clone();
@@ -265,11 +273,11 @@ fuzz_target!(|data: &[u8]| {
             let _ = SignedResponse::from_wire(&mut cursor);
         }
     }
-    
+
     // Fuzz Response
     if let Ok(fuzz_resp) = FuzzResponse::arbitrary(&mut u) {
         let response = fuzz_resp.to_response();
-        
+
         // Test encoding
         if let Ok(encoded) = response.as_bytes() {
             let mut encoded_copy = encoded.clone();
@@ -277,11 +285,11 @@ fuzz_target!(|data: &[u8]| {
             let _ = Response::from_wire(&mut cursor);
         }
     }
-    
+
     // Fuzz Certificate
     if let Ok(fuzz_cert) = FuzzCertificate::arbitrary(&mut u) {
         let cert = fuzz_cert.to_certificate();
-        
+
         // Test round-trip
         if let Ok(encoded) = cert.as_bytes() {
             let mut encoded_copy = encoded.clone();

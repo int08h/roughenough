@@ -24,6 +24,9 @@ pastey = { workspace = true }
 
 [dev-dependencies]
 divan = { workspace = true }
+# self-dependency: enables test-utils (raw TLV builders) for the crate's own
+# integration tests in tests/
+roughenough-protocol = { path = ".", features = ["test-utils"] }
 
 [[bench]]
 name = "message_ops"

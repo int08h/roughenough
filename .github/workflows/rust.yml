@@ -154,6 +154,34 @@ jobs:
             exit 1
           fi
 
+  # fuzz/ is excluded from the workspace, so no other job compiles the fuzz
+  # targets; this job keeps them from bit-rotting
+  fuzz-build:
+    name: Fuzz Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: nightly
+
+      - name: Cache cargo-fuzz
+        uses: actions/cache@v6
+        with:
+          path: ~/.cargo/bin/cargo-fuzz
+          key: ${{ runner.os }}-cargo-fuzz
+
+      - name: Install cargo-fuzz
+        run: |
+          if ! command -v cargo-fuzz &> /dev/null; then
+            cargo install cargo-fuzz --locked
+          fi
+
+      - name: Build fuzz targets
+        run: cargo fuzz build
+
   build:
     runs-on: ubuntu-latest
 

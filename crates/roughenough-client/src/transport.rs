@@ -72,3 +72,52 @@ fn trace_dump(data: &[u8]) -> Result<(), ClientError> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Instant;
+
+    use super::*;
+
+    #[test]
+    fn recv_from_silent_server_is_server_timeout() {
+        // A bound socket that never answers: recv must surface the read
+        // timeout as ServerTimeout (the sole construction site of that
+        // variant) within the configured budget, not block forever
+        let silent = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let silent_addr = silent.local_addr().unwrap();
+
+        let timeout = Duration::from_millis(100);
+        let transport = UdpTransport::new(&silent_addr, timeout);
+
+        let sent = transport.send(b"anyone there?", silent_addr).unwrap();
+        assert_eq!(sent, 13);
+
+        let start = Instant::now();
+        let mut buf = [0u8; 64];
+        match transport.recv(&mut buf) {
+            Err(ClientError::ServerTimeout) => {}
+            other => panic!("expected ServerTimeout, got {other:?}"),
+        }
+        // Generous upper bound; only guards against an unbounded block
+        assert!(start.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn send_and_recv_round_trip() {
+        let echo = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let echo_addr = echo.local_addr().unwrap();
+
+        let transport = UdpTransport::new(&echo_addr, Duration::from_secs(2));
+        transport.send(b"ping", echo_addr).unwrap();
+
+        // Echo the datagram back to the transport's ephemeral port
+        let mut echo_buf = [0u8; 16];
+        let (n, from) = echo.recv_from(&mut echo_buf).unwrap();
+        echo.send_to(&echo_buf[..n], from).unwrap();
+
+        let mut buf = [0u8; 16];
+        let (n, _addr) = transport.recv(&mut buf).unwrap();
+        assert_eq!(&buf[..n], b"ping");
+    }
+}
