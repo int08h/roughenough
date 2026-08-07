@@ -4,11 +4,11 @@ use std::time::Duration;
 
 use data_encoding::BASE64;
 use roughenough_client::measurement::MeasurementBuilder;
-use roughenough_client::{CausalityViolation, MalfeasanceReport};
+use roughenough_client::{CausalityViolation, MalfeasanceReport, REPORT_MEDIA_TYPE};
 use roughenough_common::crypto::calculate_chained_nonce;
 use roughenough_protocol::ToFrame;
 use roughenough_protocol::tags::Nonce;
-use roughenough_reporting_server::storage::InMemoryStorage;
+use roughenough_reporting_server::storage::{InMemoryStorage, ReportStorage};
 use roughenough_reporting_server::{AppState, CreationResponse};
 use roughenough_server::test_utils::TestContext;
 use tokio::task::JoinHandle;
@@ -31,13 +31,15 @@ struct TestServer {
 impl TestServer {
     /// Spawn a new test server on an available port
     async fn spawn() -> Self {
+        Self::spawn_with_storage(Arc::new(InMemoryStorage::new())).await
+    }
+
+    /// Spawn a test server with specific storage (e.g. tight limits)
+    async fn spawn_with_storage(storage: Arc<dyn ReportStorage>) -> Self {
         let port = find_available_port();
         let addr: SocketAddr = ([127, 0, 0, 1], port).into();
 
-        // Create the app state with in-memory storage
-        let state = AppState {
-            storage: Arc::new(InMemoryStorage::new()),
-        };
+        let state = AppState { storage };
 
         // Build the actual server router (no reimplementation!)
         let app = roughenough_reporting_server::create_app(state);
@@ -74,53 +76,54 @@ impl Drop for TestServer {
     }
 }
 
-/// Create a test malfeasance report with proper chaining
-fn create_test_malfeasance_report() -> MalfeasanceReport {
-    let mut ctx1 = TestContext::new(1);
-    let mut ctx2 = TestContext::new(1);
-    let current_time = ctx2.clock.epoch_seconds();
+/// Create a chained report from midpoints in received order. Measurement 0
+/// uses a fixed nonce; each later measurement's nonce is
+/// H(prior_response || rand). `first_rand` optionally attaches a
+/// (meaningless) rand to the first entry.
+fn create_chained_report(midpoints: &[u64], first_rand: Option<[u8; 32]>) -> MalfeasanceReport {
+    let mut prior_response: Option<Vec<u8>> = None;
+    let mut measurements = Vec::new();
 
-    let nonce1 = Nonce::from([0x11u8; 32]);
-    // First measurement (measurement_i) will have a later time
-    let (request1, response1) =
-        ctx1.create_interaction_pair_with_nonce(current_time + 2_000_000, &nonce1);
+    for (i, &midpoint) in midpoints.iter().enumerate() {
+        // one context per exchange; all contexts share a seed, so the
+        // measurements present one server identity
+        let mut ctx = TestContext::new(1);
 
-    let response1_bytes = response1.as_frame_bytes().unwrap();
-    let rand_value = [0x22u8; 32];
-    let nonce2 = calculate_chained_nonce(&response1_bytes, &rand_value);
+        let (nonce, rand_value) = match prior_response.as_deref() {
+            Some(prior) => {
+                let rand = [0x22u8 + i as u8; 32];
+                (calculate_chained_nonce(prior, &rand), Some(rand))
+            }
+            None => (Nonce::from([0x11u8; 32]), first_rand),
+        };
 
-    // Second measurement (measurement_j) uses the earlier time - this creates the causality violation
-    let (request2, response2) = ctx2.create_interaction_pair_with_nonce(current_time, &nonce2);
+        let (request, response) = ctx.create_interaction_pair_with_nonce(midpoint, &nonce);
+        let response_bytes = response.as_frame_bytes().unwrap();
 
-    // Get the public key from the long-term key (ctx1 and ctx2 have same seed, so same pubkey)
-    let public_key = ctx2.key_source.public_key();
+        let measurement = MeasurementBuilder::new()
+            .server("127.0.0.1:8080".parse().unwrap())
+            .hostname("test-server".to_string())
+            .public_key(Some(ctx.key_source.public_key()))
+            .request(request)
+            .response(response)
+            .response_bytes(response_bytes.clone())
+            .rand_value(rand_value)
+            .build()
+            .unwrap();
 
-    let measurement1 = MeasurementBuilder::new()
-        .server("127.0.0.1:8080".parse().unwrap())
-        .hostname("test-server".to_string())
-        .public_key(Some(public_key))
-        .request(request1)
-        .response(response1)
-        .response_bytes(response1_bytes)
-        .rand_value(None)
-        .build()
-        .unwrap();
+        prior_response = Some(response_bytes);
+        measurements.push(measurement);
+    }
 
-    let measurement2 = MeasurementBuilder::new()
-        .server("127.0.0.1:8080".parse().unwrap())
-        .hostname("test-server".to_string())
-        .public_key(Some(public_key))
-        .request(request2)
-        .response(response2.clone())
-        .response_bytes(response2.as_frame_bytes().unwrap())
-        .rand_value(Some(rand_value))
-        .build()
-        .unwrap();
-
-    // Create the report - the order in CausalityViolation affects the report order
-    // We need measurement1 first, measurement2 second
-    let violation = CausalityViolation::new(measurement1, measurement2);
+    let violation = CausalityViolation::new(&measurements, 0, measurements.len() - 1);
     MalfeasanceReport::from_violation(&violation)
+}
+
+/// Create a test malfeasance report with proper chaining: the first
+/// measurement claims a time far ahead of the second
+fn create_test_malfeasance_report() -> MalfeasanceReport {
+    let current_time = TestContext::new(1).clock.epoch_seconds();
+    create_chained_report(&[current_time + 2_000_000, current_time], None)
 }
 
 #[tokio::test]
@@ -350,4 +353,168 @@ async fn test_multiple_reports_storage() {
 
         assert_eq!(response.status(), 200);
     }
+}
+
+#[tokio::test]
+async fn test_chained_report_without_violation_rejected() {
+    let server = TestServer::spawn().await;
+    let client = reqwest::Client::new();
+
+    // Correctly chained, causally consistent times: no malfeasance shown
+    let current_time = TestContext::new(1).clock.epoch_seconds();
+    let report = create_chained_report(&[current_time, current_time + 1_000], None);
+
+    let response = client
+        .post(format!("{}/api/v1/reports", server.base_url()))
+        .json(&report)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 400);
+    let body = response.text().await.unwrap();
+    assert!(
+        body.contains("no causality violation demonstrated"),
+        "unexpected error body: {body}"
+    );
+}
+
+#[tokio::test]
+async fn test_first_entry_with_rand_accepted() {
+    let server = TestServer::spawn().await;
+    let client = reqwest::Client::new();
+
+    // RFC 8.4.1: rand MAY be omitted from the first entry; carrying one is
+    // not an error
+    let current_time = TestContext::new(1).clock.epoch_seconds();
+    let report = create_chained_report(
+        &[current_time + 2_000_000, current_time],
+        Some([0x77u8; 32]),
+    );
+
+    let response = client
+        .post(format!("{}/api/v1/reports", server.base_url()))
+        .json(&report)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 201);
+}
+
+#[tokio::test]
+async fn test_storage_cap_returns_503() {
+    let storage = Arc::new(InMemoryStorage::with_limits(
+        2,
+        100,
+        Duration::from_secs(60),
+    ));
+    let server = TestServer::spawn_with_storage(storage).await;
+    let client = reqwest::Client::new();
+
+    for _ in 0..2 {
+        let response = client
+            .post(format!("{}/api/v1/reports", server.base_url()))
+            .json(&create_test_malfeasance_report())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 201);
+    }
+
+    // cap+1: the store is full and rejects rather than evicting
+    let response = client
+        .post(format!("{}/api/v1/reports", server.base_url()))
+        .json(&create_test_malfeasance_report())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 503);
+}
+
+#[tokio::test]
+async fn test_rate_limit_returns_429() {
+    let storage = Arc::new(InMemoryStorage::with_limits(
+        100,
+        2,
+        Duration::from_secs(3600),
+    ));
+    let server = TestServer::spawn_with_storage(storage).await;
+    let client = reqwest::Client::new();
+
+    for _ in 0..2 {
+        let response = client
+            .post(format!("{}/api/v1/reports", server.base_url()))
+            .json(&create_test_malfeasance_report())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 201);
+    }
+
+    // A burst from one source trips the fixed-window limit. Cross-source
+    // isolation is covered by the storage unit tests: over loopback HTTP
+    // every request shares the same source IP.
+    let response = client
+        .post(format!("{}/api/v1/reports", server.base_url()))
+        .json(&create_test_malfeasance_report())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 429);
+}
+
+#[tokio::test]
+async fn test_registered_media_type_accepted() {
+    let server = TestServer::spawn().await;
+    let client = reqwest::Client::new();
+    let body = serde_json::to_vec(&create_test_malfeasance_report()).unwrap();
+
+    // RFC 8.4.1 registered media type
+    let response = client
+        .post(format!("{}/api/v1/reports", server.base_url()))
+        .header("content-type", REPORT_MEDIA_TYPE)
+        .body(body)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 201);
+}
+
+#[tokio::test]
+async fn test_plain_json_media_type_accepted() {
+    let server = TestServer::spawn().await;
+    let client = reqwest::Client::new();
+    let body = serde_json::to_vec(&create_test_malfeasance_report()).unwrap();
+
+    // application/json remains accepted for compatibility
+    let response = client
+        .post(format!("{}/api/v1/reports", server.base_url()))
+        .header("content-type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 201);
+}
+
+#[tokio::test]
+async fn test_oversized_body_rejected() {
+    let server = TestServer::spawn().await;
+    let client = reqwest::Client::new();
+
+    // Larger than MAX_REPORT_BODY_BYTES; must be refused before JSON parsing
+    let body = vec![b'x'; roughenough_reporting_server::MAX_REPORT_BODY_BYTES + 1];
+
+    let response = client
+        .post(format!("{}/api/v1/reports", server.base_url()))
+        .header("content-type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 413);
 }

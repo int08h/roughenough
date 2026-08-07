@@ -11,6 +11,9 @@ use tracing::info;
 use crate::CausalityViolation;
 use crate::measurement::Measurement;
 
+/// Media type registered for malfeasance reports (RFC 8.4.1 / 12.4.2)
+pub const REPORT_MEDIA_TYPE: &str = "application/roughtime-malfeasance+json";
+
 /// Errors that can occur during malfeasance reporting
 #[derive(thiserror::Error, Debug)]
 pub enum ReportingError {
@@ -92,12 +95,17 @@ impl MalfeasanceReport {
 
     /// Extracts the chain of measurements that demonstrates the violation and formats
     /// them according to the RFC specification. Use `submit()` to send them to a server.
+    ///
+    /// The report carries the violation's full measurement chain, in the order
+    /// performed (RFC 8.4.1): the verifier recomputes each nonce as
+    /// `H(prior_response || rand)`, so every measurement from the first through the
+    /// later of the violating pair must be present. The first entry's nonce was not
+    /// chained and carries no `rand`.
     pub fn from_violation(violation: &CausalityViolation) -> Self {
-        let measurements = [&violation.measurement_i, &violation.measurement_j];
-
-        let responses: Vec<ReportEntry> = measurements
+        let responses: Vec<ReportEntry> = violation
+            .chain()
             .iter()
-            .map(|&m| ReportEntry::from_measurement(m))
+            .map(ReportEntry::from_measurement)
             .collect();
 
         MalfeasanceReport { responses }
@@ -109,7 +117,7 @@ impl MalfeasanceReport {
         info!("Sending malfeasance report to {url}");
 
         match ureq::post(url)
-            .content_type("application/json")
+            .content_type(REPORT_MEDIA_TYPE)
             .send_json(self)
         {
             Ok(_response) => {
@@ -197,7 +205,7 @@ mod tests {
         let m1 = create_test_measurement(2000, 100);
         let m2 = create_test_measurement(1000, 100);
 
-        let violation = CausalityViolation::new(m1, m2);
+        let violation = CausalityViolation::new(&[m1, m2], 0, 1);
         let report = MalfeasanceReport::from_violation(&violation);
 
         let json = serde_json::to_string_pretty(&report).unwrap();
@@ -210,5 +218,140 @@ mod tests {
 
         // Verify it's valid JSON
         let _parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+    }
+
+    /// Build a properly chained measurement sequence: measurement 0 uses a
+    /// random nonce; each later measurement's nonce is
+    /// H(prior_response || rand) exactly as MeasurementSequence derives it.
+    fn create_chained_measurements(midpoints: &[u64]) -> Vec<Measurement> {
+        use roughenough_common::crypto::{calculate_chained_nonce, random_bytes};
+        use roughenough_protocol::tags::Nonce;
+        use roughenough_server::test_utils::TestContext;
+
+        let mut prior_response: Option<Vec<u8>> = None;
+        let mut measurements = Vec::new();
+
+        for &midpoint in midpoints {
+            // one context per exchange; all contexts share a seed, so the
+            // measurements present one server identity
+            let mut ctx = TestContext::new(1);
+
+            let (nonce, rand_value) = match prior_response.as_deref() {
+                Some(prior) => {
+                    let rand = random_bytes::<32>();
+                    (calculate_chained_nonce(prior, &rand), Some(rand))
+                }
+                None => (Nonce::from(random_bytes::<32>()), None),
+            };
+
+            let (request, response) = ctx.create_interaction_pair_with_nonce(midpoint, &nonce);
+            let response_bytes = response.as_frame_bytes().unwrap();
+
+            let measurement = Measurement::builder()
+                .server("127.0.0.1:2003".parse().unwrap())
+                .hostname("test".to_string())
+                .public_key(Some(ctx.key_source.public_key()))
+                .request(request)
+                .response(response)
+                .response_bytes(response_bytes.clone())
+                .rand_value(rand_value)
+                .build()
+                .unwrap();
+
+            prior_response = Some(response_bytes);
+            measurements.push(measurement);
+        }
+
+        measurements
+    }
+
+    #[test]
+    fn violation_between_first_and_third_reports_full_chain() {
+        use roughenough_server::test_utils::TestContext;
+
+        let base = TestContext::new(1).clock.epoch_seconds();
+        // measurement 0 claims a time far ahead of measurement 2
+        let measurements = create_chained_measurements(&[base + 2_000_000, base + 1_000_000, base]);
+
+        let violation = CausalityViolation::new(&measurements, 0, 2);
+        let report = MalfeasanceReport::from_violation(&violation);
+
+        // All three measurements appear, in the order performed
+        assert_eq!(report.responses().len(), 3);
+        for (entry, m) in report.responses().iter().zip(&measurements) {
+            let request_bytes = m.request().as_frame_bytes().unwrap();
+            assert_eq!(entry.request(), BASE64.encode(&request_bytes));
+            assert_eq!(entry.response(), BASE64.encode(m.response_bytes()));
+        }
+
+        // First entry's nonce was unchained: no rand. Later entries carry the
+        // rand used to derive their nonce from the previous response.
+        assert!(report.responses()[0].rand().is_none());
+        for (entry, m) in report.responses().iter().zip(&measurements).skip(1) {
+            let expected = BASE64.encode(m.rand_value().unwrap());
+            assert_eq!(entry.rand().unwrap(), expected);
+        }
+    }
+
+    #[cfg(feature = "reporting")]
+    #[test]
+    fn submit_sends_registered_media_type() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        use crate::reporting::REPORT_MEDIA_TYPE;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // Minimal HTTP endpoint: capture the request head, drain the body so
+        // the client's write completes, then answer 200
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = Vec::new();
+            let mut chunk = [0u8; 4096];
+
+            let head_end = loop {
+                let n = stream.read(&mut chunk).unwrap();
+                buf.extend_from_slice(&chunk[..n]);
+                if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                    break pos + 4;
+                }
+                assert!(n > 0, "connection closed before headers completed");
+            };
+
+            let head = String::from_utf8_lossy(&buf[..head_end]).to_lowercase();
+            let content_length: usize = head
+                .lines()
+                .find_map(|line| line.strip_prefix("content-length:"))
+                .expect("request must declare content-length")
+                .trim()
+                .parse()
+                .unwrap();
+
+            while buf.len() < head_end + content_length {
+                let n = stream.read(&mut chunk).unwrap();
+                assert!(n > 0, "connection closed before body completed");
+                buf.extend_from_slice(&chunk[..n]);
+            }
+
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n")
+                .unwrap();
+            head
+        });
+
+        let m1 = create_test_measurement(2000, 100);
+        let m2 = create_test_measurement(1000, 100);
+        let violation = CausalityViolation::new(&[m1, m2], 0, 1);
+        let report = MalfeasanceReport::from_violation(&violation);
+
+        report.submit(&format!("http://{addr}/reports")).unwrap();
+
+        let head = handle.join().unwrap();
+        assert!(
+            head.contains(&format!("content-type: {REPORT_MEDIA_TYPE}")),
+            "request head lacks the registered media type: {head}"
+        );
     }
 }

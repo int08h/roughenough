@@ -7,11 +7,11 @@
 use aws_lc_rs::signature;
 use aws_lc_rs::signature::UnparsedPublicKey;
 use data_encoding::HEXLOWER;
-use roughenough_merkle::MerkleTree;
+use roughenough_merkle::root_from_paths;
 use roughenough_protocol::header::find_value_range;
 use roughenough_protocol::response::Response;
 use roughenough_protocol::tag::Tag;
-use roughenough_protocol::tags::PublicKey;
+use roughenough_protocol::tags::{ProtocolVersion, PublicKey};
 use roughenough_protocol::wire::FRAME_OVERHEAD;
 
 use crate::measurement::Measurement;
@@ -32,35 +32,73 @@ pub enum ValidationError {
     InvalidMessage(#[from] roughenough_protocol::error::Error),
 }
 
-/// An instance of causality constraints being violated. For this pair of responses `(i, j)`
-/// where `i` was received before `j`, the lower bound (`MIDP_i - RADI_i`) is greater than the
-/// upper bound (`MIDP_j + RADI_j`).
+/// An instance of causality constraints being violated. For the pair of measurements
+/// `(i, j)` where `i` was received before `j`, the lower bound (`MIDP_i - RADI_i`) is
+/// greater than the upper bound (`MIDP_j + RADI_j`).
+///
+/// Carries the full measurement chain from the first measurement through `j`: a
+/// malfeasance report must reproduce the contiguous nonce chain (RFC 8.4.1), since the
+/// verifier recomputes each nonce as `H(prior_response || rand)`. Dropping measurements
+/// before or between the violating pair would break that recomputation.
 #[derive(Debug)]
 pub struct CausalityViolation {
-    pub measurement_i: Measurement,
-    pub measurement_j: Measurement,
-    pub lower_bound_i: u64,
-    pub upper_bound_j: u64,
+    chain: Vec<Measurement>,
+    index_i: usize,
+    index_j: usize,
+    lower_bound_i: u64,
+    upper_bound_j: u64,
 }
 
-// TODO(stuart) right now CausalityViolation only supports two measurements. It needs to be
-// extended to support arbitrary number of measurements, and somehow capture/note the relationship
-// between the measurements and the violation.
 impl CausalityViolation {
-    pub fn new(measurement_i: Measurement, measurement_j: Measurement) -> Self {
-        let lower_bound_i = measurement_i.midpoint() - measurement_i.radius() as u64;
-        let upper_bound_j = measurement_j.midpoint() + measurement_j.radius() as u64;
-        assert!(
-            lower_bound_i > upper_bound_j,
-            "(MIDP_i - RADI_i > MIDP_j + RADI_j) does not hold"
-        );
+    // MIDP and RADI are wire-derived, so the bounds saturate and the
+    // constructor must not assert on them
+    pub fn new(measurements: &[Measurement], index_i: usize, index_j: usize) -> Self {
+        let chain = measurements[..=index_i.max(index_j)].to_vec();
+        let lower_bound_i = chain[index_i].lower_bound();
+        let upper_bound_j = chain[index_j].upper_bound();
 
         Self {
-            measurement_i,
-            measurement_j,
+            chain,
+            index_i,
+            index_j,
             lower_bound_i,
             upper_bound_j,
         }
+    }
+
+    /// Measurements 0 through `max(i, j)` inclusive, in the order performed
+    pub fn chain(&self) -> &[Measurement] {
+        &self.chain
+    }
+
+    /// Index of the earlier measurement of the violating pair
+    pub fn index_i(&self) -> usize {
+        self.index_i
+    }
+
+    /// Index of the later measurement of the violating pair
+    pub fn index_j(&self) -> usize {
+        self.index_j
+    }
+
+    /// The earlier measurement of the violating pair
+    pub fn measurement_i(&self) -> &Measurement {
+        &self.chain[self.index_i]
+    }
+
+    /// The later measurement of the violating pair
+    pub fn measurement_j(&self) -> &Measurement {
+        &self.chain[self.index_j]
+    }
+
+    /// `MIDP_i - RADI_i` (saturating)
+    pub fn lower_bound_i(&self) -> u64 {
+        self.lower_bound_i
+    }
+
+    /// `MIDP_j + RADI_j` (saturating)
+    pub fn upper_bound_j(&self) -> u64 {
+        self.upper_bound_j
     }
 }
 
@@ -92,6 +130,13 @@ impl ResponseValidator {
     /// Validate a response. Validity of a response does not prove that the timestamp's value in
     /// the response is correct, but merely that the server represents it signed the timestamp
     /// and computed its signature during the time interval (MIDP-RADI, MIDP+RADI).
+    ///
+    /// A validator constructed without a public key ([`ResponseValidator::new`]) does NOT
+    /// authenticate the response: the long-term-key check on CERT's DELE signature is
+    /// skipped, and the SREP signature is verified against the PUBK the response itself
+    /// carries -- a self-signed chain any party can produce. Only the midpoint bounds
+    /// (MINT <= MIDP <= MAXT) and the Merkle proof of request inclusion are meaningfully
+    /// checked in that mode; success must not be presented as "validated".
     ///
     /// `response_bytes` is the response packet exactly as received (including the
     /// "ROUGHTIM" framing): signatures are verified over the received bytes, which
@@ -127,8 +172,13 @@ impl ResponseValidator {
         Ok(midpoint)
     }
 
-    /// Slice the value of nested `path` tags out of the received response packet
-    fn received_value(response_bytes: &[u8], path: &[Tag]) -> Result<Vec<u8>, ValidationError> {
+    /// Slice the value of nested `path` tags out of the received response
+    /// packet. Borrowed, not copied: signature checks read the received bytes
+    /// in place.
+    fn received_value<'a>(
+        response_bytes: &'a [u8],
+        path: &[Tag],
+    ) -> Result<&'a [u8], ValidationError> {
         if response_bytes.len() < FRAME_OVERHEAD {
             return Err(ValidationError::BadSignature(format!(
                 "response packet too short: {} bytes",
@@ -136,9 +186,9 @@ impl ResponseValidator {
             )));
         }
 
-        let mut msg = response_bytes[FRAME_OVERHEAD..].to_vec();
-        let range = find_value_range(&mut msg, path)?;
-        Ok(msg[range].to_vec())
+        let msg = &response_bytes[FRAME_OVERHEAD..];
+        let range = find_value_range(msg, path)?;
+        Ok(&msg[range])
     }
 
     fn check_dele_signature(
@@ -147,11 +197,11 @@ impl ResponseValidator {
         response: &Response,
     ) -> Result<(), ValidationError> {
         let dele_bytes = Self::received_value(response_bytes, &[Tag::CERT, Tag::DELE])?;
-        let prefix = response.srep().ver().dele_prefix();
+        let prefix = ProtocolVersion::DELE_PREFIX;
 
         let mut to_verify = Vec::with_capacity(prefix.len() + dele_bytes.len());
         to_verify.extend_from_slice(prefix);
-        to_verify.extend_from_slice(&dele_bytes);
+        to_verify.extend_from_slice(dele_bytes);
 
         let signature = response.cert().sig();
 
@@ -169,11 +219,11 @@ impl ResponseValidator {
         response: &Response,
     ) -> Result<(), ValidationError> {
         let srep_bytes = Self::received_value(response_bytes, &[Tag::SREP])?;
-        let prefix = response.srep().ver().srep_prefix();
+        let prefix = ProtocolVersion::SREP_PREFIX;
 
         let mut to_verify = Vec::with_capacity(prefix.len() + srep_bytes.len());
         to_verify.extend_from_slice(prefix);
-        to_verify.extend_from_slice(&srep_bytes);
+        to_verify.extend_from_slice(srep_bytes);
 
         let dele = response.cert().dele();
         let pubk = UnparsedPublicKey::new(&signature::ED25519, dele.pubk().as_ref());
@@ -199,8 +249,7 @@ impl ResponseValidator {
         let merkle_path = response.path();
         let index = response.indx() as usize;
 
-        let tree = MerkleTree::new();
-        let Some(computed_root) = tree.root_from_paths(index, request, merkle_path) else {
+        let Some(computed_root) = root_from_paths(index, request, merkle_path) else {
             let msg = format!(
                 "INDX {index} has nonzero bits beyond the PATH length {}",
                 merkle_path.depth()
@@ -251,14 +300,11 @@ impl ResponseValidator {
 
         for i in 0..measurements.len() {
             for j in (i + 1)..measurements.len() {
-                let lower_bound_i = measurements[i].midpoint() - measurements[i].radius() as u64;
-                let upper_bound_j = measurements[j].midpoint() + measurements[j].radius() as u64;
+                let lower_bound_i = measurements[i].lower_bound();
+                let upper_bound_j = measurements[j].upper_bound();
 
                 if lower_bound_i > upper_bound_j {
-                    violations.push(CausalityViolation::new(
-                        measurements[i].clone(),
-                        measurements[j].clone(),
-                    ));
+                    violations.push(CausalityViolation::new(measurements, i, j));
                 }
             }
         }
@@ -327,10 +373,8 @@ mod tests {
 
         // Corrupt the last byte of the DELE value (high byte of MAXT) in the
         // received bytes; the message still parses but the signature is broken
-        let dele_range = {
-            let mut msg = response_bytes[FRAME_OVERHEAD..].to_vec();
-            find_value_range(&mut msg, &[Tag::CERT, Tag::DELE]).unwrap()
-        };
+        let dele_range =
+            find_value_range(&response_bytes[FRAME_OVERHEAD..], &[Tag::CERT, Tag::DELE]).unwrap();
         response_bytes[FRAME_OVERHEAD + dele_range.end - 1] ^= 0xff;
 
         let mut parse_buf = response_bytes.clone();
@@ -359,10 +403,7 @@ mod tests {
         let mut response_bytes = response.as_frame_bytes().unwrap();
 
         // Corrupt the last byte of the SREP value (part of ROOT) in the received bytes
-        let srep_range = {
-            let mut msg = response_bytes[FRAME_OVERHEAD..].to_vec();
-            find_value_range(&mut msg, &[Tag::SREP]).unwrap()
-        };
+        let srep_range = find_value_range(&response_bytes[FRAME_OVERHEAD..], &[Tag::SREP]).unwrap();
         response_bytes[FRAME_OVERHEAD + srep_range.end - 1] ^= 0xff;
 
         let validator = ResponseValidator::new();
@@ -498,7 +539,7 @@ mod tests {
         dele.set_maxt(u64::MAX);
         let dele_bytes = insert_tag(&to_bytes(&dele), *b"GREZ", &[0xcc; 4]);
 
-        let mut to_sign = ProtocolVersion::DRAFT.dele_prefix().to_vec();
+        let mut to_sign = ProtocolVersion::DELE_PREFIX.to_vec();
         to_sign.extend_from_slice(&dele_bytes);
         let dele_sig = longterm.sign(&to_sign);
 
@@ -516,7 +557,7 @@ mod tests {
         srep.set_root(&MerkleRoot::from(root));
         let srep_bytes = insert_tag(&to_bytes(&srep), *b"GREZ", &[0xdd; 8]);
 
-        let mut to_sign = ProtocolVersion::DRAFT.srep_prefix().to_vec();
+        let mut to_sign = ProtocolVersion::SREP_PREFIX.to_vec();
         to_sign.extend_from_slice(&srep_bytes);
         let srep_sig = online.sign(&to_sign);
 
@@ -603,6 +644,56 @@ mod causality {
             .unwrap()
     }
 
+    /// Measurement carrying arbitrary (possibly hostile) MIDP and RADI values.
+    /// The srep is mutated after the exchange so extreme values never reach the
+    /// test server's clock.
+    fn create_hostile_measurement(midpoint: u64, radius: u32) -> Measurement {
+        use roughenough_protocol::ToFrame;
+
+        let mut test_context = TestContext::new(64);
+        let (req, mut resp) = test_context.create_interaction_pair(1000);
+
+        let mut srep = resp.srep().clone();
+        srep.set_midp(midpoint);
+        srep.set_radi(radius);
+        resp.set_srep(srep);
+
+        let resp_bytes = resp.as_frame_bytes().unwrap();
+        let pubkey = PublicKey::from(test_context.key_source.public_key_bytes());
+
+        Measurement::builder()
+            .server("127.0.0.1:8000".parse().unwrap())
+            .request(req)
+            .response(resp)
+            .response_bytes(resp_bytes)
+            .hostname("testing1234".to_string())
+            .public_key(Some(pubkey))
+            .rand_value(None)
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn midpoint_smaller_than_radius_saturates_and_is_not_a_violation() {
+        // MIDP < RADI must saturate to zero; wrapping would produce a bound of
+        // ~1.8e19 and flag (and with --report, falsely report) an honest server
+        let hostile = create_hostile_measurement(10, 100);
+        assert_eq!(hostile.lower_bound(), 0);
+
+        let normal = create_measurement(1000);
+        let violations = ResponseValidator::validate_causality(&[hostile, normal]);
+        assert!(
+            violations.is_empty(),
+            "saturated lower bound must not flag a violation against an honest server"
+        );
+    }
+
+    #[test]
+    fn midpoint_near_u64_max_saturates() {
+        let hostile = create_hostile_measurement(u64::MAX - 1, 100);
+        assert_eq!(hostile.upper_bound(), u64::MAX);
+    }
+
     #[test]
     fn empty() {
         let measurements = vec![];
@@ -659,8 +750,10 @@ mod causality {
         assert_eq!(violations.len(), 1, "Should have exactly one violation");
 
         let v = &violations[0];
-        assert_eq!(v.lower_bound_i, 1995);
-        assert_eq!(v.upper_bound_j, 1005);
+        assert_eq!(v.lower_bound_i(), 1995);
+        assert_eq!(v.upper_bound_j(), 1005);
+        assert_eq!((v.index_i(), v.index_j()), (0, 1));
+        assert_eq!(v.chain().len(), 2, "chain covers measurements 0..=j");
     }
 
     #[test]
@@ -681,12 +774,14 @@ mod causality {
         assert_eq!(violations.len(), 2, "Should have exactly two violations");
 
         // Check first violation (0,1)
-        assert_eq!(violations[0].lower_bound_i, 2995);
-        assert_eq!(violations[0].upper_bound_j, 1005);
+        assert_eq!(violations[0].lower_bound_i(), 2995);
+        assert_eq!(violations[0].upper_bound_j(), 1005);
+        assert_eq!(violations[0].chain().len(), 2);
 
         // Check second violation (0,2)
-        assert_eq!(violations[1].lower_bound_i, 2995);
-        assert_eq!(violations[1].upper_bound_j, 1010);
+        assert_eq!(violations[1].lower_bound_i(), 2995);
+        assert_eq!(violations[1].upper_bound_j(), 1010);
+        assert_eq!(violations[1].chain().len(), 3);
     }
 
     #[test]
