@@ -216,8 +216,11 @@ impl ToWire for Response {
     }
 
     fn to_wire(&self, cursor: &mut ParseCursor) -> Result<(), Error> {
-        if cursor.capacity() < self.wire_size() {
-            return Err(BufferTooSmall(self.wire_size(), cursor.capacity()));
+        // remaining(), not capacity(): to_frame has already written 12 bytes
+        // of framing into the same cursor, so the whole-buffer capacity
+        // overstates the space left for the message
+        if cursor.remaining() < self.wire_size() {
+            return Err(BufferTooSmall(self.wire_size(), cursor.remaining()));
         }
 
         self.header.to_wire(cursor)?;
@@ -417,6 +420,139 @@ mod tests {
         );
         assert_eq!(dele.mint(), 0);
         assert_eq!(dele.maxt(), u64::MAX);
+    }
+
+    /// Deterministic response with every field patterned, used by the golden
+    /// byte-identity test below.
+    fn build_golden_response() -> Response {
+        use crate::tags::{Certificate, Delegation, MerkleRoot, Nonce, PublicKey, Signature};
+
+        let path_bytes: Vec<u8> = (0..2 * 32).map(|i| i as u8).collect();
+        let path = MerklePath::try_from(path_bytes.as_slice()).unwrap();
+
+        let mut srep = SignedResponse::default();
+        srep.set_ver(ProtocolVersion::DRAFT);
+        srep.set_radi(5);
+        srep.set_midp(0x1122334455667788);
+        srep.set_vers(&SupportedVersions::new(&[
+            ProtocolVersion::RFC,
+            ProtocolVersion::DRAFT,
+        ]));
+        srep.set_root(&MerkleRoot::from([0xcd; 32]));
+
+        let mut dele = Delegation::default();
+        dele.set_pubk(PublicKey::from([0x11; 32]));
+        dele.set_mint(0x0102030405060708);
+        dele.set_maxt(0x1112131415161718);
+        let cert = Certificate::new(Signature::from([0x22; 64]), dele);
+
+        let mut response = Response::default();
+        response.set_sig(Signature::from([0x33; 64]));
+        response.set_nonc(Nonce::from([0x44; 32]));
+        response.set_path(path);
+        response.set_srep(srep);
+        response.set_cert(cert);
+        response.set_indx(7);
+        response
+    }
+
+    #[test]
+    fn golden_response_wire_bytes() {
+        // Byte-identity gate for response serialization refactors: the frame
+        // must match the fixture generated before the Phase 8 refactors
+        use crate::wire::ToFrame;
+
+        let expected: &[u8] = include_bytes!("../testdata/golden-response.phase8");
+        let framed = build_golden_response().as_frame_bytes().unwrap();
+        assert_eq!(framed, expected, "response wire bytes changed");
+    }
+
+    #[test]
+    fn max_path_response_fits_in_max_response_size() {
+        // RFC 5.2.4 allows up to 32 PATH elements; the client's receive buffer
+        // (MAX_RESPONSE_SIZE) must hold a full frame carrying all of them
+        use crate::request::MAX_RESPONSE_SIZE;
+        use crate::tags::MerkleRoot;
+        use crate::wire::ToFrame;
+
+        let path_bytes = [0xab_u8; MerklePath::MAX_PATHS * MerklePath::ELEMENT_SIZE];
+        let path = MerklePath::try_from(path_bytes.as_slice()).unwrap();
+
+        let mut srep = SignedResponse::default();
+        srep.set_ver(ProtocolVersion::DRAFT);
+        srep.set_radi(5);
+        srep.set_midp(1748359193);
+        srep.set_vers(&SupportedVersions::new(&[ProtocolVersion::DRAFT]));
+        srep.set_root(&MerkleRoot::from([0xcd_u8; 32]));
+
+        let mut response = Response::default();
+        response.set_path(path);
+        response.set_srep(srep);
+        response.set_indx(31);
+
+        let mut framed = response.as_frame_bytes().unwrap();
+        assert_eq!(framed.len(), response.frame_size());
+        assert!(
+            framed.len() <= MAX_RESPONSE_SIZE,
+            "frame is {} bytes, exceeds MAX_RESPONSE_SIZE {}",
+            framed.len(),
+            MAX_RESPONSE_SIZE
+        );
+
+        let mut cursor = ParseCursor::new(&mut framed);
+        let decoded = Response::from_frame(&mut cursor).unwrap();
+        assert_eq!(decoded, response);
+    }
+
+    /// Response whose wire size is controlled by PATH element and VERS entry
+    /// counts; other fields keep their fixed default sizes.
+    fn build_sized_response(path_elements: usize, vers_entries: usize) -> Response {
+        let path_bytes = vec![0xab_u8; path_elements * 32];
+        let path = MerklePath::try_from(path_bytes.as_slice()).unwrap();
+
+        let versions = vec![ProtocolVersion::DRAFT; vers_entries];
+        let mut srep = SignedResponse::default();
+        srep.set_vers(&SupportedVersions::new(&versions));
+
+        let mut response = Response::default();
+        response.set_path(path);
+        response.set_srep(srep);
+        response
+    }
+
+    #[test]
+    fn to_frame_near_buffer_end_errors_instead_of_panicking() {
+        use crate::error::Error;
+        use crate::wire::{FRAME_OVERHEAD, ToFrame, ToWire};
+
+        // 19 PATH elements + 2-entry VERS: wire_size (1016) fits a 1024-byte
+        // buffer, but after 12 bytes of framing only 1012 bytes remain. The
+        // old whole-buffer capacity guard passed and the inner writes panicked
+        // out of bounds.
+        let response = build_sized_response(19, 2);
+        assert_eq!(response.wire_size(), 1016);
+
+        let mut buf = [0u8; 1024];
+        let mut cursor = ParseCursor::new(&mut buf);
+        let result = response.to_frame(&mut cursor);
+        assert!(matches!(result, Err(Error::BufferTooSmall(_, _))));
+
+        // Sweep the boundary: every buffer from wire_size up to one byte short
+        // of frame_size must return an error, never panic
+        let wire_size = response.wire_size();
+        for buf_len in wire_size..wire_size + FRAME_OVERHEAD {
+            let mut buf = vec![0u8; buf_len];
+            let mut cursor = ParseCursor::new(&mut buf);
+            assert!(
+                response.to_frame(&mut cursor).is_err(),
+                "buffer of {buf_len} bytes must be too small"
+            );
+        }
+
+        // Exactly frame_size succeeds
+        let mut buf = vec![0u8; wire_size + FRAME_OVERHEAD];
+        let mut cursor = ParseCursor::new(&mut buf);
+        response.to_frame(&mut cursor).unwrap();
     }
 
     #[test]

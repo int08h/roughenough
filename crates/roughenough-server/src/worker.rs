@@ -1,6 +1,6 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
-use std::sync::mpsc::SyncSender;
+use std::sync::mpsc::{Sender, SyncSender};
 use std::time::Duration;
 
 use mio::net::UdpSocket as MioUdpSocket;
@@ -19,6 +19,32 @@ use crate::responses::ResponseHandler;
 /// Batches processed per wakeup before deadlines and the shutdown flag are re-checked.
 const MAX_BATCHES_PER_WAKEUP: usize = 8;
 
+/// Reports a worker thread's exit to the main thread. Held for the lifetime
+/// of the worker closure so `Drop` runs on normal return AND panic unwind:
+/// without it a panicked worker would leave the server silently serving at
+/// reduced capacity.
+pub struct ExitGuard {
+    worker_id: usize,
+    exit_channel: Sender<usize>,
+}
+
+impl ExitGuard {
+    pub fn new(worker_id: usize, exit_channel: Sender<usize>) -> Self {
+        Self {
+            worker_id,
+            exit_channel,
+        }
+    }
+}
+
+impl Drop for ExitGuard {
+    fn drop(&mut self) {
+        // The receiver disappears only when the main thread is already
+        // exiting; there is nothing left to notify then
+        let _ = self.exit_channel.send(self.worker_id);
+    }
+}
+
 pub struct Worker {
     worker_id: usize,
     clock: ClockSource,
@@ -29,6 +55,10 @@ pub struct Worker {
     metrics_publish_interval: Duration,
     next_key_replacement: u64,
     next_metrics_publication: u64,
+    /// Test-only: when the flag turns true the worker panics at the top of
+    /// its next loop iteration, exercising the worker-death signal path
+    #[cfg(feature = "test-utils")]
+    test_panic_flag: Option<std::sync::Arc<AtomicBool>>,
 }
 
 impl Worker {
@@ -53,7 +83,15 @@ impl Worker {
             metrics_publish_interval: metrics_interval,
             next_key_replacement: now,
             next_metrics_publication: now + metrics_interval.as_secs(),
+            #[cfg(feature = "test-utils")]
+            test_panic_flag: None,
         }
+    }
+
+    #[cfg(feature = "test-utils")]
+    #[doc(hidden)]
+    pub fn set_test_panic_flag(&mut self, flag: std::sync::Arc<AtomicBool>) {
+        self.test_panic_flag = Some(flag);
     }
 
     pub fn run(&mut self, mut sock: MioUdpSocket, keep_running: &AtomicBool) {
@@ -71,6 +109,13 @@ impl Worker {
         let mut still_readable = false;
 
         while keep_running.load(Relaxed) {
+            #[cfg(feature = "test-utils")]
+            if let Some(flag) = &self.test_panic_flag
+                && flag.load(Relaxed)
+            {
+                panic!("test-induced worker panic");
+            }
+
             let now = self.clock.epoch_seconds();
 
             if now >= self.next_metrics_publication {
@@ -95,8 +140,9 @@ impl Worker {
                     let collect_result = self.collect_requests(&mut sock);
 
                     self.req_handler.generate_responses(|addr, bytes| {
-                        self.net_handler.send_response(&mut sock, bytes, addr);
+                        self.net_handler.queue_response(bytes, addr);
                     });
+                    self.net_handler.flush_responses(&mut sock);
 
                     if collect_result == Empty {
                         still_readable = false;

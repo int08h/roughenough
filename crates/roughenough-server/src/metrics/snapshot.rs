@@ -24,7 +24,9 @@ pub struct MetricsSnapshot {
     pub totals: AggregatedMetrics,
 }
 
-/// Aggregated metrics across all workers
+/// Aggregated metrics across all workers. Counts are cumulative since server
+/// start; the `*_per_second` rates cover only the most recent reporting
+/// interval.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AggregatedMetrics {
     pub network: NetworkMetrics,
@@ -80,8 +82,17 @@ impl MetricsSnapshot {
     }
 }
 
-/// Calculate aggregated metrics from a slice of worker metrics
-pub fn calc_aggregated_metrics(duration_secs: f64, workers: &[WorkerMetrics]) -> AggregatedMetrics {
+/// Calculate aggregated metrics from a slice of cumulative worker metrics.
+/// `prev_num_responses`/`prev_num_bytes_sent` are the cumulative totals at the
+/// previous report: rates divide the interval delta by `duration_secs`, since
+/// dividing the cumulative totals by one interval would inflate the reported
+/// rate linearly with uptime.
+pub fn calc_aggregated_metrics(
+    duration_secs: f64,
+    workers: &[WorkerMetrics],
+    prev_num_responses: usize,
+    prev_num_bytes_sent: usize,
+) -> AggregatedMetrics {
     let mut total_network = NetworkMetrics::default();
     let mut total_requests = RequestMetrics::default();
     let mut total_responses = ResponseMetrics::default();
@@ -90,7 +101,7 @@ pub fn calc_aggregated_metrics(duration_secs: f64, workers: &[WorkerMetrics]) ->
     for worker in workers {
         total_network += worker.network;
         total_requests += worker.request;
-        total_responses += worker.response.clone();
+        total_responses += worker.response;
     }
 
     // Oversized requests are not added: they proceed to parsing and are
@@ -99,11 +110,17 @@ pub fn calc_aggregated_metrics(duration_secs: f64, workers: &[WorkerMetrics]) ->
         + total_requests.num_bad_requests
         + total_requests.num_runt_requests;
 
-    let responses_per_second =
-        total_responses.num_responses as f64 / duration_secs.max(f64::EPSILON);
+    let interval_responses = total_responses
+        .num_responses
+        .saturating_sub(prev_num_responses);
+    let interval_bytes = total_responses
+        .num_bytes_sent
+        .saturating_sub(prev_num_bytes_sent);
 
-    let mbytes_per_second = (total_responses.num_bytes_sent as f64 / (1024.0 * 1024.0))
-        / duration_secs.max(f64::EPSILON);
+    let responses_per_second = interval_responses as f64 / duration_secs.max(f64::EPSILON);
+
+    let mbytes_per_second =
+        (interval_bytes as f64 / (1024.0 * 1024.0)) / duration_secs.max(f64::EPSILON);
 
     AggregatedMetrics {
         responses_per_second,
@@ -170,7 +187,7 @@ mod tests {
             response: ResponseMetrics {
                 num_responses: 48 * multiplier as usize,
                 num_bytes_sent: 512 * 1024 * multiplier as usize,
-                batch_sizes: vec![0; 64],
+                batch_sizes: [0; 64],
             },
         }
     }
@@ -186,8 +203,9 @@ mod tests {
             create_test_worker_metrics(1, 1),
         ];
 
-        // Calculate aggregated metrics
-        let aggregated = calc_aggregated_metrics(duration_secs, &workers);
+        // Calculate aggregated metrics; zero previous totals make the
+        // first-interval rates equal cumulative / duration
+        let aggregated = calc_aggregated_metrics(duration_secs, &workers, 0, 0);
 
         // Create snapshot
         let snapshot = MetricsSnapshot::new(now, duration_secs, workers.clone(), aggregated);
@@ -233,7 +251,7 @@ mod tests {
         // Test edge case: empty workers array
         let now = SystemTime::now();
 
-        let empty_aggregated = calc_aggregated_metrics(60.0, &[]);
+        let empty_aggregated = calc_aggregated_metrics(60.0, &[], 0, 0);
         let empty_snapshot = MetricsSnapshot::new(now, 60.0, vec![], empty_aggregated);
 
         let empty_json = serde_json::to_string(&empty_snapshot).expect("Failed to serialize empty");

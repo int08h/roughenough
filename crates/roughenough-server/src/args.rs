@@ -1,11 +1,11 @@
 use std::fmt::{Debug, Display, Formatter};
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
 use clap::{Parser, ValueEnum};
 
 #[derive(Parser, Debug, Clone)]
-#[command(version = "2.0.0", about = "Roughenough roughtime server")]
+#[command(version, about = "Roughenough roughtime server")]
 pub struct Args {
     /// The maximum number of requests to process in one batch
     #[clap(
@@ -18,14 +18,14 @@ pub struct Args {
     )]
     pub batch_size: u8,
 
-    /// IP address or interface name to listen on
+    /// IP address to listen on
     #[clap(
         short = 'i',
         long,
         env = "ROUGHENOUGH_INTERFACE",
         default_value = "0.0.0.0"
     )]
-    pub interface: String,
+    pub interface: IpAddr,
 
     /// Port to listen on
     #[clap(short = 'p', long, env = "ROUGHENOUGH_PORT", default_value = "2003")]
@@ -81,6 +81,11 @@ pub struct Args {
     )]
     pub seed: String,
 
+    /// Run with an all-zero seed, making the server's long-term identity a
+    /// publicly known constant. For testing only; never use in production.
+    #[clap(long, default_value_t = false)]
+    pub insecure_zero_seed: bool,
+
     /// How to store the server's long-term identity while it's running
     #[clap(
         value_enum,
@@ -118,6 +123,11 @@ pub enum SeedBackendArg {
     Krs,
     #[value(name = "ssh-agent")]
     SshAgent,
+    /// PKCS#11 token (build with feature 'online-pkcs11'). Configure via env vars:
+    /// ROUGHENOUGH_PKCS11_LIBRARY (module path), ROUGHENOUGH_PKCS11_SLOT
+    /// (slot index, default 0), ROUGHENOUGH_PKCS11_PIN (user PIN)
+    #[value(name = "pkcs11")]
+    Pkcs11,
 }
 
 impl Display for SeedBackendArg {
@@ -129,12 +139,7 @@ impl Display for SeedBackendArg {
 
 impl Args {
     pub fn udp_socket_addr(&self) -> SocketAddr {
-        let addr = self
-            .interface
-            .parse()
-            .expect("invalid IP address or interface name");
-
-        SocketAddr::new(addr, self.port)
+        SocketAddr::new(self.interface, self.port)
     }
 
     /// How long the short-term response signing key is valid
@@ -145,4 +150,49 @@ impl Args {
 
 fn default_num_threads() -> u16 {
     std::thread::available_parallelism().unwrap().get() as u16
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_args_parse() {
+        let args = Args::try_parse_from(["roughenough_server"]).unwrap();
+        assert!(!args.insecure_zero_seed);
+        assert_eq!(args.udp_socket_addr(), "0.0.0.0:2003".parse().unwrap());
+    }
+
+    #[test]
+    fn ipv4_and_ipv6_interfaces_parse() {
+        let args = Args::try_parse_from(["prog", "-i", "127.0.0.1"]).unwrap();
+        assert_eq!(args.udp_socket_addr(), "127.0.0.1:2003".parse().unwrap());
+
+        let args = Args::try_parse_from(["prog", "-i", "::1", "-p", "9999"]).unwrap();
+        assert_eq!(args.udp_socket_addr(), "[::1]:9999".parse().unwrap());
+    }
+
+    #[test]
+    fn non_ip_interface_is_rejected() {
+        // interface names are not supported; the help text says so and bad
+        // input must be a clap error at startup, not a later panic
+        assert!(Args::try_parse_from(["prog", "-i", "eth0"]).is_err());
+        assert!(Args::try_parse_from(["prog", "-i", "not-an-ip"]).is_err());
+    }
+
+    #[test]
+    fn version_output_matches_crate_version() {
+        let err = Args::try_parse_from(["prog", "--version"]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
+        assert!(err.to_string().contains(env!("CARGO_PKG_VERSION")));
+    }
+
+    #[test]
+    fn rotation_interval_converts_hours_to_seconds() {
+        let args = Args::try_parse_from(["prog", "--rotation-interval", "1"]).unwrap();
+        assert_eq!(args.rotation_interval(), Duration::from_secs(3600));
+
+        let args = Args::try_parse_from(["prog", "--rotation-interval", "65535"]).unwrap();
+        assert_eq!(args.rotation_interval(), Duration::from_secs(65535 * 3600));
+    }
 }

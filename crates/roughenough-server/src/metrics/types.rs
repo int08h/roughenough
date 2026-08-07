@@ -11,6 +11,10 @@ pub struct NetworkMetrics {
     pub num_failed_sends: usize,
     pub num_failed_polls: usize,
     pub num_failed_recvs: usize,
+    /// Datagrams larger than `MAX_REQUEST_SIZE` dropped without a response:
+    /// a truncated read would be Merkle-hashed as a leaf differing from the
+    /// packet the client actually sent (RFC 5.3)
+    pub num_oversized_dropped: usize,
 }
 
 impl AddAssign for NetworkMetrics {
@@ -20,6 +24,7 @@ impl AddAssign for NetworkMetrics {
         self.num_failed_sends += rhs.num_failed_sends;
         self.num_failed_polls += rhs.num_failed_polls;
         self.num_failed_recvs += rhs.num_failed_recvs;
+        self.num_oversized_dropped += rhs.num_oversized_dropped;
     }
 }
 
@@ -53,11 +58,15 @@ impl AddAssign for RequestMetrics {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ResponseMetrics {
     pub num_responses: usize,
     pub num_bytes_sent: usize,
-    pub batch_sizes: Vec<usize>,
+    /// Fixed array (not a Vec) so the struct is `Copy` and a metrics publish
+    /// allocates nothing; serde's derive only covers arrays up to 32 elements,
+    /// hence the `with` module
+    #[serde(with = "batch_sizes_serde")]
+    pub batch_sizes: [u32; ResponseMetrics::MAX_BATCH_SIZE],
 }
 
 impl Default for ResponseMetrics {
@@ -65,13 +74,38 @@ impl Default for ResponseMetrics {
         Self {
             num_responses: 0,
             num_bytes_sent: 0,
-            batch_sizes: vec![0; ResponseMetrics::MAX_BATCH_SIZE],
+            batch_sizes: [0; ResponseMetrics::MAX_BATCH_SIZE],
         }
     }
 }
 
+/// serde derive lacks impls for arrays longer than 32; the wire format is the
+/// same JSON array of numbers as the former `Vec<usize>`
+mod batch_sizes_serde {
+    use serde::de::Error;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    use super::ResponseMetrics;
+
+    pub fn serialize<S: Serializer>(
+        value: &[u32; ResponseMetrics::MAX_BATCH_SIZE],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(value.iter())
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<[u32; ResponseMetrics::MAX_BATCH_SIZE], D::Error> {
+        let values: Vec<u32> = Vec::deserialize(deserializer)?;
+        values
+            .try_into()
+            .map_err(|v: Vec<u32>| D::Error::invalid_length(v.len(), &"64 batch size counters"))
+    }
+}
+
 impl ResponseMetrics {
-    const MAX_BATCH_SIZE: usize = 64;
+    pub const MAX_BATCH_SIZE: usize = 64;
 
     pub fn add_batch_size(&mut self, batch_size: u8) {
         debug_assert!(
@@ -98,10 +132,7 @@ impl ResponseMetrics {
     }
 
     pub fn reset_metrics(&mut self) {
-        self.num_responses = 0;
-        self.num_bytes_sent = 0;
-        self.batch_sizes.clear();
-        self.batch_sizes.resize(Self::MAX_BATCH_SIZE, 0);
+        *self = Self::default();
     }
 }
 
@@ -127,6 +158,7 @@ mod tests {
             num_failed_sends: 5,
             num_failed_polls: 2,
             num_failed_recvs: 3,
+            num_oversized_dropped: 4,
         };
 
         let metrics2 = NetworkMetrics {
@@ -135,6 +167,7 @@ mod tests {
             num_failed_sends: 3,
             num_failed_polls: 1,
             num_failed_recvs: 2,
+            num_oversized_dropped: 6,
         };
 
         metrics1 += metrics2;
@@ -144,6 +177,7 @@ mod tests {
         assert_eq!(metrics1.num_failed_sends, 8);
         assert_eq!(metrics1.num_failed_polls, 3);
         assert_eq!(metrics1.num_failed_recvs, 5);
+        assert_eq!(metrics1.num_oversized_dropped, 10);
     }
 
     #[test]

@@ -21,8 +21,8 @@ use std::io;
 use std::net::UdpSocket as StdUdpSocket;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering::Release;
-use std::sync::mpsc::{SyncSender, sync_channel};
+use std::sync::atomic::Ordering::{Acquire, Release};
+use std::sync::mpsc::{SyncSender, channel, sync_channel};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -36,7 +36,7 @@ use roughenough_server::keysource::KeySource;
 use roughenough_server::metrics::aggregator::{MetricsAggregator, WorkerMetrics};
 use roughenough_server::metrics::snapshot::validate_metrics_directory;
 use roughenough_server::responses::ResponseHandler;
-use roughenough_server::worker::Worker;
+use roughenough_server::worker::{ExitGuard, Worker};
 use socket2::{Domain, Socket, Type};
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::layer::SubscriberExt;
@@ -65,37 +65,90 @@ fn main() {
     let mut threads = Vec::new();
     threads.push(metrics_thread);
 
+    let (exit_tx, exit_rx) = channel();
+
     for i in 0..args.num_threads {
         let args = args.clone();
         let clock = clock.clone();
         let ks = key_source.clone();
         let metrics_chan_tx = metrics_chan_tx.clone();
+        let exit_tx = exit_tx.clone();
 
         let thread = std::thread::Builder::new()
             .name(format!("worker-{i}"))
-            .spawn(move || worker_task(i, ks, args, clock, metrics_chan_tx))
+            .spawn(move || {
+                // Drop runs on panic unwind too, so a dead worker is always
+                // reported to the main thread
+                let _exit_guard = ExitGuard::new(i as usize, exit_tx);
+                worker_task(i, ks, args, clock, metrics_chan_tx)
+            })
             .unwrap();
 
         threads.push(thread);
     }
+    drop(exit_tx);
+
+    // A worker exiting while shutdown was not requested means it died
+    // (likely a panic). Serving silently at reduced capacity is worse than a
+    // loud restart, so treat any early exit as fatal for the whole process.
+    let mut worker_died = false;
+    for _ in 0..args.num_threads {
+        match exit_rx.recv() {
+            Ok(worker_id) => {
+                if KEEP_RUNNING.load(Acquire) {
+                    error!("worker-{worker_id} exited unexpectedly; shutting down");
+                    KEEP_RUNNING.store(false, Release);
+                    worker_died = true;
+                }
+            }
+            Err(_) => break,
+        }
+    }
 
     for thread in threads {
-        thread.join().unwrap()
+        if thread.join().is_err() {
+            worker_died = true;
+        }
+    }
+
+    if worker_died {
+        error!("Server exiting after unexpected worker death");
+        std::process::exit(1);
     }
 
     info!("Server finished");
 }
 
+// Seed and backend failures (bad credentials, unreachable KMS, missing
+// feature, ...) are operator errors: report them cleanly and exit nonzero
+// instead of unwinding with a backtrace
 fn load_seed(args: &Args) -> Box<dyn SeedBackend> {
     let seed = if args.seed.is_empty() {
+        // An all-zero seed is a publicly known long-term identity; require an
+        // explicit opt-in instead of silently serving with it
+        if !args.insecure_zero_seed {
+            error!("no seed provided; pass --seed or --insecure-zero-seed for testing");
+            std::process::exit(1);
+        }
         warn!("--seed is empty, using all zero seed");
         Seed::new(&[0u8; 32])
     } else {
-        try_load_seed_sync(&args.seed).unwrap_or_else(|e| panic!("loading seed: {e}"))
+        match try_load_seed_sync(&args.seed) {
+            Ok(seed) => seed,
+            Err(e) => {
+                error!("loading seed: {e}");
+                std::process::exit(1);
+            }
+        }
     };
 
-    let mut backend = try_choose_backend(&args.seed_backend.to_string())
-        .unwrap_or_else(|e| panic!("choosing seed backend: {e}"));
+    let mut backend = match try_choose_backend(&args.seed_backend.to_string()) {
+        Ok(backend) => backend,
+        Err(e) => {
+            error!("choosing seed backend: {e}");
+            std::process::exit(1);
+        }
+    };
 
     info!(
         "Loaded {}-byte seed into '{}' backend",
@@ -103,7 +156,10 @@ fn load_seed(args: &Args) -> Box<dyn SeedBackend> {
         &args.seed_backend
     );
 
-    backend.store_seed(seed).unwrap();
+    if let Err(e) = backend.store_seed(seed) {
+        error!("storing seed in '{}' backend: {e}", &args.seed_backend);
+        std::process::exit(1);
+    }
     backend
 }
 

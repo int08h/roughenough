@@ -7,6 +7,9 @@ mod test {
     use std::time::{Duration, Instant};
 
     use mio::net::UdpSocket as MioUdpSocket;
+    use roughenough_protocol::request::{MAX_REQUEST_SIZE, Request};
+    use roughenough_protocol::tags::Nonce;
+    use roughenough_protocol::wire::ToFrame;
     use roughenough_server::network::CollectResult::Empty;
     use roughenough_server::network::NetworkHandler;
 
@@ -106,6 +109,131 @@ mod test {
             assert_eq!(data[0], i as u8);
             assert_eq!(*addr, socket_set.client_addr);
         }
+    }
+
+    /// Valid framed request padded with zeros to `total_len` bytes
+    fn padded_request(nonce_value: u8, total_len: usize) -> Vec<u8> {
+        let nonce = Nonce::from([nonce_value; 32]);
+        let mut bytes = Request::new(&nonce).as_frame_bytes().unwrap();
+        assert!(bytes.len() <= total_len);
+        bytes.resize(total_len, 0);
+        bytes
+    }
+
+    #[test]
+    fn oversized_datagrams_are_dropped_without_callback() {
+        // Datagrams larger than MAX_REQUEST_SIZE would be silently truncated
+        // by recv_from; answering the truncated bytes would Merkle-hash a leaf
+        // differing from the packet the client sent. They must be dropped
+        // entirely, never delivered to the request path.
+        let mut socket_set = create_socket_set();
+        let mut handler = NetworkHandler::new(10);
+
+        // both datagrams begin with a valid framed request
+        let just_over = padded_request(1, MAX_REQUEST_SIZE + 1);
+        let way_over = padded_request(2, 2024);
+
+        socket_set
+            .client_socket
+            .send_to(&just_over, socket_set.server_addr)
+            .unwrap();
+        socket_set
+            .client_socket
+            .send_to(&way_over, socket_set.server_addr)
+            .unwrap();
+
+        // dropped datagrams never reach the callback, so poll the drop metric
+        let start = Instant::now();
+        let mut delivered = 0;
+        while handler.metrics().num_oversized_dropped < 2
+            && start.elapsed() < Duration::from_millis(500)
+        {
+            handler.collect_requests(&mut socket_set.server_socket, |_data, _addr| {
+                delivered += 1;
+            });
+            thread::sleep(Duration::from_millis(5));
+        }
+
+        assert_eq!(handler.metrics().num_oversized_dropped, 2);
+        assert_eq!(
+            delivered, 0,
+            "truncated datagrams must not reach the request path"
+        );
+    }
+
+    #[test]
+    fn max_size_datagram_is_delivered() {
+        // Regression for the oversized-drop change: exactly MAX_REQUEST_SIZE
+        // bytes is a legal request and must still be delivered intact
+        let mut socket_set = create_socket_set();
+        let mut handler = NetworkHandler::new(10);
+
+        let request = padded_request(3, MAX_REQUEST_SIZE);
+        socket_set
+            .client_socket
+            .send_to(&request, socket_set.server_addr)
+            .unwrap();
+
+        let start = Instant::now();
+        let mut received = Vec::new();
+        while received.is_empty() && start.elapsed() < Duration::from_millis(500) {
+            handler.collect_requests(&mut socket_set.server_socket, |data, _addr| {
+                received.push(data.to_vec());
+            });
+            thread::sleep(Duration::from_millis(5));
+        }
+
+        assert_eq!(received.len(), 1);
+        assert_eq!(received[0].len(), MAX_REQUEST_SIZE);
+        assert_eq!(received[0], request);
+        assert_eq!(handler.metrics().num_oversized_dropped, 0);
+    }
+
+    #[test]
+    fn full_batch_of_queued_responses_all_arrive() {
+        // The batched flush (sendmmsg on Linux, send_to loop elsewhere) must
+        // deliver every queued response; loopback with a default receive
+        // buffer holds 64 small datagrams without loss
+        let mut socket_set = create_socket_set();
+        let mut handler = NetworkHandler::new(64);
+        socket_set
+            .client_socket
+            .set_read_timeout(Some(Duration::from_millis(500)))
+            .unwrap();
+
+        for i in 0..64u8 {
+            let payload = [i; 600];
+            handler.queue_response(&payload, socket_set.client_addr);
+        }
+        handler.flush_responses(&mut socket_set.server_socket);
+
+        assert_eq!(handler.metrics().num_successful_sends, 64);
+        assert_eq!(handler.metrics().num_failed_sends, 0);
+
+        let mut buf = [0u8; 1500];
+        for i in 0..64u8 {
+            let (nbytes, _) = socket_set
+                .client_socket
+                .recv_from(&mut buf)
+                .unwrap_or_else(|e| panic!("datagram {i} missing: {e}"));
+            assert_eq!(nbytes, 600);
+            // loopback UDP preserves send order
+            assert!(
+                buf[..nbytes].iter().all(|b| *b == i),
+                "datagram {i} corrupt"
+            );
+        }
+    }
+
+    #[test]
+    fn flush_with_empty_queue_is_a_no_op() {
+        let mut socket_set = create_socket_set();
+        let mut handler = NetworkHandler::new(8);
+
+        handler.flush_responses(&mut socket_set.server_socket);
+
+        assert_eq!(handler.metrics().num_successful_sends, 0);
+        assert_eq!(handler.metrics().num_failed_sends, 0);
     }
 
     #[test]

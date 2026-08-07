@@ -5,9 +5,10 @@
 //! bounded-drain guarantee under flood.
 
 use std::net::{SocketAddr, UdpSocket};
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::{Acquire, Release};
-use std::sync::mpsc::{SyncSender, sync_channel};
+use std::sync::mpsc::{SyncSender, channel, sync_channel};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -24,7 +25,7 @@ use roughenough_server::args::Args;
 use roughenough_server::keysource::KeySource;
 use roughenough_server::metrics::aggregator::WorkerMetrics;
 use roughenough_server::responses::ResponseHandler;
-use roughenough_server::worker::Worker;
+use roughenough_server::worker::{ExitGuard, Worker};
 
 // parsed rather than a struct literal so future Args fields don't break this
 fn test_args() -> Args {
@@ -160,6 +161,45 @@ fn worker_shuts_down_under_load() {
             elapsed < Duration::from_secs(2),
             "shutdown under load took {elapsed:?}"
         );
+    });
+}
+
+#[test]
+fn worker_panic_fires_exit_guard() {
+    let keep_running = AtomicBool::new(true);
+    let (tx, _rx) = sync_channel(4);
+    let (mut worker, sock, _server_addr) = new_worker(test_args(), tx);
+
+    let panic_flag = Arc::new(AtomicBool::new(false));
+    worker.set_test_panic_flag(panic_flag.clone());
+
+    let (exit_tx, exit_rx) = channel();
+
+    thread::scope(|s| {
+        let worker_thread = s.spawn(|| {
+            // same shape as main(): the guard's Drop runs during the panic
+            // unwind and reports the death to the monitoring channel
+            let _guard = ExitGuard::new(7, exit_tx);
+            worker.run(sock, &keep_running);
+        });
+
+        // healthy worker: no exit signal
+        assert!(
+            exit_rx.recv_timeout(Duration::from_millis(300)).is_err(),
+            "exit guard fired while the worker was healthy"
+        );
+
+        panic_flag.store(true, Release);
+
+        // the flag is polled once per loop iteration, so the signal arrives
+        // within one 350ms poll quantum (well under a metrics interval)
+        let worker_id = exit_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("worker death was not signaled");
+        assert_eq!(worker_id, 7);
+
+        // consume the panic so the scope does not re-raise it
+        assert!(worker_thread.join().is_err(), "worker should have panicked");
     });
 }
 
