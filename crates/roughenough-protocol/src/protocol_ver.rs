@@ -11,12 +11,14 @@ use crate::wire::{FromWire, ToWire};
 /// A `ProtocolVersion` is a u32 version number identifying a specific Roughtime
 /// protocol variant.
 ///
-/// RFC draft revisions use private-use version numbers with the high bit set
-/// (`0x80000000 | draft identifier`). This implementation accepts *any*
-/// draft-flagged version and handles them all uniformly.
-///
-/// All draft versions are answered the same way on the assumption that no pre-8
-/// clients remain.
+/// RFC draft revisions use version numbers from the draft/experimental range
+/// (`0x80000000 | draft identifier`). RFC 12.2 splits the high-bit space:
+/// 0x80000000-0xbfffffff is reserved for draft/experimental use and
+/// 0xc0000000-0xffffffff for private use. This implementation accepts *any*
+/// version in the draft/experimental range and handles them all uniformly,
+/// on the assumption that no pre-8 clients remain. Private-use versions are
+/// rejected: their semantics are unknown here, and RFC 5.2.5 requires the
+/// version number to correspond with the rest of the packet contents.
 #[repr(transparent)]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ProtocolVersion(u32);
@@ -31,6 +33,9 @@ impl ProtocolVersion {
     pub const INVALID: Self = Self(0xffffffff);
 
     const DRAFT_FLAG: u32 = 0x8000_0000;
+    /// RFC 12.2 draft/experimental range; 0xc0000000-0xffffffff is private use
+    const DRAFT_MIN: u32 = 0x8000_0000;
+    const DRAFT_MAX: u32 = 0xbfff_ffff;
 
     /// Versions advertised in VERS and offered by the client, in ascending
     /// wire order (required of VERS tag by RFC 5.2.5). The server
@@ -41,9 +46,12 @@ impl ProtocolVersion {
         self.0
     }
 
-    /// True when this is a draft-flagged version number.
+    /// True when this version is in the RFC 12.2 draft/experimental range
+    /// (0x80000000-0xbfffffff). Private-use values (0xc0000000-0xffffffff)
+    /// are excluded: signing a response bearing one would claim semantics
+    /// this implementation has never seen (RFC 5.2.5).
     pub const fn is_draft(&self) -> bool {
-        self.0 & Self::DRAFT_FLAG != 0 && self.0 != Self::INVALID.0
+        Self::DRAFT_MIN <= self.0 && self.0 <= Self::DRAFT_MAX
     }
 
     /// True when this implementation can respond using this version: RFC version 1
@@ -84,21 +92,16 @@ impl ProtocolVersion {
         }
     }
 
-    pub fn dele_prefix(&self) -> &'static [u8] {
-        if self.is_supported() {
-            b"RoughTime v1 delegation signature\x00"
-        } else {
-            panic!("invalid version")
-        }
-    }
+    /// RFC 5.2.2: context string for the long-term key's signature over DELE,
+    /// including the terminating zero byte. The same string applies to every
+    /// supported version (RFC version 1 and all draft revisions), so it is a
+    /// constant rather than a per-version accessor.
+    pub const DELE_PREFIX: &'static [u8] = b"RoughTime v1 delegation signature\x00";
 
-    pub fn srep_prefix(&self) -> &'static [u8] {
-        if self.is_supported() {
-            b"RoughTime v1 response signature\x00"
-        } else {
-            panic!("invalid version")
-        }
-    }
+    /// RFC 5.2.6: context string for the online key's signature over SREP,
+    /// including the terminating zero byte. Version-independent like
+    /// [`Self::DELE_PREFIX`].
+    pub const SREP_PREFIX: &'static [u8] = b"RoughTime v1 response signature\x00";
 }
 
 impl Debug for ProtocolVersion {
@@ -212,6 +215,34 @@ mod tests {
     }
 
     #[test]
+    fn draft_range_boundaries_are_supported() {
+        // RFC 12.2: 0x80000000-0xbfffffff is the draft/experimental range
+        for value in [0x80000001u32, 0xbfffffffu32] {
+            let version = ProtocolVersion::from_u32(value)
+                .unwrap_or_else(|| panic!("draft 0x{value:08x} must be supported"));
+            assert!(version.is_draft(), "0x{value:08x}");
+            assert!(version.is_supported(), "0x{value:08x}");
+        }
+    }
+
+    #[test]
+    fn private_use_versions_are_rejected() {
+        // RFC 12.2: 0xc0000000-0xffffffff is private use; this implementation
+        // has never seen their semantics and must not answer them (RFC 5.2.5)
+        for value in [0xc0000000u32, 0xc0000001u32, 0xfffffffeu32] {
+            assert!(!ProtocolVersion(value).is_supported(), "0x{value:08x}");
+            assert_eq!(ProtocolVersion::from_u32(value), None, "0x{value:08x}");
+        }
+
+        let offered = [
+            ProtocolVersion(0xc0000000),
+            ProtocolVersion(0xc0000001),
+            ProtocolVersion(0xfffffffe),
+        ];
+        assert_eq!(ProtocolVersion::negotiate(&offered), None);
+    }
+
+    #[test]
     fn non_draft_unknown_versions_are_rejected() {
         // The INVALID sentinel and values without the draft flag are not versions
         for value in [0xffffffffu32, 0x7fffffffu32, 0x00000002u32, 0x00000000u32] {
@@ -222,23 +253,16 @@ mod tests {
     }
 
     #[test]
-    fn version_one_context_strings() {
+    fn context_strings() {
         // RFC 5.2.1 / 5.2.6: context strings include a terminating zero byte
         assert_eq!(
-            ProtocolVersion::RFC.srep_prefix(),
+            ProtocolVersion::SREP_PREFIX,
             b"RoughTime v1 response signature\x00"
         );
         assert_eq!(
-            ProtocolVersion::RFC.dele_prefix(),
+            ProtocolVersion::DELE_PREFIX,
             b"RoughTime v1 delegation signature\x00"
         );
-    }
-
-    #[test]
-    fn draft_versions_share_context_strings() {
-        let draft = ProtocolVersion::from_u32(0x8000000b).unwrap();
-        assert_eq!(draft.srep_prefix(), ProtocolVersion::RFC.srep_prefix());
-        assert_eq!(draft.dele_prefix(), ProtocolVersion::RFC.dele_prefix());
     }
 
     #[test]
@@ -250,7 +274,7 @@ mod tests {
         );
 
         // RFC version 1 outranks even the highest possible draft
-        let max_draft = ProtocolVersion::from_u32(0xfffffffe).unwrap();
+        let max_draft = ProtocolVersion::from_u32(0xbfffffff).unwrap();
         assert!(ProtocolVersion::RFC.preference() > max_draft.preference());
     }
 
