@@ -1,5 +1,6 @@
 #![doc(hidden)]
 
+use clap::builder::RangedU64ValueParser;
 use clap::{Parser, ValueEnum};
 use roughenough_protocol::tags::ProtocolVersion;
 
@@ -47,7 +48,7 @@ pub struct Args {
         value_name = "N",
         help = "Number of requests to send",
         default_value_t = 1,
-        value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..)
+        value_parser = RangedU64ValueParser::<usize>::new().range(1..)
     )]
     pub num_requests: usize,
 
@@ -76,7 +77,7 @@ pub struct Args {
         help = "Number of different servers to query",
         requires = "server_list",
         default_value_t = 3,
-        value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..)
+        value_parser = RangedU64ValueParser::<usize>::new().range(1..)
     )]
     pub num_unique_servers: usize,
 
@@ -87,7 +88,7 @@ pub struct Args {
         help = "Number of times to repeat the chained measurement sequence",
         requires = "server_list",
         default_value_t = 2,
-        value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..)
+        value_parser = RangedU64ValueParser::<usize>::new().range(1..)
     )]
     pub num_measurement_rounds: usize,
 
