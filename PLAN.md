@@ -20,12 +20,23 @@ locate code by the named symbols when lines do not match.
   percentiles, not averages. Reject changes that do not measure as improvements.
 - Comments explain why, not what. Delete stale comments with the code they
   describe.
+- Keep comments, commit messages, and PR descriptions succinct, brief, and
+  to the point. State what changed and why in as few words as needed; no
+  narration, no filler.
+- Convert a panic (`unreachable!`, `todo!`, `expect`) to an error return
+  only when the path is actually reachable. Verify reachability first; a
+  genuinely unreachable arm keeps its `unreachable!`.
 - `cargo test --workspace` must pass after each item. The
   `roughenough-reporting-server` socket-binding tests require an environment
   that permits binding listeners; they are not flaky.
 
 ## Explicit non-goals
 
+- **No TCP transport.** The client and server are UDP only, by design. Do
+  not add a TCP listener, a TCP client transport, or any TCP plumbing; the
+  RFC's TCP SHOULDs are declined. (Filtering out `Protocol::Tcp` entries
+  from server lists in 1.5 is consistent with this: it stops UDP datagrams
+  being sent to TCP addresses.)
 - **`VersionList::MAX_VERSIONS` stays at 8.** The RFC allows up to 32 entries
   in VER; this implementation deliberately caps parsing at 8. Do NOT raise it.
   The only action is documentation: add a comment at the `MAX_VERSIONS`
@@ -277,7 +288,10 @@ it is unreachable at runtime.
 1. Replace `todo!()` and `unreachable!()` with
    `Err(BackendError::BackendNotAvailable(...))` (reuse the existing variant
    style; a `NotSupported` variant already exists per review -- verify and use
-   whichever fits).
+   whichever fits). These arms ARE reachable -- this is a `pub` function
+   taking an arbitrary `&str` -- so the ground rule's reachability test is
+   met; do not extend this conversion to arms that genuinely cannot be
+   reached.
 2. Add a `"pkcs11"` arm, gated `#[cfg(feature = "online-pkcs11")]`,
    constructing the PKCS#11 backend from
    `crates/roughenough-keys/src/online/pkcs11.rs`. When the feature is off,
@@ -320,7 +334,9 @@ mismatch).
 1. Replace the `unreachable!` with an error return (e.g.
    `StorageError::NotImplemented` or a clearer
    `PlainSeedsAreNotStored`-style variant): storing a plaintext seed is a
-   no-op by design -- say so in the error message.
+   no-op by design -- say so in the error message. This arm is reachable
+   (the CLI drives it via `--key seed://...`), which is why it converts;
+   per the ground rule, leave genuinely unreachable arms alone.
 2. Change the trace line to log only the protection scheme (already logged at
    ~line 37) and the value's length, never the value. Audit the whole keys
    crate for other log statements interpolating seed or key material
@@ -447,9 +463,7 @@ rates from per-interval deltas: retain a `previous` copy of the aggregated
 counters, subtract to get the interval delta, divide the delta by
 `elapsed_secs`, then update `previous`. Report both cumulative counts and
 interval rates in the snapshot so the JSON remains monotonic where consumers
-expect it. Also fix the doc drift: `URING.md` section 4 describes
-`batch_sizes` as `Vec<u8>`; the code uses `Vec<usize>` -- correct whichever
-side is wrong when touching this file (see also Phase 8.6).
+expect it.
 
 **Tests (new).** Aggregator unit test: feed two intervals of synthetic worker
 snapshots (e.g. 100 responses each interval, interval = 10 s) and assert the
@@ -533,16 +547,17 @@ persistent socket error would pin a worker at 100% CPU. (Review could not
 name a persistent error for an unconnected UDP socket, so this is hardening,
 not a live bug.)
 
-**Change.** On a non-WouldBlock error: log at `warn!` (rate-limited or
-once-per-distinct-error to avoid log floods), increment an error metric, and
-return the variant that sends the loop back to `poll` (whatever
+**Change.** On a non-WouldBlock error: increment an error counter in the
+network metrics -- do NOT log; a persistent error would spam the logs --
+and return the variant that sends the loop back to `poll` (whatever
 `collect_requests` returns for WouldBlock -- inspect the enum). Losing one
-wakeup on a transient error is harmless; spinning is not.
+wakeup on a transient error is harmless; spinning is not. The counter
+surfaces the condition through the existing metrics reporting.
 
 **Tests (new).** Unit-test the error branch: if the socket is behind a trait
 or the function can take a receive result, inject `ErrorKind::Other` and
 assert the returned control-flow variant equals the WouldBlock variant and
-the metric incremented. If injection requires restructuring beyond a small
+the counter incremented (and nothing was logged). If injection requires restructuring beyond a small
 seam, document the manual reasoning in the PR instead of forcing a mock.
 
 **Acceptance.** No code path re-enters the receive loop unconditionally on
@@ -620,10 +635,8 @@ report the reporting server accepts (given a real violation; see 4.2).
 claim itself -- that MIDP_i - RADI_i > MIDP_j + RADI_j for some i < j -- so
 any two chained honest measurements are stored as a "malfeasance report".
 `storage.rs` (~lines 40-56) inserts into a HashMap with no cap, TTL, or rate
-limit; `main.rs` (~line 17) binds 0.0.0.0:3000. And
-`GET /api/v1/reports/{id}` returns `StoredReport` including `source_ip`
-(`storage.rs` ~lines 12-17), disclosing the submitter to anyone with the id.
-Additionally `validate_chaining` rejects a first entry that CARRIES a `rand`
+limit; `main.rs` (~line 17) binds 0.0.0.0:3000. Additionally
+`validate_chaining` rejects a first entry that CARRIES a `rand`
 value; RFC 8.4.1 says rand "MAY be omitted" from the first entry -- carrying
 one is not an error.
 
@@ -643,9 +656,8 @@ one is not an error.
    to a value derived from the max plausible report (entries are bounded by
    the client's measurement rounds; 256 KB is generous) rather than relying
    on the default.
-4. Privacy: remove `source_ip` from the GET response serialization (keep it
-   in internal storage if operators need it; add `#[serde(skip_serializing)]`
-   or a separate response DTO).
+4. `source_ip` stays in stored reports AND in GET responses -- it is
+   public information. Do not redact it.
 5. Media type (with 4.3): accept `application/roughtime-malfeasance+json`;
    continue accepting `application/json` for compatibility.
 
@@ -660,11 +672,9 @@ the crate currently has no inline tests):
   (503 or eviction) occurs.
 - Rate limit: burst from one source trips the limit; another source is
   unaffected.
-- GET response body does not contain the submitting IP (assert on the JSON
-  keys).
 
 **Acceptance.** The server stores only reports that demonstrate a violation,
-within fixed memory bounds, and never serves submitter IPs.
+within fixed memory bounds.
 
 ## 4.3 Correct media type on submission
 
@@ -933,11 +943,9 @@ behind them; 8.4+ are smaller.
 **Problem.** `crates/roughenough-server/src/network.rs` issues one `send_to`
 per response (~line 58); a full 64-request batch costs 64 send syscalls
 (plus 64 receives) against roughly one Ed25519 signature of actual work.
-Syscall count is very likely the dominant per-batch cost. `URING.md` is a
-design document only -- nothing in the tree implements io_uring -- and its
-plan freezes the mio path out of this win; `sendmmsg` on the existing mio
-backend captures a large fraction of the benefit for ~50 lines and no unsafe
-state machine.
+Syscall count is very likely the dominant per-batch cost. `sendmmsg` on the
+existing mio backend collapses the sends into one syscall per batch for
+roughly 50 lines of change.
 
 **Change.** `process_responses` already emits a batch's responses
 back-to-back. Buffer the (bytes, addr) pairs for a batch and flush with one
@@ -1084,11 +1092,8 @@ permanently.
 external consumers beyond the crate's own binary, benches, and tests. Reduce
 to `pub(crate)` except what `benches/server_ops.rs` and the `test-utils`
 feature need. Delete the empty `mod tests {}` stub in `network.rs`
-(~lines 81-82). Sync `URING.md` with reality or delete it: it describes
-unimplemented work (no io_uring code exists) and misstates
-`ResponseMetrics.batch_sizes`; after 8.1 lands, revisit whether the io_uring
-plan is still worth its complexity and either update the doc with 8.1's
-measured numbers as the new baseline or remove the file.
+(~lines 81-82). (`URING.md`, a design document for unimplemented io_uring
+work, has already been deleted; if a copy resurfaces, delete it.)
 
 ---
 
