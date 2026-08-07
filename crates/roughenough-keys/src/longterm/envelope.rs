@@ -4,37 +4,39 @@ use serde::{Deserialize, Serialize};
 
 use crate::seed::Seed;
 
-#[derive(Serialize, Deserialize)]
+// Debug is safe here: the ciphertexts and key id are not secret material
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SeedEnvelope {
     /// Identifier of the KMS key used to encrypt the seed
     pub key_id: String,
 
     /// Seed encrypted by the data encryption key (DEK)
     #[serde(with = "base64")]
+    #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub seed_ct: Vec<u8>,
 
     /// DEK encrypted by KMS
     #[serde(with = "base64")]
+    #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub dek_ct: Vec<u8>,
 }
 
 #[allow(dead_code)] // uses are behind cargo features
-pub(crate) fn seal_seed(dek: [u8; 32], seed: &Seed, aad: &[u8]) -> Vec<u8> {
-    let key = RandomizedNonceKey::new(&AES_256_GCM, &dek).unwrap();
+pub(crate) fn seal_seed(dek: [u8; 32], seed: &Seed, aad: &[u8]) -> Result<Vec<u8>, Unspecified> {
+    let key = RandomizedNonceKey::new(&AES_256_GCM, &dek)?;
     let mut in_out = seed.expose().to_vec();
 
-    key.seal_in_place_append_tag(Aad::from(aad), &mut in_out)
-        .map(|nonce| in_out.extend(nonce.as_ref()))
-        .unwrap();
+    let nonce = key.seal_in_place_append_tag(Aad::from(aad), &mut in_out)?;
+    in_out.extend(nonce.as_ref());
 
     // in_out is now (encrypted_seed || tag || nonce)
     assert_eq!(
         in_out.len(),
         seed.len() + AES_256_GCM.tag_len() + AES_256_GCM.nonce_len()
     );
-    in_out
+    Ok(in_out)
 }
 
 #[allow(dead_code)] // uses are behind cargo features
@@ -43,7 +45,11 @@ pub(crate) fn open_seed(
     encrypted_seed: &[u8],
     aad: &[u8],
 ) -> Result<Seed, Unspecified> {
-    // encrypted_seed is (encrypted_seed || tag || nonce)
+    // encrypted_seed is (encrypted_seed || tag || nonce); reject anything too
+    // short to contain all three parts instead of panicking on the arithmetic
+    if encrypted_seed.len() < AES_256_GCM.tag_len() + AES_256_GCM.nonce_len() {
+        return Err(Unspecified);
+    }
     let ciphertext_len = encrypted_seed.len() - AES_256_GCM.nonce_len();
 
     let nonce = Nonce::try_assume_unique_for_key(&encrypted_seed[ciphertext_len..])?;
@@ -51,9 +57,14 @@ pub(crate) fn open_seed(
 
     let mut in_out = encrypted_seed[..ciphertext_len].to_vec();
     let plaintext = key.open_in_place(nonce, Aad::from(aad), &mut in_out)?;
-    let seed = Seed::new(plaintext);
 
-    Ok(seed)
+    // Seed::new asserts a 32-byte length; the plaintext length comes from the
+    // envelope, so check it here and error instead
+    if plaintext.len() != 32 {
+        return Err(Unspecified);
+    }
+
+    Ok(Seed::new(plaintext))
 }
 
 /// Serialize strings to/from base64 for serde.
@@ -98,7 +109,7 @@ mod tests {
         let aad = b"test_aad_data";
 
         // Seal the seed
-        let encrypted_seed = seal_seed(dek, &original_seed, aad);
+        let encrypted_seed = seal_seed(dek, &original_seed, aad).expect("seal should succeed");
 
         // Verify that the encrypted data is different from the original
         assert_ne!(encrypted_seed, original_seed_data);
@@ -121,7 +132,8 @@ mod tests {
         let correct_aad = b"correct_aad";
         let wrong_aad = b"wrong_aad";
 
-        let encrypted_seed = seal_seed(dek, &original_seed, correct_aad);
+        let encrypted_seed =
+            seal_seed(dek, &original_seed, correct_aad).expect("seal should succeed");
 
         // Attempting to decrypt with wrong AAD should fail
         let result = open_seed(dek, &encrypted_seed, wrong_aad);
@@ -135,7 +147,7 @@ mod tests {
         let dek = [0u8; 32];
         let aad = b"test_aad";
 
-        let mut encrypted_seed = seal_seed(dek, &original_seed, aad);
+        let mut encrypted_seed = seal_seed(dek, &original_seed, aad).expect("seal should succeed");
 
         // Corrupt the encrypted data
         if let Some(byte) = encrypted_seed.get_mut(0) {
@@ -148,5 +160,31 @@ mod tests {
             result.is_err(),
             "Decryption should fail with corrupted data"
         );
+    }
+
+    #[test]
+    fn open_seed_too_short_input_fails() {
+        // Shorter than tag + nonce: must error, not underflow
+        let result = open_seed([0u8; 32], &[0u8; 5], b"aad");
+        assert!(result.is_err());
+
+        let result = open_seed([0u8; 32], &[], b"aad");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn open_seed_rejects_non_seed_length_plaintext() {
+        use aws_lc_rs::aead::{AES_256_GCM, Aad, RandomizedNonceKey};
+
+        let dek = [0u8; 32];
+        let key = RandomizedNonceKey::new(&AES_256_GCM, &dek).unwrap();
+        let mut in_out = vec![0u8; 16]; // valid ciphertext, but not a 32-byte seed
+        let nonce = key
+            .seal_in_place_append_tag(Aad::from(&b"aad"[..]), &mut in_out)
+            .unwrap();
+        in_out.extend(nonce.as_ref());
+
+        let result = open_seed(dek, &in_out, b"aad");
+        assert!(result.is_err(), "non-32-byte plaintext must error");
     }
 }

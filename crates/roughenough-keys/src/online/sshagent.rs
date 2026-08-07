@@ -49,6 +49,16 @@ impl Drop for SshAgentBackend {
     }
 }
 
+// SAFETY: `SeedBackend: Send` requires this backend to be Send, but
+// `ssh_agent_client_rs::Client` erases its transport to `Box<dyn ReadWrite>`
+// without a Send bound. The only constructor this backend uses is
+// `Client::connect`, which always boxes a `std::os::unix::net::UnixStream`
+// on unix and an `interprocess` duplex pipe stream on windows; both concrete
+// types are Send, so the erased box is too. Revisit if the Client is ever
+// built from any other transport.
+#[allow(unsafe_code)]
+unsafe impl Send for SshAgentBackend {}
+
 impl SeedBackend for SshAgentBackend {
     fn store_seed(&mut self, seed: Seed) -> Result<(), BackendError> {
         let private_key = key_from_seed(seed.expose());

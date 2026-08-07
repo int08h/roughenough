@@ -84,7 +84,7 @@ mod tests {
 
         let dele = olk.cert().dele();
         let sig = olk.cert().sig();
-        let mut to_verify = ProtocolVersion::DRAFT.dele_prefix().to_vec();
+        let mut to_verify = ProtocolVersion::DELE_PREFIX.to_vec();
         to_verify.extend_from_slice(&dele.as_bytes().expect("DELE serialization should not fail"));
 
         assert!(
@@ -122,7 +122,7 @@ mod tests {
         assert_eq!(srep.vers(), &expected_vers);
 
         let verifier = Verifier::from(&olk.public_key());
-        let mut to_verify = ProtocolVersion::DRAFT.srep_prefix().to_vec();
+        let mut to_verify = ProtocolVersion::SREP_PREFIX.to_vec();
         to_verify.extend_from_slice(&srep.as_bytes().expect("SREP serialization should not fail"));
         assert!(verifier.verify(to_verify.as_ref(), sig.as_ref()));
     }
@@ -150,7 +150,7 @@ mod tests {
         assert_eq!(srep.wire_size(), baseline.wire_size());
 
         let verifier = Verifier::from(&olk.public_key());
-        let mut to_verify = draft.srep_prefix().to_vec();
+        let mut to_verify = ProtocolVersion::SREP_PREFIX.to_vec();
         to_verify.extend_from_slice(&srep.as_bytes().expect("SREP serialization should not fail"));
         assert!(verifier.verify(to_verify.as_ref(), sig.as_ref()));
     }
