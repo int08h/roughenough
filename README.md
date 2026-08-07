@@ -41,9 +41,9 @@ cargo build --release --all-features
 
 ### Running the Server
 
-The server refuses to start without a long-term identity seed: pass one with
+The server refuses to start without a long-term identity seed. Pass one with
 `--seed` (or the `ROUGHENOUGH_SEED` environment variable), or pass
-`--insecure-zero-seed` to run with a well-known all-zero seed for testing.
+`--insecure-zero-seed` to run with an all-zero seed for testing.
 
 ```bash
 # Debug build, testing-only zero seed
@@ -57,12 +57,6 @@ target/release/roughenough_server --seed <SEED>
 ```
 
 The server will start listening for UDP requests on the default port (2003).
-
-The `--seed-backend` flag selects how the seed is held while the server runs:
-`memory` (default), `krs` (Linux Kernel Keyring), `ssh-agent`, or `pkcs11`
-(build with feature `online-pkcs11`; configured via the
-`ROUGHENOUGH_PKCS11_LIBRARY`, `ROUGHENOUGH_PKCS11_SLOT`, and
-`ROUGHENOUGH_PKCS11_PIN` environment variables).
 
 ### Running the Client
 
@@ -92,24 +86,6 @@ Query multiple servers from an RFC compliant JSON list:
 cargo run --bin roughenough_client -- -l servers.json
 ```
 
-Commonly used client flags (see `--help` for the full list):
-
-- `-P/--protocol <VERSION>` -- Roughtime protocol version(s) to offer:
-  `19` (draft version 0x8000000c, the default), `1` (RFC version 1), or
-  `both`. The default offers only the draft version because deployed public
-  servers that predate RFC version negotiation reject requests containing
-  version numbers they do not recognize; use `-P 1` or `-P both` against
-  servers that implement the final RFC.
-- `-s/--set-clock` -- set the system clock to the received time. Requires
-  `-k` so the clock is only ever set from an authenticated response (and
-  requires the OS privilege to set the clock).
-- `-t/--timeout <SECONDS>` -- seconds to wait for a server response
-  (default 2).
-- `-u <N>` -- number of different servers from the `-l` list to query
-  (default 3).
-- `-r <N>` -- number of times to repeat the chained measurement sequence
-  across those servers (default 2).
-
 ### Running Tests
 
 ```bash
@@ -134,8 +110,6 @@ Roughtime is structured as a Cargo workspace with multiple crates:
 - **common** - Shared cryptography and encoding utilities
 - **keys** - Key material handling with multiple secure storage backends
 - **reporting-server** - Web server for collecting malfeasance reports
-  (storage is in-memory and non-durable; listen address set with `--listen`,
-  default `0.0.0.0:3000`)
 - **integration** - End-to-end integration tests
 - **fuzz** - Fuzzing harness
 
