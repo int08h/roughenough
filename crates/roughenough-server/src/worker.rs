@@ -20,9 +20,7 @@ use crate::responses::ResponseHandler;
 const MAX_BATCHES_PER_WAKEUP: usize = 8;
 
 /// Reports a worker thread's exit to the main thread. Held for the lifetime
-/// of the worker closure so `Drop` runs on normal return AND panic unwind:
-/// without it a panicked worker would leave the server silently serving at
-/// reduced capacity.
+/// of the worker so `Drop` runs on normal return and panic unwind.
 pub struct ExitGuard {
     worker_id: usize,
     exit_channel: Sender<usize>,
@@ -55,8 +53,7 @@ pub struct Worker {
     metrics_publish_interval: Duration,
     next_key_replacement: u64,
     next_metrics_publication: u64,
-    /// Test-only: when the flag turns true the worker panics at the top of
-    /// its next loop iteration, exercising the worker-death signal path
+    /// Test-only: when true the worker panics at the top of its next loop iteration
     #[cfg(feature = "test-utils")]
     test_panic_flag: Option<std::sync::Arc<AtomicBool>>,
 }
@@ -130,8 +127,6 @@ impl Worker {
                 if poll.poll(&mut events, Some(poll_duration)).is_err() {
                     self.net_handler.record_failed_poll();
                 }
-                // single registered token: any event means the socket may be
-                // readable
                 still_readable = !events.is_empty();
             }
 
@@ -186,11 +181,9 @@ impl Worker {
         // Send snapshot, ignoring if channel is full
         let _ = self.metrics_channel.try_send(snapshot);
 
-        // Reset metrics after sending
         self.net_handler.reset_metrics();
         self.req_handler.reset_metrics();
 
-        // Schedule next publication
         let now = self.clock.epoch_seconds();
         self.next_metrics_publication = now + self.metrics_publish_interval.as_secs();
     }

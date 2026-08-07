@@ -25,8 +25,7 @@ pub struct MetricsSnapshot {
 }
 
 /// Aggregated metrics across all workers. Counts are cumulative since server
-/// start; the `*_per_second` rates cover only the most recent reporting
-/// interval.
+/// start. `*_per_second` rates cover the most recent reporting interval.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AggregatedMetrics {
     pub network: NetworkMetrics,
@@ -56,7 +55,6 @@ impl MetricsSnapshot {
 
     /// Write metrics to a JSON file atomically
     pub fn write_to_file(&self, metrics_path: &Path) -> Result<String, std::io::Error> {
-        // Create filename with timestamp pattern
         let filename =
             time_format::strftime_utc("roughenough-metrics-%Y%m%d-%H%M%S.json", self.timestamp)
                 .unwrap();
@@ -64,13 +62,11 @@ impl MetricsSnapshot {
         let file_path = metrics_path.join(&filename);
         let temp_path = metrics_path.join(format!(".{}.tmp", filename));
 
-        // Write to temporary file first
         let mut temp_file = File::create(&temp_path)?;
         let json_data = serde_json::to_string(self)?;
         temp_file.write_all(json_data.as_bytes())?;
         temp_file.sync_all()?;
 
-        // Atomically rename temp file to final name
         fs::rename(&temp_path, &file_path)?;
 
         debug!(
@@ -83,10 +79,6 @@ impl MetricsSnapshot {
 }
 
 /// Calculate aggregated metrics from a slice of cumulative worker metrics.
-/// `prev_num_responses`/`prev_num_bytes_sent` are the cumulative totals at the
-/// previous report: rates divide the interval delta by `duration_secs`, since
-/// dividing the cumulative totals by one interval would inflate the reported
-/// rate linearly with uptime.
 pub fn calc_aggregated_metrics(
     duration_secs: f64,
     workers: &[WorkerMetrics],
@@ -97,15 +89,12 @@ pub fn calc_aggregated_metrics(
     let mut total_requests = RequestMetrics::default();
     let mut total_responses = ResponseMetrics::default();
 
-    // Calculate totals
     for worker in workers {
         total_network += worker.network;
         total_requests += worker.request;
         total_responses += worker.response;
     }
 
-    // Oversized requests are not added: they proceed to parsing and are
-    // already counted as ok or bad
     let total_request_count = total_requests.num_ok_requests
         + total_requests.num_bad_requests
         + total_requests.num_runt_requests;

@@ -107,9 +107,6 @@ pub struct Args {
     )]
     pub send_report: bool,
 
-    // Setting the clock from an unauthenticated response would let anyone who
-    // can land a datagram on the client's port set the system time, so a
-    // public key is mandatory here
     #[clap(
         short = 's',
         long = "set-clock",
@@ -146,10 +143,6 @@ pub struct Args {
 }
 
 /// Roughtime protocol version(s) the client offers in its requests.
-///
-/// The default offers only the draft version: deployed servers that predate
-/// RFC version negotiation reject requests containing version numbers they do
-/// not recognize.
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VersionArg {
     /// Offer only draft version 0x8000000c (the default)

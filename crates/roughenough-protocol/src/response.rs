@@ -216,9 +216,6 @@ impl ToWire for Response {
     }
 
     fn to_wire(&self, cursor: &mut ParseCursor) -> Result<(), Error> {
-        // remaining(), not capacity(): to_frame has already written 12 bytes
-        // of framing into the same cursor, so the whole-buffer capacity
-        // overstates the space left for the message
         if cursor.remaining() < self.wire_size() {
             return Err(BufferTooSmall(self.wire_size(), cursor.remaining()));
         }

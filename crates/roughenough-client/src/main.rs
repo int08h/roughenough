@@ -59,8 +59,7 @@ fn query_single_server(args: &Args, hostname: &String) -> u64 {
     let port = args.port.unwrap();
 
     if args.pub_key.is_none() {
-        // Deliberately bypasses the logger: -q caps logging at ERROR, but this
-        // is security-relevant and must be visible even in quiet mode
+        // bypasses the logger on purpose to be loud
         eprintln!("WARNING: no public key provided (-k); responses are NOT authenticated");
     }
 
@@ -186,14 +185,11 @@ fn clients_from_list(server_list: &ServerList, args: &Args) -> Result<Vec<Client
     let mut clients = Vec::new();
 
     for server in &target_servers {
-        // This client is UDP-only; never send datagrams to a TCP address
         let Some(address) = server.first_udp_address() else {
             info!("Server '{}' has no UDP address, skipping it", server.name());
             continue;
         };
 
-        // resolve the address; the (host, port) tuple form handles IPv6
-        // literals, which "host:port" string concatenation would misparse
         let host = address.host();
         let port = address.port();
         let sock_addr = (host, port)
@@ -204,7 +200,6 @@ fn clients_from_list(server_list: &ServerList, args: &Args) -> Result<Vec<Client
         let encoded_key = server.public_key();
         let public_key = try_decode_key(encoded_key)?;
 
-        // Build client with all settings
         let mut builder = Client::builder(sock_addr)
             .hostname(server.name())
             .timeout(timeout)
@@ -219,7 +214,7 @@ fn clients_from_list(server_list: &ServerList, args: &Args) -> Result<Vec<Client
 
     if clients.is_empty() {
         return Err(CliError::Client(InvalidConfiguration(
-            "no queryable servers: none of the chosen servers has a UDP address".to_string(),
+            "no server has a UDP address".to_string(),
         )));
     }
 
@@ -290,9 +285,7 @@ fn display_violation(args: &Args, violation: &CausalityViolation) {
     error!("===========================");
 }
 
-/// Format an epoch-seconds value from a (possibly hostile) server. Values a
-/// [Timestamp] cannot represent fall back to the raw seconds; display code
-/// must never panic on wire-derived values.
+/// Format an epoch-seconds value from a (possibly hostile) server.
 fn format_seconds(seconds: u64, time_format: &str) -> String {
     let timestamp = i64::try_from(seconds)
         .ok()

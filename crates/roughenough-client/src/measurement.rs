@@ -140,9 +140,7 @@ impl Measurement {
 
     /// The server's time measurement, in [Timestamp] UTC.
     ///
-    /// Returns `None` when the (server-controlled) midpoint is outside the
-    /// range representable by [Timestamp]; a hostile server can sign any MIDP
-    /// value, so display code must not assume conversion succeeds.
+    /// Returns `None` if the midpoint is outside the range representable by [Timestamp].
     ///
     /// The server's "true time" lies within `(midpoint - radius, midpoint + radius)` when
     /// the response was generated.
@@ -152,15 +150,13 @@ impl Measurement {
     }
 
     /// Earliest time consistent with this measurement (`MIDP - RADI`),
-    /// saturating at zero. MIDP and RADI come from the (possibly hostile)
-    /// server, so the arithmetic must not underflow.
+    /// saturating at zero.
     pub fn lower_bound(&self) -> u64 {
         self.midpoint().saturating_sub(self.radius() as u64)
     }
 
     /// Latest time consistent with this measurement (`MIDP + RADI`),
-    /// saturating at `u64::MAX`. MIDP and RADI come from the (possibly
-    /// hostile) server, so the arithmetic must not overflow.
+    /// saturating at `u64::MAX`.
     pub fn upper_bound(&self) -> u64 {
         self.midpoint().saturating_add(self.radius() as u64)
     }

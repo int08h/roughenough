@@ -10,21 +10,14 @@
 //! ```no_run
 //! use roughenough_client::query;
 //!
-//! // Query with authentication. The client automatically verifies the server's signature.
+//! // Query with authentication. The client verifies the server's signature.
 //! let pub_key = Some("AW5uAoTSTDfG5NfY1bTh08GUnOqlRb+HVhbJ3ODJvsE=");
 //! let measurement = query("roughtime.int08h.com", 2003, pub_key).unwrap();
 //! if let Some(utc) = measurement.midpoint_datetime() {
 //!     println!("Server time: {utc}");
 //! }
 //!
-//! // Unauthenticated query, not recommended: without the server's public key
-//! // the response is NOT authenticated. The client still checks that the
-//! // midpoint lies within the delegation span (MINT <= MIDP <= MAXT), that
-//! // the Merkle proof includes this request, and that the SREP signature
-//! // verifies against the PUBK carried inside the response itself -- but that
-//! // chain is self-signed, so it does NOT prove the response came from the
-//! // expected server. The long-term-key check on the CERT/DELE signature is
-//! // skipped entirely.
+//! // Unauthenticated query, not recommended.
 //! let measurement = query("roughtime.int08h.com", 2003, None).unwrap();
 //! if let Some(utc) = measurement.midpoint_datetime() {
 //!     println!("Server time: {utc}");
@@ -326,13 +319,10 @@ impl Client {
     /// packet exactly as received (used for signature verification, nonce
     /// chaining, and malfeasance reports)
     fn recv_response(&self) -> Result<(Response, Vec<u8>), ClientError> {
-        // A conforming response with a 32-element PATH exceeds 1024 bytes;
-        // recv_from silently truncates anything larger than the buffer
         let mut buf = [0u8; MAX_RESPONSE_SIZE];
         let (nbytes, _addr) = self.transport.recv(&mut buf)?;
         let response_bytes = buf[..nbytes].to_vec();
 
-        // Parsing only advances the cursor; buf still holds the bytes as received
         let mut cursor = ParseCursor::new(&mut buf[..nbytes]);
         let response = Response::from_frame(&mut cursor)?;
 

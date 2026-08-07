@@ -81,8 +81,7 @@ pub struct Args {
     )]
     pub seed: String,
 
-    /// Run with an all-zero seed, making the server's long-term identity a
-    /// publicly known constant. For testing only; never use in production.
+    /// For testing only; never use in production.
     #[clap(long, default_value_t = false)]
     pub insecure_zero_seed: bool,
 
@@ -123,9 +122,6 @@ pub enum SeedBackendArg {
     Krs,
     #[value(name = "ssh-agent")]
     SshAgent,
-    /// PKCS#11 token (build with feature 'online-pkcs11'). Configure via env vars:
-    /// ROUGHENOUGH_PKCS11_LIBRARY (module path), ROUGHENOUGH_PKCS11_SLOT
-    /// (slot index, default 0), ROUGHENOUGH_PKCS11_PIN (user PIN)
     #[value(name = "pkcs11")]
     Pkcs11,
 }
@@ -174,8 +170,6 @@ mod tests {
 
     #[test]
     fn non_ip_interface_is_rejected() {
-        // interface names are not supported; the help text says so and bad
-        // input must be a clap error at startup, not a later panic
         assert!(Args::try_parse_from(["prog", "-i", "eth0"]).is_err());
         assert!(Args::try_parse_from(["prog", "-i", "not-an-ip"]).is_err());
     }

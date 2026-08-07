@@ -227,7 +227,6 @@ impl Server {
             });
         }
 
-        // Validate each address
         for address in &self.addresses {
             address.validate()?;
         }
@@ -243,9 +242,6 @@ impl Server {
         &self.addresses[0]
     }
 
-    /// The first address using UDP transport, or `None` if the server has no
-    /// UDP address. This client is UDP-only, so TCP addresses must never be
-    /// selected as datagram destinations.
     pub fn first_udp_address(&self) -> Option<&Address> {
         self.addresses.iter().find(|a| a.protocol == Protocol::Udp)
     }
@@ -276,8 +272,7 @@ impl Address {
 
     pub fn validate(&self) -> Result<(), Error> {
         // IP literals -- including bracketed IPv6 like "[2001:db8::1]:2003" --
-        // parse as socket addresses. Anything else must be "hostname:port";
-        // splitting on the LAST colon keeps colon-bearing hosts intact.
+        // parse as socket addresses.
         if self.address.parse::<std::net::SocketAddr>().is_ok() {
             return Ok(());
         }
@@ -291,8 +286,7 @@ impl Address {
     }
 
     pub fn host(&self) -> &str {
-        // The port always follows the last colon (see validate()); strip the
-        // brackets from IPv6 literals so callers get the bare address
+        // Strip brackets from IPv6 literals
         match self.address.rsplit_once(':') {
             Some((host, _port)) => host.trim_start_matches('[').trim_end_matches(']'),
             None => &self.address,

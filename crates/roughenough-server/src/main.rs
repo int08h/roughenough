@@ -77,8 +77,6 @@ fn main() {
         let thread = std::thread::Builder::new()
             .name(format!("worker-{i}"))
             .spawn(move || {
-                // Drop runs on panic unwind too, so a dead worker is always
-                // reported to the main thread
                 let _exit_guard = ExitGuard::new(i as usize, exit_tx);
                 worker_task(i, ks, args, clock, metrics_chan_tx)
             })
@@ -124,8 +122,6 @@ fn main() {
 // instead of unwinding with a backtrace
 fn load_seed(args: &Args) -> Box<dyn SeedBackend> {
     let seed = if args.seed.is_empty() {
-        // An all-zero seed is a publicly known long-term identity; require an
-        // explicit opt-in instead of silently serving with it
         if !args.insecure_zero_seed {
             error!("no seed provided; pass --seed or --insecure-zero-seed for testing");
             std::process::exit(1);
@@ -210,8 +206,6 @@ fn bind_socket(args: &Args) -> io::Result<MioUdpSocket> {
     Ok(mio_socket)
 }
 
-// SIGHUP is deliberately not handled: nohup'd deployments must keep
-// surviving hangup, and SIGHUP stays available as a future reload signal
 fn set_signal_handler() {
     let mut signals = signal_hook::iterator::Signals::new([
         signal_hook::consts::SIGINT,

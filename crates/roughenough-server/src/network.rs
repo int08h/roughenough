@@ -170,7 +170,7 @@ impl NetworkHandler {
 
 /// Drive `send_batch` until the queue is empty or a send fails, resuming from
 /// the first unsent message after a partial send. Returns `(sent, failed)`.
-/// Generic over the sender so partial-send resumption is unit-testable.
+#[cfg(target_os = "linux")]
 fn drain_queue<F>(msgs: &[QueuedResponse], mut send_batch: F) -> (usize, usize)
 where
     F: FnMut(&[QueuedResponse]) -> io::Result<usize>,
@@ -320,6 +320,7 @@ mod tests {
         assert_eq!(handler.metrics().num_recv_wouldblock, 0);
     }
 
+    #[cfg(target_os = "linux")]
     fn queued(n: usize) -> Vec<QueuedResponse> {
         let addr: SocketAddr = "127.0.0.1:9999".parse().unwrap();
         (0..n)
@@ -330,6 +331,7 @@ mod tests {
             .collect()
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn drain_queue_resumes_after_partial_sends() {
         let msgs = queued(7);
@@ -346,6 +348,7 @@ mod tests {
         assert_eq!(offsets_seen, vec![0, 3, 6]);
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn drain_queue_counts_remainder_as_failed_on_error() {
         let msgs = queued(5);
@@ -363,6 +366,7 @@ mod tests {
         assert_eq!((sent, failed), (2, 3));
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn drain_queue_stops_on_zero_progress() {
         let msgs = queued(4);

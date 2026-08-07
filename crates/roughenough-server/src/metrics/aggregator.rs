@@ -35,8 +35,7 @@ pub struct MetricsAggregator {
     clock: ClockSource,
     /// Optional path for JSON metrics output
     metrics_path: Option<PathBuf>,
-    /// Cumulative response count at the previous report; rates divide the
-    /// interval delta, not the ever-growing cumulative totals
+    /// Cumulative response count at the previous report
     prev_num_responses: usize,
     /// Cumulative bytes sent at the previous report
     prev_num_bytes_sent: usize,

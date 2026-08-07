@@ -11,9 +11,6 @@ pub struct NetworkMetrics {
     pub num_failed_sends: usize,
     pub num_failed_polls: usize,
     pub num_failed_recvs: usize,
-    /// Datagrams larger than `MAX_REQUEST_SIZE` dropped without a response:
-    /// a truncated read would be Merkle-hashed as a leaf differing from the
-    /// packet the client actually sent (RFC 5.3)
     pub num_oversized_dropped: usize,
 }
 
@@ -41,8 +38,7 @@ pub struct RequestMetrics {
     /// (RFC 5.1.1: such requests may be ignored)
     pub num_no_common_version: usize,
     /// Requests dropped because their negotiated version would exceed the
-    /// per-batch distinct version limit (each distinct version costs one
-    /// signature; see `ResponseHandler::MAX_VERSIONS_PER_BATCH`)
+    /// per-batch distinct version limit
     pub num_version_overflow: usize,
 }
 
