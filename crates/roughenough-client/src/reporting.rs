@@ -97,10 +97,7 @@ impl MalfeasanceReport {
     /// them according to the RFC specification. Use `submit()` to send them to a server.
     ///
     /// The report carries the violation's full measurement chain, in the order
-    /// performed (RFC 8.4.1): the verifier recomputes each nonce as
-    /// `H(prior_response || rand)`, so every measurement from the first through the
-    /// later of the violating pair must be present. The first entry's nonce was not
-    /// chained and carries no `rand`.
+    /// performed (RFC 8.4.1).
     pub fn from_violation(violation: &CausalityViolation) -> Self {
         let responses: Vec<ReportEntry> = violation
             .chain()

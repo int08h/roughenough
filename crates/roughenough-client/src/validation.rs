@@ -131,13 +131,6 @@ impl ResponseValidator {
     /// the response is correct, but merely that the server represents it signed the timestamp
     /// and computed its signature during the time interval (MIDP-RADI, MIDP+RADI).
     ///
-    /// A validator constructed without a public key ([`ResponseValidator::new`]) does NOT
-    /// authenticate the response: the long-term-key check on CERT's DELE signature is
-    /// skipped, and the SREP signature is verified against the PUBK the response itself
-    /// carries -- a self-signed chain any party can produce. Only the midpoint bounds
-    /// (MINT <= MIDP <= MAXT) and the Merkle proof of request inclusion are meaningfully
-    /// checked in that mode; success must not be presented as "validated".
-    ///
     /// `response_bytes` is the response packet exactly as received (including the
     /// "ROUGHTIM" framing): signatures are verified over the received bytes, which
     /// a re-serialization of `response` would not reproduce if the server included
@@ -172,9 +165,7 @@ impl ResponseValidator {
         Ok(midpoint)
     }
 
-    /// Slice the value of nested `path` tags out of the received response
-    /// packet. Borrowed, not copied: signature checks read the received bytes
-    /// in place.
+    /// Slice the value of nested `path` tags out of the received response packet.
     fn received_value<'a>(
         response_bytes: &'a [u8],
         path: &[Tag],
@@ -675,8 +666,7 @@ mod causality {
 
     #[test]
     fn midpoint_smaller_than_radius_saturates_and_is_not_a_violation() {
-        // MIDP < RADI must saturate to zero; wrapping would produce a bound of
-        // ~1.8e19 and flag (and with --report, falsely report) an honest server
+        // MIDP < RADI must saturate to zero
         let hostile = create_hostile_measurement(10, 100);
         assert_eq!(hostile.lower_bound(), 0);
 
@@ -770,7 +760,6 @@ mod causality {
 
         let violations = ResponseValidator::validate_causality(&measurements);
         assert!(!violations.is_empty(), "Should have violations");
-
         assert_eq!(violations.len(), 2, "Should have exactly two violations");
 
         // Check first violation (0,1)
@@ -786,10 +775,10 @@ mod causality {
 
     #[test]
     fn edge_case() {
-        // Test exact boundary condition: lower_bound_i == upper_bound_j
+        // boundary condition: lower_bound_i == upper_bound_j
         // M0: [995, 1005]
         // M1: [985, 995]
-        // This should be valid (995 <= 995)
+        // This is valid (995 <= 995)
         let measurements = vec![create_measurement(1000), create_measurement(990)];
 
         let result = ResponseValidator::validate_causality(&measurements);

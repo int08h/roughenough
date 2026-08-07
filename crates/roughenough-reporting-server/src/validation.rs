@@ -29,7 +29,6 @@ fn decode_entry_base64(entry: &ReportEntry, index: usize) -> Result<DecodedEntry
         .decode(entry.public_key().as_bytes())
         .map_err(|e| format!("Entry {index}: invalid public key: {e}"))?;
 
-    // Validate public key length
     if public_key_bytes.len() != 32 {
         return Err(format!(
             "Entry {index}: public key must be 32 bytes, got {}",
@@ -37,7 +36,6 @@ fn decode_entry_base64(entry: &ReportEntry, index: usize) -> Result<DecodedEntry
         ));
     }
 
-    // Decode rand if present
     let rand_bytes = match entry.rand() {
         None => None,
         Some(rand_str) => {
@@ -68,13 +66,11 @@ fn parse_interaction_pair(
     decoded: &DecodedEntry,
     index: usize,
 ) -> Result<(Request, Response), String> {
-    // Parse request
     let mut request_bytes_mut = decoded.request_bytes.clone();
     let mut request_cursor = ParseCursor::new(&mut request_bytes_mut);
     let request = Request::from_frame(&mut request_cursor)
         .map_err(|e| format!("Entry {index}: invalid request: {e}"))?;
 
-    // Parse response
     let mut response_bytes_mut = decoded.response_bytes.clone();
     let mut response_cursor = ParseCursor::new(&mut response_bytes_mut);
     let response = Response::from_frame(&mut response_cursor)
@@ -83,8 +79,7 @@ fn parse_interaction_pair(
     Ok((request, response))
 }
 
-/// Validate a single request/response pair. `response_bytes` is the response
-/// packet exactly as reported; signatures are verified over those bytes.
+/// Validate a single request/response pair.
 fn validate_entry(
     request_bytes: &[u8],
     response_bytes: &[u8],
@@ -101,8 +96,7 @@ fn validate_entry(
         .map_err(|e| format!("Entry {index}: validation failed: {e}"))
 }
 
-/// Validate chaining between consecutive entries. `previous_response` is the
-/// prior entry's response packet exactly as reported.
+/// Validate chaining between consecutive entries
 fn validate_chaining(
     request: &Request,
     decoded: &DecodedEntry,
@@ -135,10 +129,6 @@ fn validate_chaining(
     Ok(())
 }
 
-/// True when some pair (i < j) demonstrates a causality violation:
-/// `MIDP_i - RADI_i > MIDP_j + RADI_j`. The saturating arithmetic mirrors the
-/// client's `Measurement::lower_bound`/`upper_bound` on these wire-derived
-/// values, so client and server agree on what constitutes a violation.
 fn demonstrates_violation(bounds: &[(u64, u32)]) -> bool {
     bounds.iter().enumerate().any(|(i, &(midp_i, radi_i))| {
         bounds[i + 1..].iter().any(|&(midp_j, radi_j)| {
@@ -147,7 +137,6 @@ fn demonstrates_violation(bounds: &[(u64, u32)]) -> bool {
     })
 }
 
-/// Validate a malfeasance report containing multiple request/response pairs
 pub fn validate_report(report: &MalfeasanceReport) -> Result<(), String> {
     if report.responses().len() < 2 {
         return Err("Need at least 2 entries for causality violation".into());
@@ -157,13 +146,10 @@ pub fn validate_report(report: &MalfeasanceReport) -> Result<(), String> {
     let mut bounds: Vec<(u64, u32)> = Vec::with_capacity(report.responses().len());
 
     for (i, entry) in report.responses().iter().enumerate() {
-        // Decode all base64 fields
         let decoded = decode_entry_base64(entry, i)?;
 
-        // Parse request and response
         let (request, response) = parse_interaction_pair(&decoded, i)?;
 
-        // Validate the request/response pair
         validate_entry(
             &decoded.request_bytes,
             &decoded.response_bytes,
@@ -172,18 +158,13 @@ pub fn validate_report(report: &MalfeasanceReport) -> Result<(), String> {
             i,
         )?;
 
-        // Validate chaining
         validate_chaining(&request, &decoded, previous_response.as_deref(), i)?;
 
         bounds.push((response.srep().midp(), response.srep().radi()));
 
-        // The chained nonce covers the response packet exactly as received
         previous_response = Some(decoded.response_bytes.clone());
     }
 
-    // A valid chain only proves the responses arrived in order; the report
-    // must also prove the claim itself, or any two honest measurements would
-    // be stored as "malfeasance"
     if !demonstrates_violation(&bounds) {
         return Err("no causality violation demonstrated".into());
     }
@@ -202,10 +183,6 @@ mod tests {
 
     use super::*;
 
-    /// Build a properly chained measurement sequence: measurement 0 uses a
-    /// random nonce; each later measurement's nonce is
-    /// H(prior_response || rand). `first_rand` optionally attaches a
-    /// (meaningless) rand to the first measurement.
     fn create_chained_measurements(
         midpoints: &[u64],
         first_rand: Option<[u8; 32]>,
@@ -257,8 +234,6 @@ mod tests {
     fn chained_report_without_violation_is_rejected() {
         let base = TestContext::new(1).clock.epoch_seconds();
 
-        // Correctly chained, causally consistent times: signatures and nonce
-        // chain check out, but no malfeasance is demonstrated
         let report = create_chained_report(&[base, base + 1_000, base + 2_000], None);
 
         let err = validate_report(&report).unwrap_err();
@@ -292,15 +267,14 @@ mod tests {
     #[test]
     fn boundary_is_not_a_violation() {
         // lower_i == upper_j is causally consistent; only strictly greater
-        // demonstrates a violation, matching the client's comparison
+        // demonstrates a violation
         assert!(!demonstrates_violation(&[(1000, 5), (990, 5)]));
         assert!(demonstrates_violation(&[(1001, 5), (990, 5)]));
     }
 
     #[test]
     fn hostile_bounds_saturate() {
-        // MIDP < RADI saturates to zero instead of wrapping; wrapped bounds
-        // would fabricate a violation out of honest measurements
+        // MIDP < RADI saturates to zero instead of wrapping
         assert!(!demonstrates_violation(&[(10, 100), (1000, 5)]));
         // MIDP near u64::MAX saturates the upper bound
         assert!(!demonstrates_violation(&[

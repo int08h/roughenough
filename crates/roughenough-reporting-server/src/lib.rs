@@ -1,8 +1,8 @@
 //! Web server that collects and stores Roughtime malfeasance reports.
 //!
-//! Report storage is in-memory and non-durable: all stored reports are lost
-//! when the process exits. The listen address defaults to `0.0.0.0:3000` and
-//! is configurable with `--listen <ADDR:PORT>`.
+//! The listen address defaults to `0.0.0.0:3000` and is configurable with `--listen <ADDR:PORT>`.
+//!
+//! TODO(stuart): Report storage is in-memory only
 
 #![forbid(unsafe_code)]
 
@@ -22,9 +22,6 @@ use serde::{Deserialize, Serialize};
 pub use crate::storage::{InMemoryStorage, ReportStorage, StorageError, StoredReport};
 pub use crate::validation::validate_report;
 
-/// Explicit request body cap. Report entries are bounded by the client's
-/// measurement rounds, so the largest plausible report is far below this;
-/// anything bigger is rejected before JSON parsing.
 pub const MAX_REPORT_BODY_BYTES: usize = 256 * 1024;
 
 #[derive(Clone)]
@@ -81,11 +78,6 @@ pub async fn health_check() -> &'static str {
     "OK"
 }
 
-/// Create the Axum router with all routes configured.
-///
-/// The `Json` extractor accepts both `application/json` and any
-/// `application/*+json`, which covers the registered
-/// `application/roughtime-malfeasance+json` media type (RFC 12.4.2).
 pub fn create_app(state: AppState) -> axum::Router {
     axum::Router::new()
         .route("/api/v1/reports", axum::routing::post(handle_report))

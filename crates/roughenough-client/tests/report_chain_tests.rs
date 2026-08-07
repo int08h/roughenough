@@ -1,6 +1,6 @@
-//! Cross-check that the client's malfeasance report construction agrees with
+//! check that the client's malfeasance report construction agrees with
 //! the reporting server's validation: every violation `validate_causality`
-//! can emit must produce a report `validate_report` accepts.
+//! must produce a report `validate_report` accepts.
 
 use data_encoding::BASE64;
 use roughenough_client::measurement::Measurement;
@@ -11,9 +11,6 @@ use roughenough_protocol::tags::Nonce;
 use roughenough_reporting_server::validate_report;
 use roughenough_server::test_utils::TestContext;
 
-/// Build a properly chained measurement sequence: measurement 0 uses a random
-/// nonce; each later measurement's nonce is H(prior_response || rand) exactly
-/// as MeasurementSequence derives it.
 fn create_chained_measurements(midpoints: &[u64]) -> Vec<Measurement> {
     let mut prior_response: Option<Vec<u8>> = None;
     let mut measurements = Vec::new();
@@ -66,7 +63,6 @@ fn client_reports_are_accepted_by_reporting_server_validator() {
     for violation in &violations {
         let report = MalfeasanceReport::from_violation(violation);
 
-        // Round-trip through JSON exactly as an HTTP submission would
         let json = serde_json::to_string(&report).unwrap();
         let received: MalfeasanceReport = serde_json::from_str(&json).unwrap();
 
@@ -85,7 +81,7 @@ fn client_report_for_violation_spanning_intermediate_measurement_is_accepted() {
     let base = TestContext::new(1).clock.epoch_seconds();
 
     // Only the (0, 2) pair violates: measurement 1 is consistent with both
-    // neighbors, so the report must carry it to keep the nonce chain intact
+    // neighbors
     let measurements = create_chained_measurements(&[base + 15, base + 8, base]);
 
     let violations = ResponseValidator::validate_causality(&measurements);
@@ -96,7 +92,6 @@ fn client_report_for_violation_spanning_intermediate_measurement_is_accepted() {
     let report = MalfeasanceReport::from_violation(&violations[0]);
     assert_eq!(report.responses().len(), 3);
 
-    // The intermediate entry carries the rand chaining it to entry 0
     assert_eq!(
         report.responses()[1].rand().unwrap(),
         BASE64.encode(measurements[1].rand_value().unwrap())

@@ -34,20 +34,17 @@ impl TestServer {
         Self::spawn_with_storage(Arc::new(InMemoryStorage::new())).await
     }
 
-    /// Spawn a test server with specific storage (e.g. tight limits)
+    /// Spawn a test server with specific storage
     async fn spawn_with_storage(storage: Arc<dyn ReportStorage>) -> Self {
         let port = find_available_port();
         let addr: SocketAddr = ([127, 0, 0, 1], port).into();
 
         let state = AppState { storage };
 
-        // Build the actual server router (no reimplementation!)
         let app = roughenough_reporting_server::create_app(state);
 
-        // Create the TCP listener
         let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
 
-        // Spawn the server in the background
         let handle = tokio::spawn(async move {
             axum::serve(
                 listener,
@@ -76,10 +73,6 @@ impl Drop for TestServer {
     }
 }
 
-/// Create a chained report from midpoints in received order. Measurement 0
-/// uses a fixed nonce; each later measurement's nonce is
-/// H(prior_response || rand). `first_rand` optionally attaches a
-/// (meaningless) rand to the first entry.
 fn create_chained_report(midpoints: &[u64], first_rand: Option<[u8; 32]>) -> MalfeasanceReport {
     let mut prior_response: Option<Vec<u8>> = None;
     let mut measurements = Vec::new();
@@ -119,8 +112,6 @@ fn create_chained_report(midpoints: &[u64], first_rand: Option<[u8; 32]>) -> Mal
     MalfeasanceReport::from_violation(&violation)
 }
 
-/// Create a test malfeasance report with proper chaining: the first
-/// measurement claims a time far ahead of the second
 fn create_test_malfeasance_report() -> MalfeasanceReport {
     let current_time = TestContext::new(1).clock.epoch_seconds();
     create_chained_report(&[current_time + 2_000_000, current_time], None)

@@ -36,8 +36,6 @@ ureq = { workspace = true, features = ["json"], optional = true }
 
 [dev-dependencies]
 roughenough-protocol = { workspace = true, features = ["test-utils"] }
-# path-only (no version) so the cyclic dev-dependency is stripped at publish;
-# used by tests/report_chain_tests.rs to prove client-built reports satisfy
-# the reporting server's validator
+# used by tests/report_chain_tests.rs
 roughenough-reporting-server = { path = "../roughenough-reporting-server" }
 roughenough-server = { workspace = true, features = ["test-utils"] }

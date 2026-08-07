@@ -8,9 +8,7 @@ use roughenough_client::MalfeasanceReport;
 use roughenough_common::crypto::random_bytes;
 use serde::Serialize;
 
-/// Hard cap on stored reports. When full, new submissions are rejected (the
-/// handler answers 503) rather than evicting: a flood of valid reports must
-/// not be able to displace previously stored evidence.
+/// Hard cap on stored reports.
 pub const MAX_STORED_REPORTS: usize = 10_000;
 
 /// Fixed-window per-source submission limit: at most this many stores per
@@ -77,8 +75,6 @@ impl InMemoryStorage {
         )
     }
 
-    /// Limits are parameters so tests can exercise the cap and rate-limit
-    /// behavior without thousands of submissions.
     pub fn with_limits(max_reports: usize, max_per_source: u32, window_length: Duration) -> Self {
         Self {
             reports: Mutex::new(HashMap::new()),
@@ -160,7 +156,6 @@ impl ReportStorage for InMemoryStorage {
 mod tests {
     use super::*;
 
-    /// Storage does not inspect report contents, so an empty report suffices
     fn empty_report() -> MalfeasanceReport {
         serde_json::from_str(r#"{"responses": []}"#).unwrap()
     }
