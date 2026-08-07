@@ -13,11 +13,22 @@
 //! // Query with authentication. The client automatically verifies the server's signature.
 //! let pub_key = Some("AW5uAoTSTDfG5NfY1bTh08GUnOqlRb+HVhbJ3ODJvsE=");
 //! let measurement = query("roughtime.int08h.com", 2003, pub_key).unwrap();
-//! println!("Server time: {}", measurement.midpoint_datetime());
+//! if let Some(utc) = measurement.midpoint_datetime() {
+//!     println!("Server time: {utc}");
+//! }
 //!
-//! // Unauthenticated query, no verification, not recommended.
+//! // Unauthenticated query, not recommended: without the server's public key
+//! // the response is NOT authenticated. The client still checks that the
+//! // midpoint lies within the delegation span (MINT <= MIDP <= MAXT), that
+//! // the Merkle proof includes this request, and that the SREP signature
+//! // verifies against the PUBK carried inside the response itself -- but that
+//! // chain is self-signed, so it does NOT prove the response came from the
+//! // expected server. The long-term-key check on the CERT/DELE signature is
+//! // skipped entirely.
 //! let measurement = query("roughtime.int08h.com", 2003, None).unwrap();
-//! println!("Server time: {}", measurement.midpoint_datetime());
+//! if let Some(utc) = measurement.midpoint_datetime() {
+//!     println!("Server time: {utc}");
+//! }
 //! ```
 //!
 //! # Advanced Usage
@@ -50,7 +61,7 @@ use std::time::Duration;
 use roughenough_common::crypto::{make_srv_commitment, random_bytes};
 use roughenough_common::encoding::try_decode_key;
 use roughenough_protocol::cursor::ParseCursor;
-use roughenough_protocol::request::Request;
+use roughenough_protocol::request::{MAX_RESPONSE_SIZE, Request};
 use roughenough_protocol::response::Response;
 use roughenough_protocol::tags::{Nonce, ProtocolVersion, PublicKey, SrvCommitment};
 use roughenough_protocol::{FromFrame, ToFrame};
@@ -79,7 +90,7 @@ use crate::{ResponseValidator, validation};
 /// // The returned time in Unix epoch seconds
 /// println!("Server's time, epoch: {}", measurement.midpoint());
 /// // Returned time in human format
-/// println!("Server's time, UTC: {}", measurement.midpoint_datetime())
+/// println!("Server's time, UTC: {:?}", measurement.midpoint_datetime())
 /// ```
 pub fn query(hostname: &str, port: u16, key: Option<&str>) -> Result<Measurement, ClientError> {
     let client = Client::new(hostname, port, key)?;
@@ -262,7 +273,7 @@ impl Client {
     /// let measurement = client.query().unwrap();
     ///
     /// // Returned time in human format
-    /// println!("Server's time, UTC: {}", measurement.midpoint_datetime());
+    /// println!("Server's time, UTC: {:?}", measurement.midpoint_datetime());
     /// // Time in Unix epoch seconds
     /// println!("Server's time, epoch: {}", measurement.midpoint());
     /// ```
@@ -315,7 +326,9 @@ impl Client {
     /// packet exactly as received (used for signature verification, nonce
     /// chaining, and malfeasance reports)
     fn recv_response(&self) -> Result<(Response, Vec<u8>), ClientError> {
-        let mut buf = [0u8; 1024];
+        // A conforming response with a 32-element PATH exceeds 1024 bytes;
+        // recv_from silently truncates anything larger than the buffer
+        let mut buf = [0u8; MAX_RESPONSE_SIZE];
         let (nbytes, _addr) = self.transport.recv(&mut buf)?;
         let response_bytes = buf[..nbytes].to_vec();
 
@@ -324,5 +337,96 @@ impl Client {
         let response = Response::from_frame(&mut cursor)?;
 
         Ok((response, response_bytes))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_addr() -> SocketAddr {
+        "127.0.0.1:2003".parse().unwrap()
+    }
+
+    fn test_key() -> PublicKey {
+        PublicKey::from([0x42u8; 32])
+    }
+
+    #[test]
+    fn builder_defaults() {
+        let client = Client::builder(test_addr()).build();
+
+        assert_eq!(client.server, test_addr());
+        assert_eq!(client.hostname, "unknown");
+        assert!(client.public_key.is_none());
+        assert!(client.srv_commit.is_none());
+        assert!(client.versions.is_none());
+    }
+
+    #[test]
+    fn builder_with_key_derives_srv_commitment() {
+        let key = test_key();
+        let client = Client::builder(test_addr()).public_key(key).build();
+
+        assert_eq!(client.public_key, Some(key));
+        assert_eq!(client.srv_commit, Some(make_srv_commitment(&key)));
+    }
+
+    #[test]
+    fn request_without_key_omits_srv() {
+        let client = Client::builder(test_addr()).build();
+        let request = client.create_request(None);
+
+        assert!(request.srv().is_none());
+    }
+
+    #[test]
+    fn request_with_key_carries_srv_commitment() {
+        let key = test_key();
+        let client = Client::builder(test_addr()).public_key(key).build();
+
+        let request = client.create_request(None);
+        assert_eq!(request.srv(), Some(&make_srv_commitment(&key)));
+    }
+
+    #[test]
+    fn request_carries_configured_versions() {
+        let versions = [ProtocolVersion::RFC];
+        let client = Client::builder(test_addr()).versions(&versions).build();
+
+        let request = client.create_request(None);
+        assert_eq!(request.ver().versions(), &versions[..]);
+    }
+
+    #[test]
+    fn request_uses_provided_nonce() {
+        let client = Client::builder(test_addr()).build();
+        let nonce = Nonce::from([0x77u8; 32]);
+
+        let request = client.create_request(Some(nonce));
+        assert_eq!(request.nonc(), &nonce);
+    }
+
+    #[test]
+    fn query_surfaces_transport_timeout() {
+        // Transport that never receives anything
+        struct DeafTransport;
+        impl ClientTransport for DeafTransport {
+            fn send(&self, data: &[u8], _addr: SocketAddr) -> Result<usize, ClientError> {
+                Ok(data.len())
+            }
+            fn recv(&self, _buf: &mut [u8]) -> Result<(usize, SocketAddr), ClientError> {
+                Err(ClientError::ServerTimeout)
+            }
+        }
+
+        let client = Client::builder(test_addr())
+            .transport(Box::new(DeafTransport))
+            .build();
+
+        match client.query() {
+            Err(ClientError::ServerTimeout) => {}
+            other => panic!("expected ServerTimeout, got {other:?}"),
+        }
     }
 }
