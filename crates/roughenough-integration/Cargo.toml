@@ -9,6 +9,8 @@ homepage = "https://github.com/int08h/roughenough"
 readme = "../../README.md"
 keywords = ["roughtime", "integration", "testing", "e2e"]
 categories = ["development-tools"]
+# Test harness only; never published to crates.io
+publish = false
 
 [dependencies]
 roughenough-client = { workspace = true }

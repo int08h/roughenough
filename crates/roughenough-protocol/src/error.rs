@@ -23,7 +23,7 @@ pub enum Error {
     #[error("required tag {0} is missing")]
     MissingTag(&'static str),
 
-    #[error("magic value was not 'ROUGHTIM' (0x544f55474854494d): {0:#016x}")]
+    #[error("magic value was not 'ROUGHTIM' (0x524f55474854494d): {0:#016x}")]
     UnexpectedMagic(u64),
 
     #[error("frame length invalid: {0}")]

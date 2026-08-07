@@ -11,7 +11,7 @@ verifiable time synchronization.
 
 - Full implementation of the (draft) Roughtime RFC specification
 - Command-line client with multiple output formats and server validation
-- Performance oriented asynchronous UDP server 
+- Performance oriented batching UDP server 
 - Clients can (optionally) report malfeasance to a remote server for analysis
 - Multiple backends for secure key and identity protection (KMS, Secret Manager, Linux KRS, 
   SSH agent, PKCS#11)
@@ -41,18 +41,28 @@ cargo build --release --all-features
 
 ### Running the Server
 
-```bash
-# Debug build
-cargo run --bin roughenough_server
+The server refuses to start without a long-term identity seed: pass one with
+`--seed` (or the `ROUGHENOUGH_SEED` environment variable), or pass
+`--insecure-zero-seed` to run with a well-known all-zero seed for testing.
 
-# Release build with optimizations
-cargo run --release --bin roughenough_server
+```bash
+# Debug build, testing-only zero seed
+cargo run --bin roughenough_server -- --insecure-zero-seed
+
+# Release build with optimizations and a real seed
+cargo run --release --bin roughenough_server -- --seed <SEED>
 
 # Run the server binary directly
-target/release/roughenough_server
+target/release/roughenough_server --seed <SEED>
 ```
 
-The server will start listening for UDP requests on the default port (2002).
+The server will start listening for UDP requests on the default port (2003).
+
+The `--seed-backend` flag selects how the seed is held while the server runs:
+`memory` (default), `krs` (Linux Kernel Keyring), `ssh-agent`, or `pkcs11`
+(build with feature `online-pkcs11`; configured via the
+`ROUGHENOUGH_PKCS11_LIBRARY`, `ROUGHENOUGH_PKCS11_SLOT`, and
+`ROUGHENOUGH_PKCS11_PIN` environment variables).
 
 ### Running the Client
 
@@ -60,20 +70,20 @@ Basic usage:
 
 ```bash
 # Query a Roughtime server
-cargo run --bin roughenough_client -- roughtime.int08h.com 2002
+cargo run --bin roughenough_client -- roughtime.int08h.com 2003
 
 # Verify server public key
-cargo run --bin roughenough_client -- roughtime.int08h.com 2002 -k <base64-or-hex-key>
+cargo run --bin roughenough_client -- roughtime.int08h.com 2003 -k <base64-or-hex-key>
 
 # Multiple requests
-cargo run --bin roughenough_client -- roughtime.int08h.com 2002 -n 10
+cargo run --bin roughenough_client -- roughtime.int08h.com 2003 -n 10
 
 # Verbose output
-cargo run --bin roughenough_client -- roughtime.int08h.com 2002 -v
+cargo run --bin roughenough_client -- roughtime.int08h.com 2003 -v
 
 # Different time formats
-cargo run --bin roughenough_client -- roughtime.int08h.com 2002 --epoch  # Unix timestamp
-cargo run --bin roughenough_client -- roughtime.int08h.com 2002 --zulu   # ISO 8601 UTC
+cargo run --bin roughenough_client -- roughtime.int08h.com 2003 --epoch  # Unix timestamp
+cargo run --bin roughenough_client -- roughtime.int08h.com 2003 --zulu   # ISO 8601 UTC
 ```
 
 Query multiple servers from an RFC compliant JSON list:
@@ -82,6 +92,24 @@ Query multiple servers from an RFC compliant JSON list:
 cargo run --bin roughenough_client -- -l servers.json
 ```
 
+Commonly used client flags (see `--help` for the full list):
+
+- `-P/--protocol <VERSION>` -- Roughtime protocol version(s) to offer:
+  `19` (draft version 0x8000000c, the default), `1` (RFC version 1), or
+  `both`. The default offers only the draft version because deployed public
+  servers that predate RFC version negotiation reject requests containing
+  version numbers they do not recognize; use `-P 1` or `-P both` against
+  servers that implement the final RFC.
+- `-s/--set-clock` -- set the system clock to the received time. Requires
+  `-k` so the clock is only ever set from an authenticated response (and
+  requires the OS privilege to set the clock).
+- `-t/--timeout <SECONDS>` -- seconds to wait for a server response
+  (default 2).
+- `-u <N>` -- number of different servers from the `-l` list to query
+  (default 3).
+- `-r <N>` -- number of times to repeat the chained measurement sequence
+  across those servers (default 2).
+
 ### Running Tests
 
 ```bash
@@ -89,7 +117,7 @@ cargo run --bin roughenough_client -- -l servers.json
 cargo test
 
 # Run tests for specific crate
-cargo test -p protocol
+cargo test -p roughenough-protocol
 
 # Run integration tests
 target/debug/roughenough_integration_test
@@ -106,6 +134,8 @@ Roughtime is structured as a Cargo workspace with multiple crates:
 - **common** - Shared cryptography and encoding utilities
 - **keys** - Key material handling with multiple secure storage backends
 - **reporting-server** - Web server for collecting malfeasance reports
+  (storage is in-memory and non-durable; listen address set with `--listen`,
+  default `0.0.0.0:3000`)
 - **integration** - End-to-end integration tests
 - **fuzz** - Fuzzing harness
 
@@ -115,8 +145,8 @@ Roughtime is structured as a Cargo workspace with multiple crates:
 
 - **reporting** - Enables clients to report malfeasance to a remote server
   ```bash
-  cargo build -p client --features reporting
-  cargo run --bin roughenough_client -- hostname.com 2002 --report
+  cargo build -p roughenough-client --features reporting
+  cargo run --bin roughenough_client -- hostname.com 2003 --report
   ```
 
 ### Keys Crate Features
