@@ -98,15 +98,6 @@ Comments explain **why**, not what. Do not narrate code or duplicate names in En
 - Comment: intent, workarounds, external context, assumptions, edge cases
 - Do not comment: obvious logic, removed/obsolete code paths (delete stale comments with deleted code)
 
-## Rust Development Guidelines
-
-- Prefer `?` over explicit error handling
-- Use `match` for exhaustive patterns, not if-else chains
-- Prefer iterators over manual loops
-- Prefer borrowing over cloning; `&str` over `String` for parameters when ownership is not needed
-- Use `const` not `static` for compile-time constants
-- Implement `From` for conversions; use `#[derive()]` for common traits
-
 ## Benchmarking and Performance
 
 - Treat performance changes as experiments: assume the change does NOT help until benchmarks prove otherwise
