@@ -1,10 +1,9 @@
-use std::fs;
 use std::io::{self, BufReader, Read};
 use std::net::UdpSocket;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::thread;
 use std::time::Duration;
+use std::{fs, thread};
 
 fn pick_free_udp_port() -> u16 {
     UdpSocket::bind("127.0.0.1:0")
