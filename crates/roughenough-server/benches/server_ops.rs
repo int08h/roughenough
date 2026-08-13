@@ -8,7 +8,6 @@ use roughenough_protocol::ToFrame;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::tags::{Nonce, ProtocolVersion};
 use roughenough_protocol::util::ClockSource;
-use roughenough_server::args::{Args, SeedBackendArg};
 use roughenough_server::keysource::KeySource;
 use roughenough_server::requests::RequestHandler;
 use roughenough_server::responses::ResponseHandler;
@@ -35,25 +34,9 @@ fn create_wire_request_with_version(nonce_value: u8, version: ProtocolVersion) -
 }
 
 fn create_request_handler() -> RequestHandler {
-    let args = Args {
-        batch_size: 64,
-        interface: "0.0.0.0".parse().unwrap(),
-        port: 2002,
-        num_threads: 1,
-        fixed_offset: 0,
-        quiet: false,
-        rotation_interval: 1,
-        metrics_interval: 60,
-        seed: "".to_string(),
-        insecure_zero_seed: false,
-        seed_backend: SeedBackendArg::Memory,
-        verbose: 0,
-        metrics_output: None,
-    };
-
     let seed = Box::new(MemoryBackend::from_random());
     let ks = KeySource::new(seed, ClockSource::System, Duration::from_secs(60));
-    let responder = ResponseHandler::new(args.batch_size, ks);
+    let responder = ResponseHandler::new(64, ks);
 
     RequestHandler::new(responder)
 }

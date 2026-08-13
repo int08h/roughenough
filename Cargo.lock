@@ -3018,6 +3018,7 @@ dependencies = [
  "time-format",
  "tracing",
  "tracing-subscriber",
+ "zeroize",
 ]
 
 [[package]]

@@ -18,7 +18,7 @@
 //!   -> UDP Socket
 //!
 use std::io;
-use std::net::UdpSocket as StdUdpSocket;
+use std::net::{SocketAddr, UdpSocket as StdUdpSocket};
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::{Acquire, Release};
@@ -36,6 +36,7 @@ use roughenough_server::keysource::KeySource;
 use roughenough_server::metrics::aggregator::{MetricsAggregator, WorkerMetrics};
 use roughenough_server::metrics::snapshot::validate_metrics_directory;
 use roughenough_server::responses::ResponseHandler;
+use roughenough_server::seed_file;
 use roughenough_server::worker::{ExitGuard, Worker};
 use socket2::{Domain, Socket, Type};
 use tracing::{debug, error, info, warn};
@@ -46,16 +47,38 @@ use tracing_subscriber::{Layer, filter};
 /// Global flag that will be set to `false` when all threads should exit.
 static KEEP_RUNNING: AtomicBool = AtomicBool::new(true);
 
+#[derive(Clone, Copy)]
+struct WorkerConfig {
+    socket_addr: SocketAddr,
+    batch_size: usize,
+    key_replacement_interval: Duration,
+    metrics_interval: Duration,
+}
+
 fn main() {
     set_signal_handler();
 
     let args = Args::parse();
     enable_logging(&args);
-    debug!("{args:?}");
+    debug!(
+        listen_addr = %args.udp_socket_addr(),
+        num_threads = args.num_threads,
+        batch_size = args.batch_size,
+        rotation_interval_hours = args.rotation_interval,
+        metrics_interval_seconds = args.metrics_interval,
+        seed_backend = %args.seed_backend,
+        "Server configuration loaded"
+    );
 
     let clock = choose_clock(&args);
     let seed = load_seed(&args);
     let key_source = KeySource::new(seed, clock.clone(), args.rotation_interval());
+    let worker_config = WorkerConfig {
+        socket_addr: args.udp_socket_addr(),
+        batch_size: args.batch_size as usize,
+        key_replacement_interval: args.rotation_interval(),
+        metrics_interval: Duration::from_secs(args.metrics_interval),
+    };
 
     info!("Long term public key: {:?}", key_source.public_key());
 
@@ -68,7 +91,6 @@ fn main() {
     let (exit_tx, exit_rx) = channel();
 
     for i in 0..args.num_threads {
-        let args = args.clone();
         let clock = clock.clone();
         let ks = key_source.clone();
         let metrics_chan_tx = metrics_chan_tx.clone();
@@ -78,7 +100,7 @@ fn main() {
             .name(format!("worker-{i}"))
             .spawn(move || {
                 let _exit_guard = ExitGuard::new(i as usize, exit_tx);
-                worker_task(i, ks, args, clock, metrics_chan_tx)
+                worker_task(i, ks, worker_config, clock, metrics_chan_tx)
             })
             .unwrap();
 
@@ -117,19 +139,33 @@ fn main() {
 }
 
 fn load_seed(args: &Args) -> Box<dyn SeedBackend> {
-    let seed = if args.seed.is_empty() {
-        if !args.insecure_zero_seed {
-            error!("no seed provided; pass --seed or --insecure-zero-seed for testing");
-            std::process::exit(1);
+    let seed = match &args.seed_file {
+        None => {
+            warn!("Using all-zero seed because --insecure-zero-seed was specified");
+            Seed::new(&[0u8; 32])
         }
-        warn!("--seed is empty, using all zero seed");
-        Seed::new(&[0u8; 32])
-    } else {
-        match try_load_seed_sync(&args.seed) {
-            Ok(seed) => seed,
-            Err(e) => {
-                error!("loading seed: {e}");
-                std::process::exit(1);
+        Some(path) => {
+            let contents = match seed_file::read(path) {
+                Ok(contents) => contents,
+                Err(e) => {
+                    error!("reading seed file '{}': {e}", path.display());
+                    std::process::exit(1);
+                }
+            };
+            let encoded_value = match contents.encoded_value() {
+                Ok(value) => value,
+                Err(e) => {
+                    error!("reading seed file '{}': {e}", path.display());
+                    std::process::exit(1);
+                }
+            };
+
+            match try_load_seed_sync(encoded_value) {
+                Ok(seed) => seed,
+                Err(e) => {
+                    error!("loading seed from '{}': {e}", path.display());
+                    std::process::exit(1);
+                }
             }
         }
     };
@@ -165,22 +201,22 @@ fn choose_clock(args: &Args) -> ClockSource {
 fn worker_task(
     idx: u16,
     key_source: KeySource,
-    args: Args,
+    config: WorkerConfig,
     clock: ClockSource,
     metrics_channel: SyncSender<WorkerMetrics>,
 ) {
-    let sock = bind_socket(&args).expect("Failed to bind socket");
-    let responder = ResponseHandler::new(args.batch_size, key_source);
-    let metrics_interval = Duration::from_secs(args.metrics_interval);
+    let sock = bind_socket(config.socket_addr).expect("Failed to bind socket");
+    let responder = ResponseHandler::new(config.batch_size as u8, key_source);
     let idx = idx as usize;
 
     let mut worker = Worker::new(
         idx,
-        args,
+        config.batch_size,
+        config.key_replacement_interval,
         responder,
         clock,
         metrics_channel,
-        metrics_interval,
+        config.metrics_interval,
     );
 
     worker.run(sock, &KEEP_RUNNING);
@@ -188,8 +224,7 @@ fn worker_task(
 
 // Bind to the server port using SO_REUSEPORT and SO_REUSEADDR so the kernel will fairly
 // balance traffic to each worker. https://lwn.net/Articles/542629/
-fn bind_socket(args: &Args) -> io::Result<MioUdpSocket> {
-    let sock_addr = args.udp_socket_addr();
+fn bind_socket(sock_addr: SocketAddr) -> io::Result<MioUdpSocket> {
     let sock_domain = Domain::for_address(sock_addr);
     let socket = Socket::new(sock_domain, Type::DGRAM, None)?;
     socket.set_nonblocking(true)?;

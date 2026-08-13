@@ -97,7 +97,7 @@ fn mio_loop_steady_state_is_allocation_free() {
     let keep_running = AtomicBool::new(true);
     let (tx, _rx) = std::sync::mpsc::sync_channel(4);
 
-    let mut args = Args::try_parse_from(["roughenough_server"]).unwrap();
+    let mut args = Args::try_parse_from(["roughenough_server", "--insecure-zero-seed"]).unwrap();
     // deadline work allocates (a metrics snapshot clones a Vec-bearing
     // struct; rotation regenerates the online key): pin both far beyond the
     // measurement window. Rotation still fires once at startup, inside
@@ -112,7 +112,8 @@ fn mio_loop_steady_state_is_allocation_free() {
     let metrics_interval = Duration::from_secs(args.metrics_interval);
     let mut worker = Worker::new(
         0,
-        args,
+        args.batch_size as usize,
+        args.rotation_interval(),
         responder,
         ClockSource::System,
         tx,

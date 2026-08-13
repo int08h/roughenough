@@ -1,6 +1,7 @@
 use roughenough_common::encoding::try_decode;
 use roughenough_protocol::util::as_hex;
 use tracing::debug;
+use zeroize::Zeroizing;
 
 use crate::seed::Seed;
 use crate::storage::StorageError;
@@ -92,8 +93,9 @@ fn decode_secret_payload(data: &[u8], data_crc32c: Option<i64>) -> Result<Seed, 
         }
     }
 
-    let encoded_str = String::from_utf8_lossy(data).to_string();
-    let value = try_decode(&encoded_str)?;
+    let encoded_value = std::str::from_utf8(data)
+        .map_err(|error| StorageError::InvalidSeed(format!("secret is not UTF-8: {error}")))?;
+    let value = Zeroizing::new(try_decode(encoded_value)?);
     debug!("Decoded a {}-byte value", value.len());
 
     if value.len() != 32 {

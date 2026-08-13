@@ -9,7 +9,6 @@ use roughenough_common::crypto::random_bytes;
 use roughenough_protocol::util::ClockSource;
 use tracing::info;
 
-use crate::args::Args;
 use crate::metrics::aggregator::WorkerMetrics;
 use crate::network::CollectResult::Empty;
 use crate::network::{CollectResult, NetworkHandler};
@@ -61,13 +60,13 @@ pub struct Worker {
 impl Worker {
     pub fn new(
         worker_id: usize,
-        args: Args,
+        batch_size: usize,
+        key_replacement_interval: Duration,
         responder: ResponseHandler,
         clock: ClockSource,
         metrics_channel: SyncSender<WorkerMetrics>,
         metrics_interval: Duration,
     ) -> Self {
-        let batch_size = args.batch_size as usize;
         let now = clock.epoch_seconds();
 
         Self {
@@ -76,7 +75,7 @@ impl Worker {
             metrics_channel,
             net_handler: NetworkHandler::new(batch_size),
             req_handler: RequestHandler::new(responder),
-            key_replacement_interval: args.rotation_interval(),
+            key_replacement_interval,
             metrics_publish_interval: metrics_interval,
             next_key_replacement: now,
             next_metrics_publication: now + metrics_interval.as_secs(),

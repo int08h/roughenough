@@ -29,7 +29,8 @@ use roughenough_server::worker::{ExitGuard, Worker};
 
 // parsed rather than a struct literal so future Args fields don't break this
 fn test_args() -> Args {
-    Args::try_parse_from(["roughenough_server"]).expect("default args parse")
+    Args::try_parse_from(["roughenough_server", "--insecure-zero-seed"])
+        .expect("default args parse")
 }
 
 fn new_worker(args: Args, tx: SyncSender<WorkerMetrics>) -> (Worker, MioUdpSocket, SocketAddr) {
@@ -40,7 +41,8 @@ fn new_worker(args: Args, tx: SyncSender<WorkerMetrics>) -> (Worker, MioUdpSocke
 
     let worker = Worker::new(
         0,
-        args,
+        args.batch_size as usize,
+        args.rotation_interval(),
         responder,
         ClockSource::System,
         tx,

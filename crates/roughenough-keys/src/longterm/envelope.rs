@@ -1,6 +1,7 @@
 use aws_lc_rs::aead::{AES_256_GCM, Aad, Nonce, RandomizedNonceKey};
 use aws_lc_rs::error::Unspecified;
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
 
 use crate::seed::Seed;
 
@@ -55,7 +56,7 @@ pub(crate) fn open_seed(
     let nonce = Nonce::try_assume_unique_for_key(&encrypted_seed[ciphertext_len..])?;
     let key = RandomizedNonceKey::new(&AES_256_GCM, &dek)?;
 
-    let mut in_out = encrypted_seed[..ciphertext_len].to_vec();
+    let mut in_out = Zeroizing::new(encrypted_seed[..ciphertext_len].to_vec());
     let plaintext = key.open_in_place(nonce, Aad::from(aad), &mut in_out)?;
 
     // Seed::new asserts a 32-byte length; the plaintext length comes from the

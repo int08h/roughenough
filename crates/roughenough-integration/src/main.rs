@@ -1,5 +1,7 @@
-use std::io::{BufReader, Read};
+use std::fs;
+use std::io::{self, BufReader, Read};
 use std::net::UdpSocket;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::Duration;
@@ -10,6 +12,33 @@ fn pick_free_udp_port() -> u16 {
         .local_addr()
         .expect("bound socket has a local address")
         .port()
+}
+
+struct TestSeedFile {
+    path: PathBuf,
+}
+
+impl TestSeedFile {
+    fn new(label: &str) -> io::Result<Self> {
+        let path = std::env::temp_dir().join(format!(
+            "roughenough-integration-{}-{label}.seed",
+            std::process::id()
+        ));
+        fs::write(&path, format!("seed://{}\n", "00".repeat(32)))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
+        }
+        Ok(Self { path })
+    }
+}
+
+impl Drop for TestSeedFile {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
 }
 
 /// Start a server, run a client against it, and ensure the client exits cleanly.
@@ -30,14 +59,14 @@ fn main() {
     println!("\n=== All end-to-end integration tests PASSED");
 }
 
-/// Negative test: with an empty --seed and no --insecure-zero-seed the server
-/// must exit nonzero
+/// Negative test: without --seed-file or --insecure-zero-seed the server must exit nonzero.
 fn test_seedless_server_refuses_to_start(server_path: &str) -> bool {
     println!("=== Starting server with no seed (expecting refusal)...");
     let port = pick_free_udp_port();
     let mut child = match Command::new(server_path)
         .args(["-p", &port.to_string()])
         .env_remove("ROUGHENOUGH_SEED")
+        .env_remove("ROUGHENOUGH_SEED_FILE")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -88,8 +117,8 @@ fn test_seedless_server_refuses_to_start(server_path: &str) -> bool {
         let _ = stderr.read_to_string(&mut output);
     }
 
-    if !output.contains("no seed provided") {
-        eprintln!("=== Expected 'no seed provided' error, got: {output}");
+    if !output.contains("--seed-file") {
+        eprintln!("=== Expected missing --seed-file error, got: {output}");
         return false;
     }
 
@@ -107,10 +136,19 @@ fn test_build_mode(build_mode: &str) -> bool {
 
     let port = pick_free_udp_port();
     let port_str = port.to_string();
+    let seed_file = match TestSeedFile::new(build_mode) {
+        Ok(seed_file) => seed_file,
+        Err(e) => {
+            eprintln!("=== Failed to create test seed file: {e}");
+            return false;
+        }
+    };
     println!("=== Starting server on port {port}...");
     let mut server_process = match Command::new(&server_path)
-        .args(["-p", &port_str, "--insecure-zero-seed"])
+        .args(["-p", &port_str, "--seed-file"])
+        .arg(&seed_file.path)
         .env_remove("ROUGHENOUGH_SEED")
+        .env_remove("ROUGHENOUGH_SEED_FILE")
         .stdin(Stdio::null())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())

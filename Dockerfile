@@ -59,7 +59,8 @@ COPY --from=builder /app/target/release-lto/roughenough_server /roughenough_serv
 
 EXPOSE 2003/udp
 
-# The server refuses to start without a seed: supply one via ROUGHENOUGH_SEED
-# or append --seed <value> (or --insecure-zero-seed, testing only) at run time.
+# The server requires a seed file. Mount a mode-0400/0600 regular file
+# and append `--seed-file /run/secrets/roughenough.seed`, or set
+# ROUGHENOUGH_SEED_FILE to a valid seed file.
 ENTRYPOINT ["/roughenough_server"]
 CMD ["--interface", "0.0.0.0", "--port", "2003"]

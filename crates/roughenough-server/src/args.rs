@@ -1,10 +1,11 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::net::{IpAddr, SocketAddr};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::{Parser, ValueEnum};
 
-#[derive(Parser, Debug, Clone)]
+#[derive(Parser, Debug)]
 #[command(version, about = "Roughenough roughtime server")]
 pub struct Args {
     /// The maximum number of requests to process in one batch
@@ -72,17 +73,18 @@ pub struct Args {
     )]
     pub metrics_interval: u64,
 
-    /// Secret value for the server's long-term identity
+    /// File containing the server's long-term identity seed or protected seed reference
     #[clap(
         long,
-        value_name = "SEED",
-        env = "ROUGHENOUGH_SEED",
-        default_value = ""
+        value_name = "PATH",
+        env = "ROUGHENOUGH_SEED_FILE",
+        required_unless_present = "insecure_zero_seed",
+        conflicts_with = "insecure_zero_seed"
     )]
-    pub seed: String,
+    pub seed_file: Option<PathBuf>,
 
     /// For testing only; never use in production.
-    #[clap(long, default_value_t = false)]
+    #[clap(long, conflicts_with = "seed_file", default_value_t = false)]
     pub insecure_zero_seed: bool,
 
     /// How to store the server's long-term identity while it's running
@@ -114,7 +116,7 @@ pub struct Args {
     pub verbose: u8,
 }
 
-#[derive(ValueEnum, Debug, Clone)]
+#[derive(ValueEnum, Debug, Clone, Copy)]
 pub enum SeedBackendArg {
     #[value(name = "memory")]
     Memory,
@@ -154,24 +156,27 @@ mod tests {
 
     #[test]
     fn default_args_parse() {
-        let args = Args::try_parse_from(["roughenough_server"]).unwrap();
-        assert!(!args.insecure_zero_seed);
+        let args = Args::try_parse_from(["roughenough_server", "--insecure-zero-seed"]).unwrap();
+        assert!(args.insecure_zero_seed);
         assert_eq!(args.udp_socket_addr(), "0.0.0.0:2003".parse().unwrap());
     }
 
     #[test]
     fn ipv4_and_ipv6_interfaces_parse() {
-        let args = Args::try_parse_from(["prog", "-i", "127.0.0.1"]).unwrap();
+        let args =
+            Args::try_parse_from(["prog", "--insecure-zero-seed", "-i", "127.0.0.1"]).unwrap();
         assert_eq!(args.udp_socket_addr(), "127.0.0.1:2003".parse().unwrap());
 
-        let args = Args::try_parse_from(["prog", "-i", "::1", "-p", "9999"]).unwrap();
+        let args =
+            Args::try_parse_from(["prog", "--insecure-zero-seed", "-i", "::1", "-p", "9999"])
+                .unwrap();
         assert_eq!(args.udp_socket_addr(), "[::1]:9999".parse().unwrap());
     }
 
     #[test]
     fn non_ip_interface_is_rejected() {
-        assert!(Args::try_parse_from(["prog", "-i", "eth0"]).is_err());
-        assert!(Args::try_parse_from(["prog", "-i", "not-an-ip"]).is_err());
+        assert!(Args::try_parse_from(["prog", "--insecure-zero-seed", "-i", "eth0"]).is_err());
+        assert!(Args::try_parse_from(["prog", "--insecure-zero-seed", "-i", "not-an-ip"]).is_err());
     }
 
     #[test]
@@ -183,10 +188,31 @@ mod tests {
 
     #[test]
     fn rotation_interval_converts_hours_to_seconds() {
-        let args = Args::try_parse_from(["prog", "--rotation-interval", "1"]).unwrap();
+        let args =
+            Args::try_parse_from(["prog", "--insecure-zero-seed", "--rotation-interval", "1"])
+                .unwrap();
         assert_eq!(args.rotation_interval(), Duration::from_secs(3600));
 
-        let args = Args::try_parse_from(["prog", "--rotation-interval", "65535"]).unwrap();
+        let args = Args::try_parse_from([
+            "prog",
+            "--insecure-zero-seed",
+            "--rotation-interval",
+            "65535",
+        ])
+        .unwrap();
         assert_eq!(args.rotation_interval(), Duration::from_secs(65535 * 3600));
+    }
+
+    #[test]
+    fn seed_file_and_insecure_seed_are_mutually_exclusive() {
+        assert!(
+            Args::try_parse_from(["prog", "--seed-file", "/tmp/seed", "--insecure-zero-seed",])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn direct_seed_argument_is_rejected() {
+        assert!(Args::try_parse_from(["prog", "--seed", "secret"]).is_err());
     }
 }

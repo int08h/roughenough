@@ -1,5 +1,6 @@
 use roughenough_common::encoding;
 use tracing::{debug, trace};
+use zeroize::Zeroizing;
 
 use crate::longterm::envelope::SeedEnvelope;
 use crate::seed::Seed;
@@ -108,7 +109,7 @@ impl Protection {
     }
 
     /// Encode `envelope` as the single-line prefixed form that `try_load_seed`
-    /// accepts, suitable for pasting directly into `--seed`.
+    /// accepts, suitable for writing directly to a server seed file.
     pub fn encode_envelope(&self, envelope: &SeedEnvelope) -> Result<String, StorageError> {
         let json = serde_json::to_vec(envelope)?;
         let encoded = data_encoding::BASE64URL.encode(&json);
@@ -146,7 +147,7 @@ impl Protection {
     }
 
     async fn try_load_plain(&self, value: &str) -> Result<Seed, StorageError> {
-        let data = encoding::try_decode(value)?;
+        let data = Zeroizing::new(encoding::try_decode(value)?);
         if data.len() != 32 {
             let msg = format!("need 32 bytes, found: {0}", data.len());
             return Err(StorageError::InvalidSeed(msg));

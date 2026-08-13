@@ -35,8 +35,9 @@ socket2 = { workspace = true, features = ["all"] }
 time-format = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+zeroize = { workspace = true }
 
-[target.'cfg(target_os = "linux")'.dependencies]
+[target.'cfg(unix)'.dependencies]
 # sendmmsg for batched response sends (network.rs mmsg module)
 libc = { workspace = true }
 

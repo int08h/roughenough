@@ -3,6 +3,7 @@ use aws_sdk_secretsmanager::error::DisplayErrorContext;
 use roughenough_common::encoding::try_decode;
 use roughenough_protocol::util::as_hex;
 use tracing::debug;
+use zeroize::Zeroizing;
 
 use crate::seed::Seed;
 use crate::storage::StorageError;
@@ -93,7 +94,7 @@ impl AwsSecretManager {
 }
 
 fn decode_secret_string(encoded_value: &str) -> Result<Seed, StorageError> {
-    let value = try_decode(encoded_value)?;
+    let value = Zeroizing::new(try_decode(encoded_value)?);
     debug!("Decoded a {}-byte value", value.len());
 
     if value.len() != 32 {

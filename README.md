@@ -41,19 +41,34 @@ cargo build --release --all-features
 
 ### Running the Server
 
-The server refuses to start without a long-term identity seed. Pass one with
-`--seed` (or the `ROUGHENOUGH_SEED` environment variable), or pass
-`--insecure-zero-seed` to run with an all-zero seed for testing.
+The server requires a long-term identity seed file to start. Pass its path
+with `--seed-file` (or the `ROUGHENOUGH_SEED_FILE` environment variable). For testing
+you can use `--insecure-zero-seed` to run with an all-zero seed.
+
+On Unix-like systems the seed file needs to be a regular file (no symlinks) with
+`0400` or `0600` file permissions.
+
+The seed file can contain one of (usually obtained from `roughenough-keys`): 
+* exactly 32 bytes of binary random data
+* a base64 or hex encoded value (`seed://` )
+* an AWS or GCP KMS envelope (`aws-kms://` or `gcp-kms://`)
+* an AWS or GCP Secret Manager reference (`aws-secret://` or `gcp-secret://`)
+  
+Use the `roughenough-keys` tool to generate a seed and encrypt/wrap it with
+a secret manager or KMS.
 
 ```bash
 # Debug build, testing-only zero seed
 cargo run --bin roughenough_server -- --insecure-zero-seed
 
-# Release build with optimizations and a real seed
-cargo run --release --bin roughenough_server -- --seed <SEED>
+# Generate a new mode-0600 raw seed file
+(umask 077 && openssl rand -hex 32 > roughenough.seed)
 
-# Run the server binary directly
-target/release/roughenough_server --seed <SEED>
+# Release build with optimizations and a real seed file
+cargo run --release --bin roughenough_server -- --seed-file roughenough.seed
+
+# Run the server binary directly (a read-only file is sufficient)
+target/release/roughenough_server --seed-file /run/secrets/roughenough.seed
 ```
 
 The server will start listening for UDP requests on the default port (2003).

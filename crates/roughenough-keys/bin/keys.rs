@@ -1,6 +1,6 @@
 //! Key management operations
 
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{Error, ErrorKind, Read, Write};
 
 use clap::Parser;
@@ -97,7 +97,7 @@ enum Commands {
             short,
             long,
             default_value_t = false,
-            help = "Output pretty-printed JSON instead of the single-line form that --seed accepts"
+            help = "Output pretty-printed JSON instead of the single-line seed-file form"
         )]
         json: bool,
     },
@@ -221,7 +221,7 @@ async fn handle_store(mut input: InFile, mut output: OutFile, secret: String, js
     match storage::try_store_seed(&seed, &secret).await {
         Ok(envelope) => {
             // Default output is the single-line prefixed form that
-            // `try_load_seed` accepts, so it pastes directly into --seed
+            // `try_load_seed` accepts this single-line form from a server seed file
             let text = if json {
                 serde_json::to_string_pretty(&envelope).unwrap()
             } else {
@@ -339,7 +339,16 @@ async fn handle_seal(mut input: InFile, mut output: OutFile, key: String) {
 fn outfile_from_arg(path: Option<String>) -> std::io::Result<OutFile> {
     match path {
         Some(file_path) => {
-            let file = match File::create_new(&file_path) {
+            let mut options = OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+
+                options.mode(0o600);
+            }
+
+            let file = match options.open(&file_path) {
                 Ok(file) => file,
                 Err(e) => {
                     error!("Failed to create output file '{}': {:?}", &file_path, e);
@@ -411,5 +420,24 @@ mod tests {
         let err = Cli::try_parse_from(["prog", "--version"]).unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
         assert!(err.to_string().contains(env!("CARGO_PKG_VERSION")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn output_files_are_private() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let path = std::env::temp_dir().join(format!(
+            "roughenough-keys-output-mode-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+
+        let output = outfile_from_arg(Some(path.to_string_lossy().into_owned())).unwrap();
+        drop(output);
+
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o077, 0);
+        std::fs::remove_file(path).unwrap();
     }
 }

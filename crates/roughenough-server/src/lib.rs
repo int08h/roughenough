@@ -13,6 +13,8 @@ pub mod requests;
 #[doc(hidden)]
 pub mod responses;
 #[doc(hidden)]
+pub mod seed_file;
+#[doc(hidden)]
 pub mod worker;
 
 #[cfg(any(test, feature = "test-utils"))]
