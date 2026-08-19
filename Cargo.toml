@@ -18,14 +18,14 @@ roughenough-server = { path = "crates/roughenough-server", version = "2.0.0" }
 roughenough-reporting-server = { path = "crates/roughenough-reporting-server", version = "2.0.0" }
 
 # External dependencies
-aws-config = { version = "1.9", default-features = false, features = ["default-https-client", "rt-tokio", "credentials-process"] }
-aws-lc-rs = { version = "1.17", default-features = false, features = ["aws-lc-sys", "alloc"] }
+aws-config = { version = "1.10", default-features = false, features = ["default-https-client", "rt-tokio", "credentials-process"] }
+aws-lc-rs = { version = "1.18", default-features = false, features = ["aws-lc-sys", "alloc"] }
 # Keep in lockstep with the aws-lc-sys version aws-lc-rs requires: aws-lc-sys
 # version-mangles its symbols and links key, so skew does not fail the build,
 # it silently links two copies of AWS-LC (CI checks cargo tree --duplicates).
-aws-lc-sys = { version = "0.43", default-features = false }
-aws-sdk-kms = { version = "1.112", default-features = false, features = ["default-https-client", "rt-tokio"] }
-aws-sdk-secretsmanager = { version = "1.109", default-features = false, features = ["default-https-client", "rt-tokio"] }
+aws-lc-sys = { version = "0.44", default-features = false }
+aws-sdk-kms = { version = "1.115", default-features = false, features = ["default-https-client", "rt-tokio"] }
+aws-sdk-secretsmanager = { version = "1.112", default-features = false, features = ["default-https-client", "rt-tokio"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }
 async-trait = "0.1"
 jiff = "0.2"
@@ -34,8 +34,8 @@ crc32c = "0.6"
 cryptoki = "0.12.0"
 data-encoding = "2.11"
 divan = "0.1"
-google-cloud-kms-v1 = "1.11"
-google-cloud-secretmanager-v1 = "1.10"
+google-cloud-kms-v1 = "1.13"
+google-cloud-secretmanager-v1 = "1.12"
 libc = "0.2.177"
 mio = { version = "1.2", default-features = false }
 pastey = "0.2"
@@ -51,7 +51,7 @@ time-format = "1.2"
 tokio = "1"
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi"] }
-ureq = { version = "3.3", default-features = false, features = ["rustls"] }
+ureq = { version = "3.4", default-features = false, features = ["rustls"] }
 zeroize = "1.9"
 
 [workspace.dependencies.linux-keyutils]
