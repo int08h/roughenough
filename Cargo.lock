@@ -3662,9 +3662,9 @@ checksum = "9e1c906769ad99c88eaa54e728060edef082f8e358ff32030cb7c7d315e81109"
 
 [[package]]
 name = "time-format"
-version = "1.2.2"
+version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "caa08af685f978227b475da86d38312cd1acd5024338bf53a1ab9a799219507d"
+checksum = "fb54c799611991d3d4a66fee3ff17b9f600c2a0f8c0d34e8209dbd153ff0a87b"
 
 [[package]]
 name = "time-macros"
