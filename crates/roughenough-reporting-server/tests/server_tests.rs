@@ -13,6 +13,8 @@ use roughenough_reporting_server::{AppState, CreationResponse};
 use roughenough_server::test_utils::TestContext;
 use tokio::task::JoinHandle;
 
+const BASE_TIME: u64 = 1_700_000_000;
+
 /// Finds an available port by binding to port 0
 fn find_available_port() -> u16 {
     TcpListener::bind("127.0.0.1:0")
@@ -80,7 +82,7 @@ fn create_chained_report(midpoints: &[u64], first_rand: Option<[u8; 32]>) -> Mal
     for (i, &midpoint) in midpoints.iter().enumerate() {
         // one context per exchange; all contexts share a seed, so the
         // measurements present one server identity
-        let mut ctx = TestContext::new(1);
+        let mut ctx = TestContext::new_at(1, BASE_TIME);
 
         let (nonce, rand_value) = match prior_response.as_deref() {
             Some(prior) => {
@@ -113,7 +115,7 @@ fn create_chained_report(midpoints: &[u64], first_rand: Option<[u8; 32]>) -> Mal
 }
 
 fn create_test_malfeasance_report() -> MalfeasanceReport {
-    let current_time = TestContext::new(1).clock.epoch_seconds();
+    let current_time = BASE_TIME;
     create_chained_report(&[current_time + 2_000_000, current_time], None)
 }
 
@@ -203,7 +205,7 @@ async fn test_invalid_report_missing_entries() {
     let client = reqwest::Client::new();
 
     // Create report with only one entry
-    let mut ctx = TestContext::new(1);
+    let mut ctx = TestContext::new_at(1, BASE_TIME);
     let current_time = ctx.clock.epoch_seconds();
     let nonce = Nonce::from([0x33u8; 32]);
     let (request, response) = ctx.create_interaction_pair_with_nonce(current_time, &nonce);
@@ -245,14 +247,14 @@ async fn test_invalid_report_bad_chaining() {
     let client = reqwest::Client::new();
 
     // First Request/Response pair, nonce = [0x44; 32]
-    let mut ctx1 = TestContext::new(1);
+    let mut ctx1 = TestContext::new_at(1, BASE_TIME);
     let current_time = ctx1.clock.epoch_seconds();
     let nonce1 = Nonce::from([0x44u8; 32]);
     let public_key = ctx1.key_source.public_key();
     let (request1, response1) = ctx1.create_interaction_pair_with_nonce(current_time, &nonce1);
 
     // Second Request/Response pair, nonce = [0x55; 32]
-    let mut ctx2 = TestContext::new(1);
+    let mut ctx2 = TestContext::new_at(1, BASE_TIME);
     let nonce2 = Nonce::from([0x55u8; 32]);
     let (request2, response2) =
         ctx2.create_interaction_pair_with_nonce(current_time + 1000, &nonce2);
@@ -352,7 +354,7 @@ async fn test_chained_report_without_violation_rejected() {
     let client = reqwest::Client::new();
 
     // Correctly chained, causally consistent times: no malfeasance shown
-    let current_time = TestContext::new(1).clock.epoch_seconds();
+    let current_time = BASE_TIME;
     let report = create_chained_report(&[current_time, current_time + 1_000], None);
 
     let response = client
@@ -377,7 +379,7 @@ async fn test_first_entry_with_rand_accepted() {
 
     // RFC 8.4.1: rand MAY be omitted from the first entry; carrying one is
     // not an error
-    let current_time = TestContext::new(1).clock.epoch_seconds();
+    let current_time = BASE_TIME;
     let report = create_chained_report(
         &[current_time + 2_000_000, current_time],
         Some([0x77u8; 32]),

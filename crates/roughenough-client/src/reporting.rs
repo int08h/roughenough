@@ -137,6 +137,8 @@ impl MalfeasanceReport {
 
 #[cfg(test)]
 mod tests {
+    const BASE_TIME: u64 = 1_700_000_000;
+
     use roughenough_protocol::FromFrame;
     use roughenough_protocol::cursor::ParseCursor;
     use roughenough_protocol::request::Request;
@@ -231,7 +233,7 @@ mod tests {
         for &midpoint in midpoints {
             // one context per exchange; all contexts share a seed, so the
             // measurements present one server identity
-            let mut ctx = TestContext::new(1);
+            let mut ctx = TestContext::new_at(1, BASE_TIME);
 
             let (nonce, rand_value) = match prior_response.as_deref() {
                 Some(prior) => {
@@ -264,9 +266,7 @@ mod tests {
 
     #[test]
     fn violation_between_first_and_third_reports_full_chain() {
-        use roughenough_server::test_utils::TestContext;
-
-        let base = TestContext::new(1).clock.epoch_seconds();
+        let base = BASE_TIME;
         // measurement 0 claims a time far ahead of measurement 2
         let measurements = create_chained_measurements(&[base + 2_000_000, base + 1_000_000, base]);
 
