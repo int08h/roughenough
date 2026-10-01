@@ -11,6 +11,8 @@ use roughenough_protocol::tags::Nonce;
 use roughenough_reporting_server::validate_report;
 use roughenough_server::test_utils::TestContext;
 
+const BASE_TIME: u64 = 1_700_000_000;
+
 fn create_chained_measurements(midpoints: &[u64]) -> Vec<Measurement> {
     let mut prior_response: Option<Vec<u8>> = None;
     let mut measurements = Vec::new();
@@ -18,7 +20,9 @@ fn create_chained_measurements(midpoints: &[u64]) -> Vec<Measurement> {
     for &midpoint in midpoints {
         // one context per exchange; all contexts share a seed, so the
         // measurements present one server identity
-        let mut ctx = TestContext::new(1);
+        // Delegations and response midpoints must share an epoch even when
+        // fixture construction crosses a wall-clock second boundary.
+        let mut ctx = TestContext::new_at(1, BASE_TIME);
 
         let (nonce, rand_value) = match prior_response.as_deref() {
             Some(prior) => {
@@ -51,7 +55,7 @@ fn create_chained_measurements(midpoints: &[u64]) -> Vec<Measurement> {
 
 #[test]
 fn client_reports_are_accepted_by_reporting_server_validator() {
-    let base = TestContext::new(1).clock.epoch_seconds();
+    let base = BASE_TIME;
 
     // Measurement 0 claims a time far ahead of measurements 1 and 2, so every
     // pair -- (0,1), (0,2), and (1,2) -- violates causality
@@ -78,7 +82,7 @@ fn client_reports_are_accepted_by_reporting_server_validator() {
 
 #[test]
 fn client_report_for_violation_spanning_intermediate_measurement_is_accepted() {
-    let base = TestContext::new(1).clock.epoch_seconds();
+    let base = BASE_TIME;
 
     // Only the (0, 2) pair violates: measurement 1 is consistent with both
     // neighbors

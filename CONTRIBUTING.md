@@ -126,9 +126,9 @@ cd fuzz
 cargo +nightly fuzz list
 
 # Run fuzzing
-cargo +nightly fuzz run fuzz_request_parse
-cargo +nightly fuzz run fuzz_response_parse
-cargo +nightly fuzz run fuzz_structured
+cargo +nightly fuzz run fuzz-request-parse
+cargo +nightly fuzz run fuzz-response-parse
+cargo +nightly fuzz run fuzz-structured
 
 # Minimize corpus after finding issues
 cargo +nightly fuzz cmin <target>

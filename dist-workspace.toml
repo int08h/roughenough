@@ -21,3 +21,7 @@ unix-archive = ".tar.gz"
 all-features = true
 # Whether to embed dependency information using cargo-auditable
 cargo-auditable = true
+
+# Keep the generated workflow consistent with the checkout version used in CI.
+[dist.github-action-commits]
+"actions/checkout" = "v7"
