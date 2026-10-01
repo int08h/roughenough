@@ -24,8 +24,8 @@ aws-lc-rs = { version = "1.18", default-features = false, features = ["aws-lc-sy
 # version-mangles its symbols and links key, so skew does not fail the build,
 # it silently links two copies of AWS-LC (CI checks cargo tree --duplicates).
 aws-lc-sys = { version = "0.45", default-features = false }
-aws-sdk-kms = { version = "1.119", default-features = false, features = ["default-https-client", "rt-tokio"] }
-aws-sdk-secretsmanager = { version = "1.116", default-features = false, features = ["default-https-client", "rt-tokio"] }
+aws-sdk-kms = { version = "1.122", default-features = false, features = ["default-https-client", "rt-tokio"] }
+aws-sdk-secretsmanager = { version = "1.119", default-features = false, features = ["default-https-client", "rt-tokio"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }
 async-trait = "0.1"
 jiff = "0.2"

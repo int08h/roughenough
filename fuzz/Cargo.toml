@@ -18,21 +18,21 @@ libfuzzer-sys = "0.4"
 # You can't run fuzzing this way, see intructions in `fuzz/README.md` for how to run fuzzing targets.
 #
 [[bin]]
-name = "fuzz_request_parse"
+name = "fuzz-request-parse"
 path = "fuzz_targets/fuzz_request_parse.rs"
 test = false
 doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_response_parse"
+name = "fuzz-response-parse"
 path = "fuzz_targets/fuzz_response_parse.rs"
 test = false
 doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_structured"
+name = "fuzz-structured"
 path = "fuzz_targets/fuzz_structured.rs"
 test = false
 doc = false

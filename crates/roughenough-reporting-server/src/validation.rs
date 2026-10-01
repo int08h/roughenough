@@ -183,6 +183,8 @@ mod tests {
 
     use super::*;
 
+    const BASE_TIME: u64 = 1_700_000_000;
+
     fn create_chained_measurements(
         midpoints: &[u64],
         first_rand: Option<[u8; 32]>,
@@ -193,7 +195,7 @@ mod tests {
         for &midpoint in midpoints {
             // one context per exchange; all contexts share a seed, so the
             // measurements present one server identity
-            let mut ctx = TestContext::new(1);
+            let mut ctx = TestContext::new_at(1, BASE_TIME);
 
             let (nonce, rand_value) = match prior_response.as_deref() {
                 Some(prior) => {
@@ -232,7 +234,7 @@ mod tests {
 
     #[test]
     fn chained_report_without_violation_is_rejected() {
-        let base = TestContext::new(1).clock.epoch_seconds();
+        let base = BASE_TIME;
 
         let report = create_chained_report(&[base, base + 1_000, base + 2_000], None);
 
@@ -245,7 +247,7 @@ mod tests {
 
     #[test]
     fn chained_report_with_violation_is_accepted() {
-        let base = TestContext::new(1).clock.epoch_seconds();
+        let base = BASE_TIME;
 
         let report = create_chained_report(&[base + 2_000_000, base + 1_000_000, base], None);
 
@@ -254,7 +256,7 @@ mod tests {
 
     #[test]
     fn first_entry_carrying_rand_is_accepted() {
-        let base = TestContext::new(1).clock.epoch_seconds();
+        let base = BASE_TIME;
 
         // RFC 8.4.1: rand MAY be omitted from the first entry; carrying one
         // is not an error

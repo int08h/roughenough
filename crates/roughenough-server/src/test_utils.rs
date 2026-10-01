@@ -31,8 +31,12 @@ pub fn new_response_handler() -> ResponseHandler {
 /// Creates a TestContext so the midpoints of responses can be set to arbitrary values.
 impl TestContext {
     pub fn new(batch_size: u8) -> Self {
-        let now = ClockSource::System.epoch_seconds();
-        let clock = ClockSource::new_mock(now);
+        Self::new_at(batch_size, ClockSource::System.epoch_seconds())
+    }
+
+    /// Initializes the clock before issuing the response handler's delegation.
+    pub fn new_at(batch_size: u8, epoch_seconds: u64) -> Self {
+        let clock = ClockSource::new_mock(epoch_seconds);
         let seed = Box::new(MemoryBackend::from_value(&[42u8; 32]));
         let approx_90_days = Duration::from_secs(8_000_000);
         let key_source = KeySource::new(seed, clock.clone(), approx_90_days);
