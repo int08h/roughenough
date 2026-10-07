@@ -123,4 +123,5 @@ Comments explain **why**, not what. Do not narrate code or duplicate names in En
 - Use todo lists for complex tasks
 - Reference `doc/RFC-10049.txt` for protocol questions
 - Reference `doc/PROTECTION.md` for key management questions
+- Reference `doc/BPF-FILTER.md` for the Linux socket filter and how to test it
 

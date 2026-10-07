@@ -228,6 +228,13 @@ fn bind_socket(sock_addr: SocketAddr) -> io::Result<MioUdpSocket> {
     let socket = Socket::new(sock_domain, Type::DGRAM, None)?;
     socket.set_nonblocking(true)?;
     socket.set_reuse_port(true)?;
+
+    // Load shedding only; userspace checks still reject what the filter misses
+    #[cfg(target_os = "linux")]
+    if let Err(e) = roughenough_server::filter::attach(&socket) {
+        warn!("BPF request filter not attached, continuing without it: {e}");
+    }
+
     socket.bind(&sock_addr.into())?;
 
     let std_socket: StdUdpSocket = socket.into();

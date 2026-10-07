@@ -3,6 +3,8 @@
 #[doc(hidden)]
 pub mod args;
 #[doc(hidden)]
+pub mod filter;
+#[doc(hidden)]
 pub mod keysource;
 #[doc(hidden)]
 pub mod metrics;

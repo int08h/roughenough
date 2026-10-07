@@ -10,6 +10,9 @@ spec.
   `SO_REUSEPORT`; we lean on the kernel to load-balance datagrams across them. 
   No shared state and no steady-state allocations on the hot path (see
   `crates/roughenough-server/tests/alloc_tests.rs`).
+- On Linux, a classic BPF filter on each socket drops runts, oversized
+  datagrams, and datagrams without the ROUGHTIM magic before they are
+  queued (see `doc/BPF-FILTER.md`).
 - Per READABLE wakeup, a worker processes up to `MAX_BATCHES_PER_WAKEUP`
   batches. Each batch drains up to `batch_size` requests, commits them all to
   a single Merkle tree, then builds responses in one loop over the pending

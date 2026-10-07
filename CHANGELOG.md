@@ -43,6 +43,9 @@ Roughtime is now published as RFC 10049. This release follows the RFC.
 - Server: the listening socket no longer sets `SO_REUSEADDR`, which on
   Linux let any local user bind the Roughtime port and capture traffic;
   `SO_REUSEPORT` alone balances load across workers and is UID-checked
+- Server (Linux): a classic BPF socket filter drops runts, oversized
+  datagrams, and datagrams without the ROUGHTIM magic in the kernel, so
+  floods of them cannot fill worker receive buffers (`doc/BPF-FILTER.md`)
 - Server: private-use protocol versions (0xc0000000-0xffffffff) are not
   negotiated or answered (RFC 12.2)
 - Keys: seed values are never logged
