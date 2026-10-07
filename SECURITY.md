@@ -19,7 +19,7 @@ I'll respond when I can and work on a fix as time permits.
 
 ### Key Protection
 Online keys have multiple options for secure storage:
-- Linux Kernel Retention Service (KRS)
+- Linux Key Retention Service (KRS)
 - SSH agent
 - PKCS#11 hardware 
 - AWS KMS and Secrets Manager
