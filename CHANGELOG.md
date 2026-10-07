@@ -66,6 +66,8 @@ Roughtime is now published as RFC 10049. This release follows the RFC.
 - Keys: `generate --key seed://...` no longer panics; `store` output is
   usable as a `--seed` value
 - Server: `--interface` accepts only IP addresses
+- Server: `--num-threads` and `--rotation-interval` reject zero;
+  `--metrics-interval` accepts 1 to 86400 seconds
 - Server: metrics rates computed from per-interval deltas
 - Server: a backward wall-clock step no longer stalls metrics reporting
   until the clock catches up
