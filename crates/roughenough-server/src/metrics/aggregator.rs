@@ -21,6 +21,42 @@ pub struct WorkerMetrics {
     pub response: ResponseMetrics,
 }
 
+/// When the next metrics report is due, in wall-clock epoch seconds
+#[derive(Debug)]
+struct ReportSchedule {
+    interval: u64,
+    last_report: u64,
+    next_report: u64,
+}
+
+impl ReportSchedule {
+    fn new(now: u64, interval: u64) -> Self {
+        Self {
+            interval,
+            last_report: now,
+            next_report: now + interval,
+        }
+    }
+
+    /// Returns the seconds since the last report when one is due at `now`.
+    fn poll(&mut self, now: u64) -> Option<u64> {
+        // After a backward clock step, restart from `now` rather than stall
+        // until the clock regains the old deadline
+        if now < self.last_report {
+            *self = Self::new(now, self.interval);
+            return None;
+        }
+
+        if now < self.next_report {
+            return None;
+        }
+
+        let elapsed = now - self.last_report;
+        *self = Self::new(now, self.interval);
+        Some(elapsed)
+    }
+}
+
 /// Metrics collector that runs in a dedicated thread
 pub struct MetricsAggregator {
     /// Consumer end of MPSC channel for metrics snapshots from workers
@@ -78,8 +114,10 @@ impl MetricsAggregator {
             self.reporting_interval.as_secs()
         );
 
-        let mut next_report = self.clock.epoch_seconds() + self.reporting_interval.as_secs();
-        let mut last_report_time = self.clock.epoch_seconds();
+        let mut schedule = ReportSchedule::new(
+            self.clock.epoch_seconds(),
+            self.reporting_interval.as_secs(),
+        );
 
         while self.keep_running.load(Ordering::Relaxed) {
             std::thread::sleep(Duration::from_millis(500));
@@ -89,14 +127,8 @@ impl MetricsAggregator {
                 self.accumulate(metrics);
             }
 
-            let now = self.clock.epoch_seconds();
-
-            if now >= next_report {
-                let elapsed_secs = (now - last_report_time) as f64;
-                self.report_metrics(elapsed_secs);
-
-                last_report_time = now;
-                next_report = now + self.reporting_interval.as_secs();
+            if let Some(elapsed_secs) = schedule.poll(self.clock.epoch_seconds()) {
+                self.report_metrics(elapsed_secs as f64);
             }
         }
 
@@ -221,6 +253,30 @@ mod tests {
         assert!((report.mbytes_per_second - 0.1).abs() < 1e-9);
         assert_eq!(report.responses.num_responses, 200);
         assert_eq!(report.responses.num_bytes_sent, 2 * 1024 * 1024);
+    }
+
+    #[test]
+    fn schedule_reports_once_per_interval() {
+        let mut schedule = ReportSchedule::new(1000, 60);
+
+        assert_eq!(schedule.poll(1000), None);
+        assert_eq!(schedule.poll(1059), None);
+        assert_eq!(schedule.poll(1061), Some(61));
+        assert_eq!(schedule.poll(1100), None);
+        assert_eq!(schedule.poll(1121), Some(60));
+    }
+
+    #[test]
+    fn schedule_survives_backward_clock_step() {
+        let mut schedule = ReportSchedule::new(10_000, 60);
+
+        // Stepping back an hour does not report
+        assert_eq!(schedule.poll(6_400), None);
+
+        // Reports resume one interval after the step, not after the clock
+        // regains 10_060
+        assert_eq!(schedule.poll(6_459), None);
+        assert_eq!(schedule.poll(6_460), Some(60));
     }
 
     #[test]
