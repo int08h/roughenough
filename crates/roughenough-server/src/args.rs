@@ -28,8 +28,8 @@ pub struct Args {
     )]
     pub interface: IpAddr,
 
-    /// Port to listen on
-    #[clap(short = 'p', long, env = "ROUGHENOUGH_PORT", default_value = "2003")]
+    /// Port to listen on (RFC 12.1: IANA assigned 5319 to Roughtime)
+    #[clap(short = 'p', long, env = "ROUGHENOUGH_PORT", default_value = "5319")]
     pub port: u16,
 
     /// Number of worker threads to process requests in parallel
@@ -158,14 +158,14 @@ mod tests {
     fn default_args_parse() {
         let args = Args::try_parse_from(["roughenough_server", "--insecure-zero-seed"]).unwrap();
         assert!(args.insecure_zero_seed);
-        assert_eq!(args.udp_socket_addr(), "0.0.0.0:2003".parse().unwrap());
+        assert_eq!(args.udp_socket_addr(), "0.0.0.0:5319".parse().unwrap());
     }
 
     #[test]
     fn ipv4_and_ipv6_interfaces_parse() {
         let args =
             Args::try_parse_from(["prog", "--insecure-zero-seed", "-i", "127.0.0.1"]).unwrap();
-        assert_eq!(args.udp_socket_addr(), "127.0.0.1:2003".parse().unwrap());
+        assert_eq!(args.udp_socket_addr(), "127.0.0.1:5319".parse().unwrap());
 
         let args =
             Args::try_parse_from(["prog", "--insecure-zero-seed", "-i", "::1", "-p", "9999"])

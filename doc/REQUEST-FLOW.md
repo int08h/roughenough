@@ -1,8 +1,8 @@
 # Request/Response Flow
 
 End-to-end flow of a single Roughtime exchange. Function names
-reference the code; see `doc/RFC-PROTOCOL.md` for the wire format and
-`doc/draft-ietf-ntp-roughtime-*.txt` for the spec.
+reference the code; see `doc/RFC-10049.txt` for the wire format and the
+spec.
 
 ## Overview
 
@@ -15,7 +15,8 @@ reference the code; see `doc/RFC-PROTOCOL.md` for the wire format and
   a single Merkle tree, then builds responses in one loop over the pending
   requests: a response template (and one signature) is created lazily per
   distinct protocol version present in the batch, and each response differs
-  only in PATH, NONC, INDX.
+  only in PATH, NONC, INDX. The server negotiates only version 1, so a
+  batch has one template; requests that do not offer version 1 are dropped.
 - The client reconstructs the Merkle root from its own request and walks the 
   signature chain back to the server's long-term key, which it knows
   out-of-band.

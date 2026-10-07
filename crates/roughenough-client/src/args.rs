@@ -58,7 +58,7 @@ pub struct Args {
         long = "protocol",
         value_enum,
         value_name = "VERSION",
-        default_value_t = VersionArg::V19,
+        default_value_t = VersionArg::V1,
     )]
     pub protocol: VersionArg,
 
@@ -146,13 +146,13 @@ pub struct Args {
 /// Roughtime protocol version(s) the client offers in its requests.
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VersionArg {
-    /// Offer only draft version 0x8000000c (the default)
-    #[value(name = "19")]
-    V19,
-    /// Offer only RFC version 1
+    /// Offer only RFC version 1 (the default)
     #[value(name = "1")]
     V1,
-    /// Offer RFC version 1 and the draft version
+    /// Offer only pre-RFC draft version 0x8000000c
+    #[value(name = "19")]
+    V19,
+    /// Offer RFC version 1 and draft version 0x8000000c
     #[value(name = "both")]
     Both,
 }
@@ -161,8 +161,8 @@ impl VersionArg {
     /// The version list to offer, or `None` to use the client default
     pub fn offered(&self) -> Option<Vec<ProtocolVersion>> {
         match self {
-            VersionArg::V19 => None,
-            VersionArg::V1 => Some(vec![ProtocolVersion::RFC]),
+            VersionArg::V1 => None,
+            VersionArg::V19 => Some(vec![ProtocolVersion::DRAFT]),
             VersionArg::Both => Some(vec![ProtocolVersion::RFC, ProtocolVersion::DRAFT]),
         }
     }
@@ -205,6 +205,27 @@ mod tests {
     fn zero_num_measurement_rounds_is_rejected() {
         let err = Args::try_parse_from(["prog", "-l", "servers.json", "-r", "0"]).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::ValueValidation);
+    }
+
+    #[test]
+    fn protocol_defaults_to_version_one() {
+        use roughenough_protocol::tags::ProtocolVersion;
+
+        use super::VersionArg;
+
+        let args = Args::try_parse_from(["prog", "host", "5319"]).unwrap();
+        assert_eq!(args.protocol, VersionArg::V1);
+        // None selects the request default, which offers only version 1
+        assert_eq!(args.protocol.offered(), None);
+
+        let args = Args::try_parse_from(["prog", "host", "5319", "-P", "both"]).unwrap();
+        assert_eq!(
+            args.protocol.offered(),
+            Some(vec![ProtocolVersion::RFC, ProtocolVersion::DRAFT])
+        );
+
+        let args = Args::try_parse_from(["prog", "host", "5319", "-P", "19"]).unwrap();
+        assert_eq!(args.protocol.offered(), Some(vec![ProtocolVersion::DRAFT]));
     }
 
     #[test]

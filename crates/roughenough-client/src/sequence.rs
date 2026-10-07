@@ -187,12 +187,10 @@ mod tests {
 
             let mut ctx = self.ctx.borrow_mut();
             ctx.response_handler.clear();
-            assert!(ctx.response_handler.add_request(
-                &frame,
-                request,
-                ProtocolVersion::DRAFT,
-                test_addr(),
-            ));
+            let version = ProtocolVersion::negotiate(request.ver().versions())
+                .expect("mock got a request offering version 1");
+            ctx.response_handler
+                .add_request(&frame, request, version, test_addr());
 
             let mut out = Vec::new();
             ctx.response_handler

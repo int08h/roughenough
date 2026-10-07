@@ -213,8 +213,8 @@ mod tests {
     }
 
     #[test]
-    fn draft_versions_are_retained() {
-        // Any draft-flagged value is a supported version and must be kept
+    fn other_experimental_versions_are_ignored() {
+        // Only 0x8000000c is recognized in the RFC 12.2 experimental range
         let mut buf = Vec::new();
         buf.extend_from_slice(&0x00000001u32.to_le_bytes());
         buf.extend_from_slice(&0x8000000bu32.to_le_bytes());
@@ -224,7 +224,7 @@ mod tests {
         let versions = VersionList::from_wire(&mut cursor).unwrap();
 
         let values: Vec<u32> = versions.versions().iter().map(|v| v.as_u32()).collect();
-        assert_eq!(values, vec![0x00000001, 0x8000000b, 0x8000000c]);
+        assert_eq!(values, vec![0x00000001, 0x8000000c]);
         assert_eq!(cursor.remaining(), 0);
     }
 

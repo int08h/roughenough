@@ -4,7 +4,7 @@ Guidance for AI agents working with this repository.
 
 ## Project Overview
 
-Rust implementation of the Roughtime protocol -- a cryptographic time synchronization protocol providing authenticated timestamps with proof against server malfeasance. Includes client and server components. Strives to comply with the RFC (see `doc/draft-ietf-ntp-roughtime-*.txt`).
+Rust implementation of the Roughtime protocol -- a cryptographic time synchronization protocol providing authenticated timestamps with proof against server malfeasance. Includes client and server components. Strives to comply with RFC 10049 (see `doc/RFC-10049.txt`).
 
 ## Architecture
 
@@ -23,7 +23,7 @@ Fuzzing targets in **fuzz**: `fuzz_request_parse`, `fuzz_response_parse`, `fuzz_
 
 ## Protocol Implementation Notes
 
-See `doc/RFC-PROTOCOL.md` for protocol details. See `doc/PROTECTION.md` for seed protection strategies.
+See `doc/RFC-10049.txt` for protocol details. See `doc/PROTECTION.md` for seed protection strategies.
 
 - Wire encoding: 8-byte 'ROUGHTIM' magic, 4-byte LE length, then TLV message bytes
 - Only Requests and Responses are framed; no other messages use framed encoding
@@ -121,6 +121,6 @@ Comments explain **why**, not what. Do not narrate code or duplicate names in En
 - Include Cargo.lock changes in commits when dependencies change
 - Do not include "committed by Claude" language in commit messages
 - Use todo lists for complex tasks
-- Reference `doc/draft-ietf-ntp-roughtime-*.txt` and `doc/RFC-PROTOCOL.md` for protocol questions
+- Reference `doc/RFC-10049.txt` for protocol questions
 - Reference `doc/PROTECTION.md` for key management questions
 

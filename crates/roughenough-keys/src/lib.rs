@@ -84,7 +84,7 @@ mod tests {
 
         let dele = olk.cert().dele();
         let sig = olk.cert().sig();
-        let mut to_verify = ProtocolVersion::DELE_PREFIX.to_vec();
+        let mut to_verify = ProtocolVersion::RFC.dele_prefix().to_vec();
         to_verify.extend_from_slice(&dele.as_bytes().expect("DELE serialization should not fail"));
 
         assert!(
@@ -111,47 +111,58 @@ mod tests {
         let mut olk = ltk.make_online_key(&clock, Duration::from_secs(60));
 
         let merkle_root = MerkleRoot::default();
-        let (srep, sig) = olk.make_srep(ProtocolVersion::DRAFT, &merkle_root);
+        let (srep, sig) = olk.make_srep(ProtocolVersion::RFC, &merkle_root);
 
         assert_eq!(srep.root(), &merkle_root);
         assert_eq!(srep.midp(), clock.epoch_seconds());
         assert_eq!(srep.radi(), 5);
-        assert_eq!(srep.ver(), &ProtocolVersion::DRAFT);
+        assert_eq!(srep.ver(), &ProtocolVersion::RFC);
         // RFC 5.2.5: VERS lists the versions the server advertises
         let expected_vers = SupportedVersions::from(ProtocolVersion::ADVERTISED.as_ref());
         assert_eq!(srep.vers(), &expected_vers);
 
         let verifier = Verifier::from(&olk.public_key());
-        let mut to_verify = ProtocolVersion::SREP_PREFIX.to_vec();
+        let mut to_verify = ProtocolVersion::RFC.srep_prefix().to_vec();
         to_verify.extend_from_slice(&srep.as_bytes().expect("SREP serialization should not fail"));
         assert!(verifier.verify(to_verify.as_ref(), sig.as_ref()));
     }
 
     #[test]
-    fn online_key_generates_valid_srep_for_draft_versions() {
+    fn version_one_signatures_use_rfc_context_strings() {
         let mut ltk = generate_ltk();
         let now = ClockSource::System.epoch_seconds();
         let clock = ClockSource::new_mock(now);
         let mut olk = ltk.make_online_key(&clock, Duration::from_secs(60));
+        let (srep, sig) = olk.make_srep(ProtocolVersion::RFC, &MerkleRoot::default());
 
-        // A draft revision outside ADVERTISED
-        let draft = ProtocolVersion::from_u32(0x8000000b).unwrap();
+        let srep_bytes = srep.as_bytes().expect("SREP serialization should not fail");
+        let srep_verifier = Verifier::from(&olk.public_key());
+        let dele_bytes = olk
+            .cert()
+            .dele()
+            .as_bytes()
+            .expect("DELE serialization should not fail");
+        let dele_verifier = Verifier::from(&PublicKey::from(ltk.public_key_bytes()));
 
-        let merkle_root = MerkleRoot::default();
-        let (srep, sig) = olk.make_srep(draft, &merkle_root);
+        for (version, expected) in [
+            (ProtocolVersion::RFC, true),
+            (ProtocolVersion::DRAFT, false),
+        ] {
+            let mut to_verify = version.srep_prefix().to_vec();
+            to_verify.extend_from_slice(&srep_bytes);
+            assert_eq!(
+                srep_verifier.verify(&to_verify, sig.as_ref()),
+                expected,
+                "SREP with {version:?} context string"
+            );
 
-        assert_eq!(srep.ver(), &draft);
-        // RFC 5.2.5: VERS MUST contain the version in the response's VER tag
-        let expected_vers = SupportedVersions::new(&[ProtocolVersion::RFC, draft]);
-        assert_eq!(srep.vers(), &expected_vers);
-
-        // The off-list VERS keeps the SREP wire size identical to the template's
-        let (baseline, _) = olk.make_srep(ProtocolVersion::DRAFT, &merkle_root);
-        assert_eq!(srep.wire_size(), baseline.wire_size());
-
-        let verifier = Verifier::from(&olk.public_key());
-        let mut to_verify = ProtocolVersion::SREP_PREFIX.to_vec();
-        to_verify.extend_from_slice(&srep.as_bytes().expect("SREP serialization should not fail"));
-        assert!(verifier.verify(to_verify.as_ref(), sig.as_ref()));
+            let mut to_verify = version.dele_prefix().to_vec();
+            to_verify.extend_from_slice(&dele_bytes);
+            assert_eq!(
+                dele_verifier.verify(&to_verify, olk.cert().sig().as_ref()),
+                expected,
+                "DELE with {version:?} context string"
+            );
+        }
     }
 }

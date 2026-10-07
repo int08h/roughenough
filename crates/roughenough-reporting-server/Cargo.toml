@@ -2,7 +2,7 @@
 name = "roughenough-reporting-server"
 description = "Web server for collecting and storing Roughtime malfeasance reports"
 license = "Apache-2.0 OR MIT"
-version = "2.0.0"
+version = "2.1.0"
 edition = "2024"
 repository = "https://github.com/int08h/roughenough"
 homepage = "https://github.com/int08h/roughenough"

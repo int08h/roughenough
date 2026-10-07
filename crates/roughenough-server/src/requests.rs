@@ -57,14 +57,9 @@ impl RequestHandler {
                     return;
                 };
 
-                if self
-                    .responder
-                    .add_request(request_bytes, request, version, src_addr)
-                {
-                    self.metrics.num_ok_requests += 1;
-                } else {
-                    self.metrics.num_version_overflow += 1;
-                }
+                self.responder
+                    .add_request(request_bytes, request, version, src_addr);
+                self.metrics.num_ok_requests += 1;
             }
             Err(_) => {
                 self.metrics.num_bad_requests += 1;
@@ -198,7 +193,7 @@ mod tests {
         // declared length covers all 1472 bytes via a larger ZZZZ value
         let zzzz_len = MAX_REQUEST_SIZE - 84; // 84 = framing + header + VER/NONC/TYPE
         let entries: &[(&[u8; 4], Vec<u8>)] = &[
-            (b"VER\x00", 0x8000000cu32.to_le_bytes().to_vec()),
+            (b"VER\x00", 0x00000001u32.to_le_bytes().to_vec()),
             (b"NONC", vec![0x42; 32]),
             (b"TYPE", 0u32.to_le_bytes().to_vec()),
             (b"ZZZZ", vec![0; zzzz_len]),
@@ -307,18 +302,15 @@ mod tests {
         use roughenough_protocol::tags::ProtocolVersion;
         use roughenough_protocol::wire::FromFrame;
 
+        // Any offer that includes version 1 is answered with version 1
         let cases = [
-            // (offered wire values, expected response VER)
-            (vec![0x00000001u32], ProtocolVersion::RFC),
-            (vec![0x8000000cu32], ProtocolVersion::DRAFT),
-            (vec![0x00000001u32, 0x8000000cu32], ProtocolVersion::RFC),
-            // RFC version 1 outranks any draft
-            (vec![0x00000001u32, 0x8000000bu32], ProtocolVersion::RFC),
-            // Among drafts, the highest wire value (most recent draft) wins
-            (vec![0x8000000bu32, 0x8000000cu32], ProtocolVersion::DRAFT),
+            vec![0x00000001u32],
+            vec![0x00000001u32, 0x8000000cu32],
+            vec![0x00000001u32, 0x8000000bu32],
+            vec![0x00000000u32, 0x00000001u32, 0x8000000cu32],
         ];
 
-        for (offered, expected) in cases {
+        for offered in cases {
             let mut ver_value = Vec::new();
             for v in &offered {
                 ver_value.extend_from_slice(&v.to_le_bytes());
@@ -345,7 +337,11 @@ mod tests {
             let mut cursor = ParseCursor::new(&mut responses[0]);
             let response = Response::from_frame(&mut cursor).unwrap();
 
-            assert_eq!(*response.srep().ver(), expected, "offered {offered:x?}");
+            assert_eq!(
+                *response.srep().ver(),
+                ProtocolVersion::RFC,
+                "offered {offered:x?}"
+            );
             assert_eq!(
                 response.srep().vers().versions(),
                 &ProtocolVersion::ADVERTISED,
@@ -355,103 +351,37 @@ mod tests {
     }
 
     #[test]
-    fn mixed_version_batch_shares_one_merkle_tree() {
+    fn only_version_one_requests_are_answered() {
         use roughenough_protocol::response::Response;
-        use roughenough_protocol::tags::ProtocolVersion;
         use roughenough_protocol::wire::FromFrame;
 
         let mut handler = create_request_handler();
 
-        // Clients offering only the draft version, only version 1, and only
-        // an off-list draft revision
+        // The pre-RFC draft version parses but is not negotiated; other
+        // experimental-range versions are unknown. Neither is answered.
         for (port, wire_ver, nonce_byte) in [
             (8001u16, 0x8000000cu32, 0x41u8),
             (8002, 0x00000001, 0x42),
             (8003, 0x8000000b, 0x43),
+            (8004, 0xbfffffff, 0x44),
         ] {
-            let entries: &[(&[u8; 4], Vec<u8>)] = &[
-                (b"VER\x00", wire_ver.to_le_bytes().to_vec()),
-                (b"NONC", vec![nonce_byte; 32]),
-                (b"TYPE", 0u32.to_le_bytes().to_vec()),
-                (b"ZZZZ", vec![0; 940]),
-            ];
-            let mut request_bytes = build_raw_request(entries);
-            let addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
-            handler.collect_request(&mut request_bytes, addr);
-        }
-        assert_eq!(handler.metrics().num_ok_requests, 3);
-
-        let mut responses = Vec::new();
-        handler.generate_responses(|_, bytes| responses.push(bytes.to_vec()));
-        assert_eq!(responses.len(), 3);
-
-        let mut parsed = Vec::new();
-        for bytes in &mut responses {
-            let mut cursor = ParseCursor::new(bytes);
-            parsed.push(Response::from_frame(&mut cursor).unwrap());
+            collect_one_version(&mut handler, wire_ver, nonce_byte, port);
         }
 
-        // Distinct negotiated versions, one shared Merkle tree
-        assert_eq!(*parsed[0].srep().ver(), ProtocolVersion::DRAFT);
-        assert_eq!(*parsed[1].srep().ver(), ProtocolVersion::RFC);
-        assert_eq!(
-            parsed[2].srep().ver().as_u32(),
-            0x8000000b,
-            "off-list draft version is echoed"
-        );
-        assert_eq!(
-            parsed[0].srep().root(),
-            parsed[1].srep().root(),
-            "all responses must commit to the same Merkle root"
-        );
-        assert_eq!(parsed[1].srep().root(), parsed[2].srep().root());
-        assert_ne!(
-            parsed[0].sig(),
-            parsed[1].sig(),
-            "each version gets its own SREP signature"
-        );
-        assert_ne!(parsed[1].sig(), parsed[2].sig());
-        assert_eq!(parsed[0].indx(), 0);
-        assert_eq!(parsed[1].indx(), 1);
-        assert_eq!(parsed[2].indx(), 2);
-    }
-
-    #[test]
-    fn arbitrary_draft_version_is_negotiated() {
-        use roughenough_protocol::response::Response;
-        use roughenough_protocol::tags::ProtocolVersion;
-        use roughenough_protocol::wire::FromFrame;
-
-        // top of the RFC 12.2 draft/experimental range (0x80000000-0xbfffffff)
-        let draft = ProtocolVersion::from_u32(0xbfffffff).unwrap();
-
-        let entries: &[(&[u8; 4], Vec<u8>)] = &[
-            (b"VER\x00", draft.as_u32().to_le_bytes().to_vec()),
-            (b"NONC", vec![0x42; 32]),
-            (b"TYPE", 0u32.to_le_bytes().to_vec()),
-            (b"ZZZZ", vec![0; 940]),
-        ];
-        let mut request_bytes = build_raw_request(entries);
-        assert_eq!(request_bytes.len(), REQUEST_SIZE);
-
-        let mut handler = create_request_handler();
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-        handler.collect_request(&mut request_bytes, addr);
-        assert_eq!(handler.metrics().num_ok_requests, 1);
+        let metrics = handler.metrics();
+        assert_eq!(metrics.num_ok_requests, 1);
+        assert_eq!(metrics.num_no_common_version, 3);
 
         let mut responses = Vec::new();
-        handler.generate_responses(|_, bytes| responses.push(bytes.to_vec()));
+        handler.generate_responses(|addr, bytes| responses.push((addr, bytes.to_vec())));
         assert_eq!(responses.len(), 1);
 
-        let mut cursor = ParseCursor::new(&mut responses[0]);
+        let (addr, bytes) = &mut responses[0];
+        assert_eq!(addr.port(), 8002);
+        let mut cursor = ParseCursor::new(bytes);
         let response = Response::from_frame(&mut cursor).unwrap();
-
-        assert_eq!(*response.srep().ver(), draft);
-        // RFC 5.2.5: VERS MUST contain the version in the response's VER tag
-        assert_eq!(
-            response.srep().vers().versions(),
-            &[ProtocolVersion::RFC, draft]
-        );
+        assert_eq!(*response.srep().ver(), ProtocolVersion::RFC);
+        assert_eq!(response.nonc(), &Nonce::from([0x42; 32]));
     }
 
     #[test]
@@ -492,47 +422,13 @@ mod tests {
     }
 
     #[test]
-    fn version_overflow_is_capped_per_batch() {
-        let mut handler = create_request_handler();
-
-        let offlist_drafts = [0x80000009u32, 0x8000000a, 0x8000000b];
-
-        for (i, wire_ver) in offlist_drafts.iter().enumerate() {
-            collect_one_version(&mut handler, *wire_ver, i as u8, 8001 + i as u16);
-        }
-
-        let metrics = handler.metrics();
-        assert_eq!(metrics.num_ok_requests, 2);
-        assert_eq!(metrics.num_version_overflow, 1);
-
-        // Advertised versions are never starved, even with off-list slots full
-        collect_one_version(&mut handler, 0x00000001, 0x10, 8101);
-        collect_one_version(&mut handler, ProtocolVersion::DRAFT.as_u32(), 0x11, 8102);
-        assert_eq!(handler.metrics().num_ok_requests, 4);
-        assert_eq!(handler.metrics().num_version_overflow, 1);
-
-        let mut responses = Vec::new();
-        handler.generate_responses(|_, bytes| responses.push(bytes.to_vec()));
-        assert_eq!(responses.len(), ResponseHandler::MAX_VERSIONS_PER_BATCH);
-
-        // The cap applies per batch: the dropped draft is accepted in the
-        // next batch
-        collect_one_version(&mut handler, offlist_drafts[2], 0x99, 9001);
-        assert_eq!(handler.metrics().num_ok_requests, 5);
-
-        let mut responses = Vec::new();
-        handler.generate_responses(|_, bytes| responses.push(bytes.to_vec()));
-        assert_eq!(responses.len(), 1);
-    }
-
-    #[test]
     fn request_with_unknown_tag_is_answered() {
         // RFC 5.1: "Unknown tags MUST be ignored by the server."
         // Tag order by little-endian value: VER < NONC < TYPE < GREZ < ZZZZ
         let entries: &[(&[u8; 4], Vec<u8>)] = &[
             (
                 b"VER\x00",
-                ProtocolVersion::DRAFT.as_u32().to_le_bytes().to_vec(),
+                ProtocolVersion::RFC.as_u32().to_le_bytes().to_vec(),
             ),
             (b"NONC", vec![0x42; 32]),
             (b"TYPE", 0u32.to_le_bytes().to_vec()),

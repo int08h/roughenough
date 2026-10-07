@@ -49,9 +49,15 @@ impl LongTermIdentity {
         let pubkey = PublicKey::from(olk.public_key_bytes());
         let dele = Delegation::new(pubkey, now, validity_length);
 
-        // One delegation signature covers every supported version: they all
-        // share the version-independent DELE context string.
-        let mut to_sign = ProtocolVersion::DELE_PREFIX.to_vec();
+        // One CERT serves every response, so every advertised version must
+        // share the DELE context string
+        let dele_prefix = ProtocolVersion::RFC.dele_prefix();
+        debug_assert!(
+            ProtocolVersion::ADVERTISED
+                .iter()
+                .all(|v| v.dele_prefix() == dele_prefix)
+        );
+        let mut to_sign = dele_prefix.to_vec();
         to_sign.extend_from_slice(&dele.as_bytes().expect("DELE serialization should not fail"));
 
         let dele_sig: [u8; 64] = self

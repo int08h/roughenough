@@ -11,48 +11,45 @@ use crate::wire::{FromWire, ToWire};
 /// A `ProtocolVersion` is a u32 version number identifying a specific Roughtime
 /// protocol variant.
 ///
-/// RFC 12.2 splits the high-bit space:
-///   * 0x80000000-0xbfffffff is reserved for draft/experimental use and
-///   * 0xc0000000-0xffffffff for private use
+/// Two versions are recognized:
+///   * [`Self::RFC`], Roughtime version 1 from RFC 10049, and
+///   * [`Self::DRAFT`], 0x8000000c, the version used by servers built to the
+///     drafts that preceded the RFC. It lies in the RFC 12.2 experimental
+///     range and differs from version 1 only in its signature context strings.
 ///
-/// This implementation accepts *any* version in the draft/experimental range and
-/// rejects private-use versions.
+/// Every other value, including the rest of the experimental range, is unknown.
+/// The server answers only the versions in [`Self::ADVERTISED`]; the client can
+/// opt into [`Self::DRAFT`] to reach servers that predate the RFC.
 #[repr(transparent)]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ProtocolVersion(u32);
 
 impl ProtocolVersion {
-    /// Roughtime version 1, the version (soon to be) assigned by the published RFC
+    /// Roughtime version 1 (RFC 10049 12.2)
     pub const RFC: Self = Self(0x00000001);
-    /// The draft test version this implementation offers (client) and
-    /// advertises in VERS (server): 0x8000000c. Acceptance is broader, see [`Self::is_draft`].
+    /// Pre-RFC draft version 0x8000000c
     pub const DRAFT: Self = Self(0x8000000c);
     /// Internal sentinel for an unset version; never valid on the wire
     pub const INVALID: Self = Self(0xffffffff);
 
-    const DRAFT_FLAG: u32 = 0x8000_0000;
-    /// RFC 12.2 draft/experimental range; 0xc0000000-0xffffffff is private use
-    const DRAFT_MIN: u32 = 0x8000_0000;
-    const DRAFT_MAX: u32 = 0xbfff_ffff;
+    /// Versions the server negotiates and advertises in VERS, in ascending
+    /// wire order (required of VERS tag by RFC 5.2.5).
+    pub const ADVERTISED: [ProtocolVersion; 1] = [Self::RFC];
 
-    /// Versions advertised in VERS and offered by the client, in ascending
-    /// wire order (required of VERS tag by RFC 5.2.5). The server
-    /// *accepts* more than these: see [`Self::is_supported`].
-    pub const ADVERTISED: [ProtocolVersion; 2] = [Self::RFC, Self::DRAFT];
+    // RFC 10049 5.2.1 and 5.2.6. Draft 0x8000000c used "RoughTime"; the RFC
+    // changed the case for version 1. Both include a terminating zero byte.
+    const RFC_SREP_PREFIX: &'static [u8] = b"Roughtime v1 response signature\x00";
+    const RFC_DELE_PREFIX: &'static [u8] = b"Roughtime v1 delegation signature\x00";
+    const DRAFT_SREP_PREFIX: &'static [u8] = b"RoughTime v1 response signature\x00";
+    const DRAFT_DELE_PREFIX: &'static [u8] = b"RoughTime v1 delegation signature\x00";
 
     pub const fn as_u32(&self) -> u32 {
         self.0
     }
 
-    /// True when this version is in the RFC 12.2 draft/experimental range
-    /// (0x80000000-0xbfffffff).
-    pub const fn is_draft(&self) -> bool {
-        Self::DRAFT_MIN <= self.0 && self.0 <= Self::DRAFT_MAX
-    }
-
-    /// True when this implementation can respond using this version.
+    /// True when this implementation can parse and verify this version.
     pub const fn is_supported(&self) -> bool {
-        self.0 == Self::RFC.0 || self.is_draft()
+        self.0 == Self::RFC.0 || self.0 == Self::DRAFT.0
     }
 
     /// Map a wire value to a protocol version, or `None` if the value is not a
@@ -62,45 +59,43 @@ impl ProtocolVersion {
         version.is_supported().then_some(version)
     }
 
-    /// Choose the version for a response: the highest-preference supported
-    /// version among those the client offered (RFC 5.2.5: the response version
-    /// SHOULD be one supplied by the client). Returns `None` when there is no
-    /// version in common; RFC 5.1.1 permits ignoring such requests.
+    /// Choose the version for a response: the highest advertised version
+    /// among those the client offered (RFC 5.2.5: the response version SHOULD
+    /// be one supplied by the client). Returns `None` when there is no version
+    /// in common; RFC 5.1.1 permits ignoring such requests.
     pub fn negotiate(offered: &[ProtocolVersion]) -> Option<ProtocolVersion> {
-        offered
+        Self::ADVERTISED
             .iter()
-            .filter(|version| version.is_supported())
-            .max_by_key(|version| version.preference())
+            .rev()
+            .find(|version| offered.contains(version))
             .copied()
     }
 
-    /// Rank for version negotiation: a higher value is preferred. RFC version 1
-    /// outranks every draft despite its smaller wire value. Among drafts the
-    /// highest wire value (the most recent draft) wins.
-    pub fn preference(&self) -> u64 {
-        if *self == Self::RFC {
-            1 << 32
-        } else if self.is_draft() {
-            u64::from(self.0 & !Self::DRAFT_FLAG) + 1
+    /// RFC 5.2.6: context string for the long-term key's signature over DELE.
+    pub const fn dele_prefix(&self) -> &'static [u8] {
+        if self.0 == Self::DRAFT.0 {
+            Self::DRAFT_DELE_PREFIX
         } else {
-            0
+            Self::RFC_DELE_PREFIX
         }
     }
 
-    /// RFC 5.2.2: context string for the long-term key's signature over DELE.
-    pub const DELE_PREFIX: &'static [u8] = b"RoughTime v1 delegation signature\x00";
-
-    /// RFC 5.2.6: context string for the online key's signature over SREP.
-    /// [`Self::DELE_PREFIX`].
-    pub const SREP_PREFIX: &'static [u8] = b"RoughTime v1 response signature\x00";
+    /// RFC 5.2.1: context string for the online key's signature over SREP.
+    pub const fn srep_prefix(&self) -> &'static [u8] {
+        if self.0 == Self::DRAFT.0 {
+            Self::DRAFT_SREP_PREFIX
+        } else {
+            Self::RFC_SREP_PREFIX
+        }
+    }
 }
 
 impl Debug for ProtocolVersion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Self::RFC => write!(f, "Rfc"),
+            Self::DRAFT => write!(f, "Draft"),
             Self::INVALID => write!(f, "Invalid"),
-            Self(value) if self.is_draft() => write!(f, "Draft(0x{value:08x})"),
             Self(value) => write!(f, "Unknown(0x{value:08x})"),
         }
     }
@@ -140,9 +135,20 @@ impl FromStr for ProtocolVersion {
 mod tests {
     use super::*;
 
+    fn roundtrip(version: ProtocolVersion) {
+        let mut buf = vec![0u8; version.wire_size()];
+        {
+            let mut cursor = ParseCursor::new(&mut buf);
+            version.to_wire(&mut cursor).unwrap();
+        }
+        let mut cursor = ParseCursor::new(&mut buf);
+        assert_eq!(ProtocolVersion::from_wire(&mut cursor).unwrap(), version);
+    }
+
     #[test]
     fn google_version_is_not_recognized() {
-        // The legacy google-roughtime protocol (0x00000000) is not supported
+        // The legacy google-roughtime protocol (0x00000000) is not supported;
+        // RFC 12.2 reserves 0x0
         assert_eq!(ProtocolVersion::from_u32(0x00000000), None);
 
         let mut buf = 0x00000000u32.to_le_bytes().to_vec();
@@ -154,116 +160,76 @@ mod tests {
     }
 
     #[test]
-    fn draft_version_roundtrip() {
-        let version = ProtocolVersion::DRAFT;
-        assert_eq!(version.as_u32(), 0x8000000c);
-        assert_eq!(ProtocolVersion::from_u32(0x8000000c), Some(version));
-
-        let mut buf = vec![0u8; version.wire_size()];
-        {
-            let mut cursor = ParseCursor::new(&mut buf);
-            version.to_wire(&mut cursor).unwrap();
-        }
-        let mut cursor = ParseCursor::new(&mut buf);
-        assert_eq!(ProtocolVersion::from_wire(&mut cursor).unwrap(), version);
-    }
-
-    #[test]
     fn version_one_roundtrip() {
         let version = ProtocolVersion::RFC;
         assert_eq!(version.as_u32(), 0x00000001);
         assert_eq!(ProtocolVersion::from_u32(0x00000001), Some(version));
-
-        let mut buf = vec![0u8; version.wire_size()];
-        {
-            let mut cursor = ParseCursor::new(&mut buf);
-            version.to_wire(&mut cursor).unwrap();
-        }
-        let mut cursor = ParseCursor::new(&mut buf);
-        assert_eq!(ProtocolVersion::from_wire(&mut cursor).unwrap(), version);
+        roundtrip(version);
     }
 
     #[test]
-    fn arbitrary_draft_versions_roundtrip() {
-        for value in [0x80000001u32, 0x8000000bu32, 0x8000001fu32, 0x80000000u32] {
-            let version = ProtocolVersion::from_u32(value)
-                .unwrap_or_else(|| panic!("draft 0x{value:08x} must be supported"));
-            assert!(version.is_draft());
-            assert!(version.is_supported());
-            assert_eq!(version.as_u32(), value);
-
-            let mut buf = vec![0u8; version.wire_size()];
-            {
-                let mut cursor = ParseCursor::new(&mut buf);
-                version.to_wire(&mut cursor).unwrap();
-            }
-            let mut cursor = ParseCursor::new(&mut buf);
-            assert_eq!(ProtocolVersion::from_wire(&mut cursor).unwrap(), version);
-        }
+    fn draft_version_roundtrip() {
+        let version = ProtocolVersion::DRAFT;
+        assert_eq!(version.as_u32(), 0x8000000c);
+        assert_eq!(ProtocolVersion::from_u32(0x8000000c), Some(version));
+        roundtrip(version);
     }
 
     #[test]
-    fn draft_range_boundaries_are_supported() {
-        // RFC 12.2: 0x80000000-0xbfffffff is the draft/experimental range
-        for value in [0x80000001u32, 0xbfffffffu32] {
-            let version = ProtocolVersion::from_u32(value)
-                .unwrap_or_else(|| panic!("draft 0x{value:08x} must be supported"));
-            assert!(version.is_draft(), "0x{value:08x}");
-            assert!(version.is_supported(), "0x{value:08x}");
+    fn other_experimental_versions_are_rejected() {
+        // RFC 12.2: 0x80000000-0xbfffffff is reserved for experimental use.
+        // Only 0x8000000c is recognized.
+        for value in [
+            0x80000000u32,
+            0x80000001,
+            0x8000000b,
+            0x8000000d,
+            0xbfffffff,
+        ] {
+            assert_eq!(ProtocolVersion::from_u32(value), None, "0x{value:08x}");
         }
     }
 
     #[test]
     fn private_use_versions_are_rejected() {
-        // RFC 12.2: 0xc0000000-0xffffffff is private use; this implementation
-        // has never seen their semantics and must not answer them (RFC 5.2.5)
+        // RFC 12.2: 0xc0000000-0xffffffff is private use
         for value in [0xc0000000u32, 0xc0000001u32, 0xfffffffeu32] {
             assert!(!ProtocolVersion(value).is_supported(), "0x{value:08x}");
             assert_eq!(ProtocolVersion::from_u32(value), None, "0x{value:08x}");
         }
-
-        let offered = [
-            ProtocolVersion(0xc0000000),
-            ProtocolVersion(0xc0000001),
-            ProtocolVersion(0xfffffffe),
-        ];
-        assert_eq!(ProtocolVersion::negotiate(&offered), None);
     }
 
     #[test]
-    fn non_draft_unknown_versions_are_rejected() {
-        // The INVALID sentinel and values without the draft flag are not versions
+    fn unknown_versions_are_rejected() {
         for value in [0xffffffffu32, 0x7fffffffu32, 0x00000002u32, 0x00000000u32] {
             assert_eq!(ProtocolVersion::from_u32(value), None, "0x{value:08x}");
         }
-        assert!(!ProtocolVersion::INVALID.is_draft());
         assert!(!ProtocolVersion::INVALID.is_supported());
     }
 
     #[test]
-    fn context_strings() {
-        // RFC 5.2.1 / 5.2.6: context strings include a terminating zero byte
+    fn version_one_context_strings() {
+        // RFC 10049 5.2.1 / 5.2.6: context strings include a terminating zero byte
         assert_eq!(
-            ProtocolVersion::SREP_PREFIX,
-            b"RoughTime v1 response signature\x00"
+            ProtocolVersion::RFC.srep_prefix(),
+            b"Roughtime v1 response signature\x00"
         );
         assert_eq!(
-            ProtocolVersion::DELE_PREFIX,
-            b"RoughTime v1 delegation signature\x00"
+            ProtocolVersion::RFC.dele_prefix(),
+            b"Roughtime v1 delegation signature\x00"
         );
     }
 
     #[test]
-    fn preference_is_by_recency_not_wire_value() {
-        // 0x00000001 outranks 0x8000000c despite the smaller wire value
-        assert!(
-            ProtocolVersion::RFC.preference() > ProtocolVersion::DRAFT.preference(),
-            "RFC version 1 must be preferred over the draft version"
+    fn draft_context_strings() {
+        assert_eq!(
+            ProtocolVersion::DRAFT.srep_prefix(),
+            b"RoughTime v1 response signature\x00"
         );
-
-        // RFC version 1 outranks even the highest possible draft
-        let max_draft = ProtocolVersion::from_u32(0xbfffffff).unwrap();
-        assert!(ProtocolVersion::RFC.preference() > max_draft.preference());
+        assert_eq!(
+            ProtocolVersion::DRAFT.dele_prefix(),
+            b"RoughTime v1 delegation signature\x00"
+        );
     }
 
     #[test]
@@ -278,51 +244,35 @@ mod tests {
     }
 
     #[test]
-    fn negotiation_picks_highest_preference() {
-        const RFC: ProtocolVersion = ProtocolVersion::RFC;
-        const DRAFT: ProtocolVersion = ProtocolVersion::DRAFT;
-
-        // RFC 5.2.5: the response version SHOULD be one the client offered.
-        // Preference is by recency: version 1 outranks the draft version.
-        assert_eq!(ProtocolVersion::negotiate(&[RFC]), Some(RFC));
-        assert_eq!(ProtocolVersion::negotiate(&[DRAFT]), Some(DRAFT));
-        assert_eq!(ProtocolVersion::negotiate(&[RFC, DRAFT]), Some(RFC));
-        assert_eq!(ProtocolVersion::negotiate(&[DRAFT, RFC]), Some(RFC));
-
-        // RFC 5.1.1: with no common version the server MAY ignore the request;
-        // this implementation signals that with None
-        assert_eq!(ProtocolVersion::negotiate(&[]), None);
+    fn server_advertises_only_version_one() {
+        assert_eq!(ProtocolVersion::ADVERTISED, [ProtocolVersion::RFC]);
     }
 
     #[test]
-    fn negotiation_with_arbitrary_drafts() {
-        let draft_b = ProtocolVersion::from_u32(0x8000000b).unwrap();
-        let draft_c = ProtocolVersion::DRAFT; // 0x8000000c
+    fn negotiation_selects_only_advertised_versions() {
+        const RFC: ProtocolVersion = ProtocolVersion::RFC;
+        const DRAFT: ProtocolVersion = ProtocolVersion::DRAFT;
 
-        // A lone draft is negotiable
-        assert_eq!(ProtocolVersion::negotiate(&[draft_b]), Some(draft_b));
+        // RFC 5.2.5: the response version SHOULD be one the client offered
+        assert_eq!(ProtocolVersion::negotiate(&[RFC]), Some(RFC));
+        assert_eq!(ProtocolVersion::negotiate(&[RFC, DRAFT]), Some(RFC));
+        assert_eq!(ProtocolVersion::negotiate(&[DRAFT, RFC]), Some(RFC));
 
-        // RFC version 1 outranks any draft
-        assert_eq!(
-            ProtocolVersion::negotiate(&[ProtocolVersion::RFC, draft_b]),
-            Some(ProtocolVersion::RFC)
-        );
-
-        // Among drafts, the highest wire value (most recent draft) wins
-        assert_eq!(
-            ProtocolVersion::negotiate(&[draft_b, draft_c]),
-            Some(draft_c)
-        );
+        // The draft version parses but is not negotiated by the server.
+        // RFC 5.1.1: with no common version the server MAY ignore the request;
+        // this implementation signals that with None
+        assert_eq!(ProtocolVersion::negotiate(&[DRAFT]), None);
+        assert_eq!(ProtocolVersion::negotiate(&[]), None);
     }
 
     #[test]
     fn debug_formatting() {
         assert_eq!(format!("{:?}", ProtocolVersion::RFC), "Rfc");
-        assert_eq!(format!("{:?}", ProtocolVersion::DRAFT), "Draft(0x8000000c)");
+        assert_eq!(format!("{:?}", ProtocolVersion::DRAFT), "Draft");
         assert_eq!(format!("{:?}", ProtocolVersion::INVALID), "Invalid");
         assert_eq!(
-            format!("{:?}", ProtocolVersion::from_u32(0x8000000b).unwrap()),
-            "Draft(0x8000000b)"
+            format!("{:?}", ProtocolVersion(0x8000000b)),
+            "Unknown(0x8000000b)"
         );
     }
 
@@ -332,17 +282,17 @@ mod tests {
             "1".parse::<ProtocolVersion>().unwrap(),
             ProtocolVersion::RFC
         );
-    }
-
-    #[test]
-    fn from_str_accepts_draft19_names() {
-        assert_eq!(
-            "19".parse::<ProtocolVersion>().unwrap(),
-            ProtocolVersion::DRAFT
-        );
         assert_eq!(
             "ietf-roughtime".parse::<ProtocolVersion>().unwrap(),
             ProtocolVersion::RFC
+        );
+    }
+
+    #[test]
+    fn from_str_accepts_draft_name() {
+        assert_eq!(
+            "19".parse::<ProtocolVersion>().unwrap(),
+            ProtocolVersion::DRAFT
         );
         assert!("google-roughtime".parse::<ProtocolVersion>().is_err());
     }

@@ -37,9 +37,6 @@ pub struct RequestMetrics {
     /// Requests whose VER list shares no version with this server
     /// (RFC 5.1.1: such requests may be ignored)
     pub num_no_common_version: usize,
-    /// Requests dropped because their negotiated version would exceed the
-    /// per-batch distinct version limit
-    pub num_version_overflow: usize,
 }
 
 impl AddAssign for RequestMetrics {
@@ -50,7 +47,6 @@ impl AddAssign for RequestMetrics {
         self.num_oversized_requests += rhs.num_oversized_requests;
         self.num_srv_mismatch += rhs.num_srv_mismatch;
         self.num_no_common_version += rhs.num_no_common_version;
-        self.num_version_overflow += rhs.num_version_overflow;
     }
 }
 
@@ -185,7 +181,6 @@ mod tests {
             num_oversized_requests: 2,
             num_srv_mismatch: 4,
             num_no_common_version: 6,
-            num_version_overflow: 1,
         };
 
         let metrics2 = RequestMetrics {
@@ -195,7 +190,6 @@ mod tests {
             num_oversized_requests: 1,
             num_srv_mismatch: 2,
             num_no_common_version: 3,
-            num_version_overflow: 2,
         };
 
         metrics1 += metrics2;
@@ -204,7 +198,8 @@ mod tests {
         assert_eq!(metrics1.num_bad_requests, 15);
         assert_eq!(metrics1.num_runt_requests, 8);
         assert_eq!(metrics1.num_oversized_requests, 3);
-        assert_eq!(metrics1.num_version_overflow, 3);
+        assert_eq!(metrics1.num_srv_mismatch, 6);
+        assert_eq!(metrics1.num_no_common_version, 9);
     }
 
     #[test]

@@ -35,7 +35,12 @@ impl OnlineKey {
         ));
 
         // Reusable signing buffer sized for the context string plus SREP
-        let buf = vec![0u8; ProtocolVersion::SREP_PREFIX.len() + srep.wire_size()];
+        let prefix_len = ProtocolVersion::ADVERTISED
+            .iter()
+            .map(|v| v.srep_prefix().len())
+            .max()
+            .unwrap_or(0);
+        let buf = vec![0u8; prefix_len + srep.wire_size()];
 
         Self {
             signer: OnlineSigner::from_random(),
@@ -83,8 +88,9 @@ impl OnlineKey {
     ///
     /// # Arguments
     ///
-    /// * `version` - The protocol version negotiated for this response (RFC
-    ///   5.2.5: the response VER should be one the client offered)
+    /// * `version` - The protocol version negotiated for this response, one of
+    ///   [`ProtocolVersion::ADVERTISED`] (RFC 5.2.5: the response VER should be
+    ///   one the client offered)
     /// * `root` - The Merkle tree root hash that commits to the batch of client requests being
     ///   processed. This root allows clients to verify their request was included in the batch.
     ///
@@ -98,19 +104,18 @@ impl OnlineKey {
         version: ProtocolVersion,
         root: &MerkleRoot,
     ) -> (SignedResponse, Signature) {
+        // RFC 5.2.5: VERS MUST contain the version in this response's VER tag
+        debug_assert!(
+            ProtocolVersion::ADVERTISED.contains(&version),
+            "{version:?} is not advertised"
+        );
+
         let mut srep = self.template_srep.clone();
         srep.set_ver(version);
         srep.set_root(root);
         srep.set_midp(self.clock_source.epoch_seconds());
 
-        // RFC 5.2.5: VERS MUST contain the version in this response's VER tag.
-        // Draft versions outside ADVERTISED are added alongside the RFC version.
-        if !ProtocolVersion::ADVERTISED.contains(&version) {
-            srep.set_vers(&SupportedVersions::new(&[ProtocolVersion::RFC, version]));
-        }
-        debug_assert_eq!(srep.wire_size(), self.template_srep.wire_size());
-
-        let prefix = ProtocolVersion::SREP_PREFIX;
+        let prefix = version.srep_prefix();
         let prefix_len = prefix.len();
         let total_len = prefix_len + srep.wire_size();
 

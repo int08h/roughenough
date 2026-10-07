@@ -25,7 +25,7 @@ pub struct Server {
     name: String,
 
     /// Highest Roughtime version number supported by the server
-    version: String,
+    version: ServerVersion,
 
     /// Signature scheme used by the server (e.g., "ed25519")
     #[serde(rename = "publicKeyType")]
@@ -37,6 +37,16 @@ pub struct Server {
 
     /// List of network addresses for the server
     addresses: Vec<Address>,
+}
+
+/// The `version` of a server list entry. RFC 8.3 specifies an integer. Lists
+/// written before RFC 10049 use strings such as "IETF-Roughtime"; those are
+/// accepted and kept as-is. Neither form is interpreted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ServerVersion {
+    Integer(u32),
+    Legacy(String),
 }
 
 /// Represents a network address for a Roughtime server
@@ -179,7 +189,7 @@ impl ServerList {
 impl Server {
     pub fn new(
         name: String,
-        version: String,
+        version: ServerVersion,
         public_key_type: String,
         public_key: String,
         addresses: Vec<Address>,
@@ -203,7 +213,7 @@ impl Server {
             });
         }
 
-        if self.version.is_empty() {
+        if self.version == ServerVersion::Legacy(String::new()) {
             return Err(Error::EmptyField {
                 field: "version".to_string(),
             });
@@ -250,7 +260,7 @@ impl Server {
         &self.name
     }
 
-    pub fn version(&self) -> &str {
+    pub fn version(&self) -> &ServerVersion {
         &self.version
     }
 
@@ -316,7 +326,7 @@ mod tests {
             Address::new(Protocol::Udp, "roughtime.example.com:2002".to_string()).unwrap();
         let server = Server::new(
             "Example Server".to_string(),
-            "1".to_string(),
+            ServerVersion::Integer(1),
             "ed25519".to_string(),
             "base64encodedkey==".to_string(),
             vec![address],
@@ -329,7 +339,7 @@ mod tests {
         let address2 = Address::new(Protocol::Tcp, "other.example.com:2003".to_string()).unwrap();
         let server2 = Server::new(
             "Other Server".to_string(),
-            "1".to_string(),
+            ServerVersion::Integer(1),
             "ed25519".to_string(),
             "anotherkeyhere==".to_string(),
             vec![address2],
@@ -379,7 +389,7 @@ mod tests {
         let json = r#"{
             "servers": [{
                 "name": "V6 Server",
-                "version": "1",
+                "version": 1,
                 "publicKeyType": "ed25519",
                 "publicKey": "key==",
                 "addresses": [{"protocol": "udp", "address": "[2001:db8::1]:2003"}]
@@ -409,7 +419,7 @@ mod tests {
         let tcp = Address::new(Protocol::Tcp, "example.com:2003".to_string()).unwrap();
         let server = Server::new(
             "TCP Only".to_string(),
-            "1".to_string(),
+            ServerVersion::Integer(1),
             "ed25519".to_string(),
             "key==".to_string(),
             vec![tcp],
@@ -425,7 +435,7 @@ mod tests {
         let udp = Address::new(Protocol::Udp, "example.com:2004".to_string()).unwrap();
         let server = Server::new(
             "Mixed".to_string(),
-            "1".to_string(),
+            ServerVersion::Integer(1),
             "ed25519".to_string(),
             "key==".to_string(),
             vec![tcp, udp],
@@ -443,7 +453,7 @@ mod tests {
             Address::new(Protocol::Udp, "roughtime.example.com:2002".to_string()).unwrap();
         let server = Server::new(
             "Example Server".to_string(),
-            "1".to_string(),
+            ServerVersion::Integer(1),
             "ed25519".to_string(),
             "base64encodedkey==".to_string(),
             vec![address],
@@ -457,6 +467,60 @@ mod tests {
 
         assert_eq!(parsed.servers.len(), 1);
         assert_eq!(parsed.servers[0].name, "Example Server");
+    }
+
+    #[test]
+    fn integer_and_legacy_versions_parse() {
+        let json = r#"{
+            "servers": [
+                {
+                    "name": "RFC",
+                    "version": 1,
+                    "publicKeyType": "ed25519",
+                    "publicKey": "key==",
+                    "addresses": [{"protocol": "udp", "address": "example.com:5319"}]
+                },
+                {
+                    "name": "Legacy",
+                    "version": "IETF-Roughtime",
+                    "publicKeyType": "ed25519",
+                    "publicKey": "key==",
+                    "addresses": [{"protocol": "udp", "address": "example.com:2002"}]
+                }
+            ]
+        }"#;
+
+        let server_list = ServerList::from_json(json).unwrap();
+        assert_eq!(
+            server_list.servers()[0].version(),
+            &ServerVersion::Integer(1)
+        );
+        assert_eq!(
+            server_list.servers()[1].version(),
+            &ServerVersion::Legacy("IETF-Roughtime".to_string())
+        );
+
+        // RFC 8.3: written lists carry an integer
+        let json = server_list.to_json().unwrap();
+        assert!(json.contains(r#""version": 1"#) || json.contains(r#""version":1"#));
+    }
+
+    #[test]
+    fn empty_legacy_version_is_rejected() {
+        let json = r#"{
+            "servers": [{
+                "name": "Server",
+                "version": "",
+                "publicKeyType": "ed25519",
+                "publicKey": "key==",
+                "addresses": [{"protocol": "udp", "address": "example.com:5319"}]
+            }]
+        }"#;
+        match ServerList::from_json(json) {
+            Err(Error::EmptyField { field }) => assert_eq!(field, "version"),
+            Err(e) => panic!("expected Error::EmptyField, got {e:?}"),
+            Ok(_) => panic!("expected validation to fail"),
+        }
     }
 
     #[test]
@@ -480,7 +544,7 @@ mod tests {
         let json = r#"{
             "servers": [{
                 "name": "",
-                "version": "1",
+                "version": 1,
                 "publicKeyType": "ed25519",
                 "publicKey": "key==",
                 "addresses": [{"protocol": "udp", "address": "example.com:2002"}]
@@ -496,7 +560,7 @@ mod tests {
         let json = r#"{
             "servers": [{
                 "name": "Server",
-                "version": "1",
+                "version": 1,
                 "publicKeyType": "ed25519",
                 "publicKey": "key==",
                 "addresses": [{"protocol": "udp", "address": "no_port"}]
@@ -512,7 +576,7 @@ mod tests {
         let json = r#"{
             "servers": [{
                 "name": "Server",
-                "version": "1",
+                "version": 1,
                 "publicKeyType": "ed25519",
                 "publicKey": "key==",
                 "addresses": [{"protocol": "udp", "address": "example.com:2002"}]
@@ -531,7 +595,7 @@ mod tests {
         // Empty name
         match Server::new(
             "".to_string(),
-            "1".to_string(),
+            ServerVersion::Integer(1),
             "ed25519".to_string(),
             "key==".to_string(),
             vec![Address::new(Protocol::Udp, "example.com:2002".to_string()).unwrap()],
@@ -544,7 +608,7 @@ mod tests {
         // Empty addresses
         match Server::new(
             "Server".to_string(),
-            "1".to_string(),
+            ServerVersion::Integer(1),
             "ed25519".to_string(),
             "key==".to_string(),
             vec![],
@@ -560,7 +624,7 @@ mod tests {
         let address = Address::new(Protocol::Udp, "example.com:2002".to_string()).unwrap();
         let server = Server::new(
             "Server".to_string(),
-            "1".to_string(),
+            ServerVersion::Integer(1),
             "ed25519".to_string(),
             "key==".to_string(),
             vec![address],

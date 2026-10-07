@@ -207,7 +207,7 @@ fn test_build_mode(build_mode: &str) -> bool {
         .output();
 
     // Version negotiation: the client offers RFC version 1, then both versions;
-    // the server must answer either offer with a valid response
+    // the server must answer either offer with a valid version 1 response
     for version_arg in ["1", "both"] {
         println!("=== Running client offering version '{version_arg}'...");
         let version_result = Command::new(&client_path)
@@ -244,6 +244,52 @@ fn test_build_mode(build_mode: &str) -> bool {
                 let _ = server_process.wait();
                 return false;
             }
+        }
+    }
+
+    // Negative test: the server answers only version 1 (RFC 5.1.1 permits
+    // ignoring a request with no common version), so a client offering only
+    // draft 0x8000000c must time out
+    println!("=== Running client offering only the draft version (expecting timeout)...");
+    let draft_only_result = Command::new(&client_path)
+        .args([
+            "127.0.0.1",
+            &port_str,
+            "-P",
+            "19",
+            "-t",
+            "1",
+            "-k",
+            "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29",
+        ])
+        .output();
+
+    match draft_only_result {
+        Ok(output) if output.status.success() => {
+            eprintln!("=== Client offering only the draft version unexpectedly got a response");
+            let _ = server_process.kill();
+            let _ = server_process.wait();
+            return false;
+        }
+        Ok(output) => {
+            let combined = format!(
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            if !combined.contains("timeout waiting for server response") {
+                eprintln!("=== Expected a server timeout, got: {combined}");
+                let _ = server_process.kill();
+                let _ = server_process.wait();
+                return false;
+            }
+            println!("=== Client offering only the draft version timed out, as expected");
+        }
+        Err(e) => {
+            eprintln!("=== Failed to run client: {e}");
+            let _ = server_process.kill();
+            let _ = server_process.wait();
+            return false;
         }
     }
 

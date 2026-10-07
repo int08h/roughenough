@@ -193,7 +193,7 @@ impl Debug for Request {
 }
 
 fn default_offered_versions() -> RequestedVersions {
-    RequestedVersions::new(&[ProtocolVersion::DRAFT])
+    RequestedVersions::new(&[ProtocolVersion::RFC])
 }
 
 /// ZZZZ padding bytes are always zero. Parsing discards the received value
@@ -834,6 +834,19 @@ mod tests {
     }
 
     #[test]
+    fn version_one_request_is_parsed() {
+        let mut raw = include_bytes!("../testdata/rfc10049-request.104172a3").to_vec();
+
+        let mut cursor = ParseCursor::new(&mut raw);
+        let request = Request::from_frame(&mut cursor).unwrap();
+
+        assert_eq!(request.ver().versions(), &[ProtocolVersion::RFC]);
+        assert_eq!(request.ver(), &default_offered_versions());
+        assert_eq!(request.nonc().as_ref()[..4], [0x10, 0x41, 0x72, 0xa3]);
+        assert!(request.srv().is_none());
+    }
+
+    #[test]
     fn from_wire_known_bytes() {
         // Request = RtMessage|4|{
         //   VER(4) = 0c000080
@@ -852,7 +865,7 @@ mod tests {
             Srv(_) => panic!("expected Plain variant"),
         };
 
-        assert_eq!(request.version, default_offered_versions());
+        assert_eq!(request.version.versions(), &[ProtocolVersion::DRAFT]);
         assert_eq!(
             request.nonce.as_ref()[..8],
             [0x07, 0x10, 0x39, 0xe5, 0x72, 0x33, 0x23, 0x19]
