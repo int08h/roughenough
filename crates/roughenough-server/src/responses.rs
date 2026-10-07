@@ -183,6 +183,12 @@ impl ResponseHandler {
         self.online_key.public_key()
     }
 
+    /// The online key's delegation span, (MINT, MAXT)
+    pub fn key_validity(&self) -> (u64, u64) {
+        let dele = self.online_key.cert().dele();
+        (dele.mint(), dele.maxt())
+    }
+
     pub fn long_term_public_key(&self) -> PublicKey {
         self.key_source.public_key()
     }

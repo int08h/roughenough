@@ -73,6 +73,10 @@ Roughtime is now published as RFC 10049. This release follows the RFC.
 - Server: metrics rates computed from per-interval deltas
 - Server: a backward wall-clock step no longer stalls metrics reporting
   until the clock catches up
+- Server: workers rotate the online key when the clock leaves its
+  delegation span. A backward step no longer leaves responses with MIDP
+  before MINT, which clients reject, and a forward jump no longer
+  triggers one rotation per skipped interval.
 - Server: `Response::to_wire` bounds check accounts for frame overhead
 - Server: non-WouldBlock receive errors are counted and don't busy-spin
 - Server: a worker thread dying shuts the server down with an error

@@ -112,7 +112,6 @@ fn mio_loop_steady_state_is_allocation_free() {
     let mut worker = Worker::new(
         0,
         args.batch_size as usize,
-        args.rotation_interval(),
         responder,
         ClockSource::System,
         tx,

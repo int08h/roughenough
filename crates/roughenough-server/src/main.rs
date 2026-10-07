@@ -51,7 +51,6 @@ static KEEP_RUNNING: AtomicBool = AtomicBool::new(true);
 struct WorkerConfig {
     socket_addr: SocketAddr,
     batch_size: usize,
-    key_replacement_interval: Duration,
     metrics_interval: Duration,
 }
 
@@ -76,7 +75,6 @@ fn main() {
     let worker_config = WorkerConfig {
         socket_addr: args.udp_socket_addr(),
         batch_size: args.batch_size as usize,
-        key_replacement_interval: args.rotation_interval(),
         metrics_interval: Duration::from_secs(args.metrics_interval),
     };
 
@@ -212,7 +210,6 @@ fn worker_task(
     let mut worker = Worker::new(
         idx,
         config.batch_size,
-        config.key_replacement_interval,
         responder,
         clock,
         metrics_channel,

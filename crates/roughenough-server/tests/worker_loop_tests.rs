@@ -34,17 +34,19 @@ fn test_args() -> Args {
 }
 
 fn new_worker(args: Args, tx: SyncSender<WorkerMetrics>) -> (Worker, MioUdpSocket, SocketAddr) {
-    let (worker, sock, addr, _) = new_worker_with_key(args, tx);
+    let (worker, sock, addr, _) = new_worker_with_key(args, tx, ClockSource::System);
     (worker, sock, addr)
 }
 
-/// Like `new_worker`, also returning the responder's initial online key
+/// Like `new_worker`, with `clock` shared by the worker and its key source,
+/// also returning the responder's initial online key
 fn new_worker_with_key(
     args: Args,
     tx: SyncSender<WorkerMetrics>,
+    clock: ClockSource,
 ) -> (Worker, MioUdpSocket, SocketAddr, PublicKey) {
     let seed = Box::new(MemoryBackend::from_value(&[42u8; 32]));
-    let key_source = KeySource::new(seed, ClockSource::System, args.rotation_interval());
+    let key_source = KeySource::new(seed, clock.clone(), args.rotation_interval());
     let responder = ResponseHandler::new(args.batch_size, key_source);
     let online_key = responder.public_key();
     let metrics_interval = Duration::from_secs(args.metrics_interval);
@@ -52,9 +54,8 @@ fn new_worker_with_key(
     let worker = Worker::new(
         0,
         args.batch_size as usize,
-        args.rotation_interval(),
         responder,
-        ClockSource::System,
+        clock,
         tx,
         metrics_interval,
     );
@@ -93,6 +94,25 @@ fn exchange(server_addr: SocketAddr) -> Option<Vec<u8>> {
     None
 }
 
+/// Longer than the worker's 350ms poll timeout, so it re-checks the clock
+const LOOP_QUANTUM: Duration = Duration::from_millis(800);
+
+/// The online key that signed `reply`, checking that the key's delegation
+/// covers the response midpoint as clients require (RFC 5.2.5)
+fn signing_key(reply: Option<Vec<u8>>) -> PublicKey {
+    let mut reply = reply.expect("no response from worker");
+    let response = Response::from_frame(&mut ParseCursor::new(&mut reply)).unwrap();
+    let dele = response.cert().dele();
+    let midp = response.srep().midp();
+    assert!(
+        (dele.mint()..=dele.maxt()).contains(&midp),
+        "MIDP {midp} outside delegation [{}, {}]",
+        dele.mint(),
+        dele.maxt()
+    );
+    *dele.pubk()
+}
+
 #[test]
 fn worker_answers_request_end_to_end() {
     let keep_running = AtomicBool::new(true);
@@ -118,20 +138,77 @@ fn worker_does_not_replace_online_key_at_startup() {
     // or remote KMS call; the responder's initial key must be used as-is
     let keep_running = AtomicBool::new(true);
     let (tx, _rx) = sync_channel(4);
-    let (mut worker, sock, server_addr, initial_key) = new_worker_with_key(test_args(), tx);
+    let (mut worker, sock, server_addr, initial_key) =
+        new_worker_with_key(test_args(), tx, ClockSource::System);
 
-    thread::scope(|s| {
+    let reply = thread::scope(|s| {
         let worker_thread = s.spawn(|| worker.run(sock, &keep_running));
         let reply = exchange(server_addr);
 
         keep_running.store(false, Release);
         worker_thread.join().expect("worker thread panicked");
-
-        let mut reply = reply.expect("no response from worker");
-        let mut cursor = ParseCursor::new(&mut reply);
-        let response = Response::from_frame(&mut cursor).unwrap();
-        assert_eq!(response.cert().dele().pubk(), &initial_key);
+        reply
     });
+
+    assert_eq!(signing_key(reply), initial_key);
+}
+
+#[test]
+fn worker_rotates_online_key_after_backward_clock_step() {
+    // A key minted before the step has MINT after the new time, so clients
+    // reject its responses until the worker rotates
+    let keep_running = AtomicBool::new(true);
+    let (tx, _rx) = sync_channel(4);
+    let start = ClockSource::System.epoch_seconds();
+    let mut clock = ClockSource::new_mock(start);
+    let (mut worker, sock, server_addr, initial_key) =
+        new_worker_with_key(test_args(), tx, clock.clone());
+
+    let [before, after] = thread::scope(|s| {
+        let worker_thread = s.spawn(|| worker.run(sock, &keep_running));
+        let before = exchange(server_addr);
+
+        clock.set_time(start - 7_200);
+        thread::sleep(LOOP_QUANTUM);
+        let after = exchange(server_addr);
+
+        keep_running.store(false, Release);
+        worker_thread.join().expect("worker thread panicked");
+        [before, after]
+    });
+
+    assert_eq!(signing_key(before), initial_key);
+    assert_ne!(signing_key(after), initial_key);
+}
+
+#[test]
+fn worker_rotates_once_after_forward_clock_jump() {
+    // A jump of many rotation intervals needs one new key, not one per
+    // interval skipped
+    let keep_running = AtomicBool::new(true);
+    let (tx, _rx) = sync_channel(4);
+    let start = ClockSource::System.epoch_seconds();
+    let mut clock = ClockSource::new_mock(start);
+    let (mut worker, sock, server_addr, initial_key) =
+        new_worker_with_key(test_args(), tx, clock.clone());
+
+    let [first, second] = thread::scope(|s| {
+        let worker_thread = s.spawn(|| worker.run(sock, &keep_running));
+
+        clock.set_time(start + 10 * 86_400);
+        thread::sleep(LOOP_QUANTUM);
+        let first = exchange(server_addr);
+        thread::sleep(LOOP_QUANTUM);
+        let second = exchange(server_addr);
+
+        keep_running.store(false, Release);
+        worker_thread.join().expect("worker thread panicked");
+        [first, second]
+    });
+
+    let first = signing_key(first);
+    assert_ne!(first, initial_key);
+    assert_eq!(signing_key(second), first);
 }
 
 #[test]

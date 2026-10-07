@@ -9,6 +9,7 @@ use roughenough_protocol::util::ClockSource;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
 
+use crate::metrics::ReportSchedule;
 use crate::metrics::snapshot::{AggregatedMetrics, MetricsSnapshot, calc_aggregated_metrics};
 use crate::metrics::types::{NetworkMetrics, RequestMetrics, ResponseMetrics};
 
@@ -19,42 +20,6 @@ pub struct WorkerMetrics {
     pub network: NetworkMetrics,
     pub request: RequestMetrics,
     pub response: ResponseMetrics,
-}
-
-/// When the next metrics report is due, in wall-clock epoch seconds
-#[derive(Debug)]
-struct ReportSchedule {
-    interval: u64,
-    last_report: u64,
-    next_report: u64,
-}
-
-impl ReportSchedule {
-    fn new(now: u64, interval: u64) -> Self {
-        Self {
-            interval,
-            last_report: now,
-            next_report: now + interval,
-        }
-    }
-
-    /// Returns the seconds since the last report when one is due at `now`.
-    fn poll(&mut self, now: u64) -> Option<u64> {
-        // After a backward clock step, restart from `now` rather than stall
-        // until the clock regains the old deadline
-        if now < self.last_report {
-            *self = Self::new(now, self.interval);
-            return None;
-        }
-
-        if now < self.next_report {
-            return None;
-        }
-
-        let elapsed = now - self.last_report;
-        *self = Self::new(now, self.interval);
-        Some(elapsed)
-    }
 }
 
 /// Metrics collector that runs in a dedicated thread
@@ -253,30 +218,6 @@ mod tests {
         assert!((report.mbytes_per_second - 0.1).abs() < 1e-9);
         assert_eq!(report.responses.num_responses, 200);
         assert_eq!(report.responses.num_bytes_sent, 2 * 1024 * 1024);
-    }
-
-    #[test]
-    fn schedule_reports_once_per_interval() {
-        let mut schedule = ReportSchedule::new(1000, 60);
-
-        assert_eq!(schedule.poll(1000), None);
-        assert_eq!(schedule.poll(1059), None);
-        assert_eq!(schedule.poll(1061), Some(61));
-        assert_eq!(schedule.poll(1100), None);
-        assert_eq!(schedule.poll(1121), Some(60));
-    }
-
-    #[test]
-    fn schedule_survives_backward_clock_step() {
-        let mut schedule = ReportSchedule::new(10_000, 60);
-
-        // Stepping back an hour does not report
-        assert_eq!(schedule.poll(6_400), None);
-
-        // Reports resume one interval after the step, not after the clock
-        // regains 10_060
-        assert_eq!(schedule.poll(6_459), None);
-        assert_eq!(schedule.poll(6_460), Some(60));
     }
 
     #[test]
