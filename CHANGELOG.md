@@ -40,6 +40,9 @@ Roughtime is now published as RFC 10049. This release follows the RFC.
 - Server: refuses to start without `--seed`; all-zero test seed requires
   `--insecure-zero-seed`
 - Server: truncated (oversized) datagrams are dropped
+- Server: the listening socket no longer sets `SO_REUSEADDR`, which on
+  Linux let any local user bind the Roughtime port and capture traffic;
+  `SO_REUSEPORT` alone balances load across workers and is UID-checked
 - Server: private-use protocol versions (0xc0000000-0xffffffff) are not
   negotiated or answered (RFC 12.2)
 - Keys: seed values are never logged

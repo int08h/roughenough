@@ -222,13 +222,14 @@ fn worker_task(
     worker.run(sock, &KEEP_RUNNING);
 }
 
-// Bind to the server port using SO_REUSEPORT and SO_REUSEADDR so the kernel will fairly
+// Bind to the server port using SO_REUSEPORT so the kernel will fairly
 // balance traffic to each worker. https://lwn.net/Articles/542629/
+// No SO_REUSEADDR: unlike SO_REUSEPORT it has no UID check on Linux, letting
+// other local users bind the port and capture traffic.
 fn bind_socket(sock_addr: SocketAddr) -> io::Result<MioUdpSocket> {
     let sock_domain = Domain::for_address(sock_addr);
     let socket = Socket::new(sock_domain, Type::DGRAM, None)?;
     socket.set_nonblocking(true)?;
-    socket.set_reuse_address(true)?;
     socket.set_reuse_port(true)?;
     socket.bind(&sock_addr.into())?;
 
