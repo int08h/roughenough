@@ -260,7 +260,7 @@ impl Client {
     /// let pub_key = Some("AW5uAoTSTDfG5NfY1bTh08GUnOqlRb+HVhbJ3ODJvsE=");
     ///
     /// // Create the client
-    /// let client = Client::new("roughtime.int08h.com", 2002, pub_key).unwrap();
+    /// let client = Client::new("roughtime.int08h.com", 5319, pub_key).unwrap();
     ///
     /// // Query the server
     /// let measurement = client.query().unwrap();

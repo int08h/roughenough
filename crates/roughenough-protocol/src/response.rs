@@ -248,6 +248,21 @@ mod tests {
     use crate::wire::FromFrame;
 
     #[test]
+    fn version_one_response_is_parsed() {
+        let mut raw = include_bytes!("../testdata/rfc10049-response.104172a3").to_vec();
+
+        let mut cursor = ParseCursor::new(&mut raw);
+        let response = Response::from_frame(&mut cursor).unwrap();
+
+        assert_eq!(response.msg_type(), MessageType::Response);
+        assert_eq!(response.indx(), 0);
+        assert_eq!(response.nonc().as_ref()[..4], [0x10, 0x41, 0x72, 0xa3]);
+        assert_eq!(*response.srep().ver(), ProtocolVersion::RFC);
+        assert_eq!(response.srep().vers().versions(), &[ProtocolVersion::RFC]);
+        assert_eq!(response.srep().midp(), 1_791_158_400);
+    }
+
+    #[test]
     fn response_with_unknown_tag_is_parsed() {
         // RFC 7: "Clients MUST properly ignore undefined tags"
         let raw = include_bytes!("../testdata/rfc-response.path8.index2.4c16c619");

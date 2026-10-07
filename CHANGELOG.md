@@ -1,6 +1,38 @@
 # Changelog
 
-## [Unreleased]
+## [2.1.0] - Unreleased
+
+### Breaking: RFC 10049
+
+Roughtime is now published as RFC 10049. This release follows the RFC.
+
+- Protocol: version 1 (0x00000001) signatures use the RFC 10049 context
+  strings, `"Roughtime v1 response signature"` and
+  `"Roughtime v1 delegation signature"` (RFC 5.2.1, 5.2.6)
+- Protocol: the recognized versions are version 1 and draft 0x8000000c.
+  Other values in the experimental range (0x80000000-0xbfffffff) are
+  unknown and are ignored in VER lists. Draft 0x8000000c keeps the
+  `"RoughTime v1 ..."` context strings.
+- Server: answers only version 1 and advertises only version 1 in VERS.
+  Requests that do not offer version 1, including requests from 2.0.0
+  clients, are ignored (RFC 5.1.1).
+- Server: default port is 5319, assigned by IANA (RFC 12.1). It was 2003.
+  Use `--port` or `ROUGHENOUGH_PORT` to keep the old port. The Dockerfile
+  exposes 5319.
+- Client: offers version 1 by default. `-P/--protocol` takes `1` (default),
+  `both` (version 1 and draft 0x8000000c), or `19` (draft 0x8000000c
+  only). It no longer takes `14` or `0`.
+- Client: a response whose VER was not offered in the request is rejected
+  (RFC 7), with the new `ValidationError::UnofferedVersion`
+- Client: the server-list `version` field is a `ServerVersion`. Integers
+  (RFC 8.3) and older string values such as `"IETF-Roughtime"` are both
+  accepted. `Server::new` and `Server::version` use the new type.
+- Reporting server: accepts reports with version 1 and draft 0x8000000c
+  responses
+- Protocol API (`roughenough-protocol`): versions are a `ProtocolVersion`
+  struct with `RFC` and `DRAFT` constants; `dele_prefix()` and
+  `srep_prefix()` return the context strings for a version. This release
+  changes public API without a major version bump.
 
 ### Security
 
@@ -70,8 +102,6 @@
   `SrvCommitment` and `Signature` are `Copy`
 - Protocol: `RequestedVersions`/`SupportedVersions` alias one
   `VersionList` type
-- Protocol: `DELE_PREFIX`/`SREP_PREFIX` constants replace per-version
-  accessors
 - Merkle: `root_from_paths` is a free function
 - Server: library modules are `#[doc(hidden)]`
 
@@ -85,6 +115,9 @@
 
 ### Documentation
 
+- References point at `doc/RFC-10049.txt`; the draft text and
+  `doc/RFC-PROTOCOL.md` are removed
+- README documents protocol versions and the context strings
 - README quick start corrected (port, package names, seed, client flags)
 - RELEASE-CHECKLIST package names fixed; publishable crates enumerated
 - CONTRIBUTING unsafe-code policy matches reality

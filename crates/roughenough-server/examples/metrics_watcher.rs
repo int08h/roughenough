@@ -98,8 +98,8 @@ fn display_metrics(filename: &str, metrics: &MetricsSnapshot) {
         metrics.totals.requests.num_oversized_requests
     );
     println!(
-        "  - Version overflow: {}",
-        metrics.totals.requests.num_version_overflow
+        "  - No common version: {}",
+        metrics.totals.requests.num_no_common_version
     );
     println!();
 

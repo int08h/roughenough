@@ -42,7 +42,7 @@ pub struct Args {
     #[clap(
         required = true,
         requires = "hostname",
-        help = "Target port (e.g. 2002)"
+        help = "Target port (e.g. 5319)"
     )]
     pub port: u16,
 

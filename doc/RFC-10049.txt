@@ -1,62 +1,42 @@
+﻿
 
 
 
+Internet Engineering Task Force (IETF)                           W. Ladd
+Request for Comments: 10049                          Akamai Technologies
+Category: Experimental                                       M. Dansarie
+ISSN: 2070-1721                                                   Netnod
+                                                            October 2026
 
-Network Time Protocols                                           W. Ladd
-Internet-Draft                                       Akamai Technologies
-Intended status: Experimental                                M. Dansarie
-Expires: 18 September 2026                                        Netnod
-                                                           17 March 2026
 
-
-                               Roughtime
-                      draft-ietf-ntp-roughtime-19
+          Roughtime: A Protocol for Rough Time Synchronization
 
 Abstract
 
    This document describes Roughtime, an experimental protocol that aims
-   to achieve two things: secure rough time synchronization even for
-   clients without any idea of what time it is, and give clients a
-   format for reporting any inconsistencies they observe between
-   timeservers.  This document specifies the on-wire protocol required
-   for these goals, and discusses aspects of the ecosystem needed for it
-   to work.
-
-About This Document
-
-   This note is to be removed before publishing as an RFC.
-
-   Status information for this document may be found at
-   https://datatracker.ietf.org/doc/draft-ietf-ntp-roughtime/.
-
-   Source for this draft and an issue tracker can be found at
-   https://github.com/ietf-wg-ntp/draft-roughtime.
+   to achieve two things: secure, rough time synchronization (even for
+   clients without any idea of what time it is) and a format for clients
+   to report any inconsistencies they observe between timeservers.  This
+   document specifies the on-wire protocol required for these goals and
+   discusses aspects of the ecosystem needed for it to work.
 
 Status of This Memo
 
-   This Internet-Draft is submitted in full conformance with the
-   provisions of BCP 78 and BCP 79.
+   This document is not an Internet Standards Track specification; it is
+   published for examination, experimental implementation, and
+   evaluation.
 
-   Internet-Drafts are working documents of the Internet Engineering
-   Task Force (IETF).  Note that other groups may also distribute
-   working documents as Internet-Drafts.  The list of current Internet-
-   Drafts is at https://datatracker.ietf.org/drafts/current/.
+   This document defines an Experimental Protocol for the Internet
+   community.  This document is a product of the Internet Engineering
+   Task Force (IETF).  It represents the consensus of the IETF
+   community.  It has received public review and has been approved for
+   publication by the Internet Engineering Steering Group (IESG).  Not
+   all documents approved by the IESG are candidates for any level of
+   Internet Standard; see Section 2 of RFC 7841.
 
-   Internet-Drafts are draft documents valid for a maximum of six months
-   and may be updated, replaced, or obsoleted by other documents at any
-   time.  It is inappropriate to use Internet-Drafts as reference
-   material or to cite them other than as "work in progress."
-
-   This Internet-Draft will expire on 18 September 2026.
-
-
-
-
-
-Ladd & Dansarie         Expires 18 September 2026               [Page 1]
-
-Internet-Draft                  Roughtime                     March 2026
-
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   https://www.rfc-editor.org/info/rfc10049.
 
 Copyright Notice
 
@@ -64,93 +44,85 @@ Copyright Notice
    document authors.  All rights reserved.
 
    This document is subject to BCP 78 and the IETF Trust's Legal
-   Provisions Relating to IETF Documents (https://trustee.ietf.org/
-   license-info) in effect on the date of publication of this document.
-   Please review these documents carefully, as they describe your rights
-   and restrictions with respect to this document.  Code Components
-   extracted from this document must include Revised BSD License text as
-   described in Section 4.e of the Trust Legal Provisions and are
-   provided without warranty as described in the Revised BSD License.
+   Provisions Relating to IETF Documents
+   (https://trustee.ietf.org/license-info) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Revised BSD License text as described in Section 4.e of the
+   Trust Legal Provisions and are provided without warranty as described
+   in the Revised BSD License.
 
 Table of Contents
 
-   1.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   3
-   2.  Conventions and Definitions . . . . . . . . . . . . . . . . .   4
-   3.  Protocol Overview . . . . . . . . . . . . . . . . . . . . . .   4
-     3.1.  Single Server Mode  . . . . . . . . . . . . . . . . . . .   5
-     3.2.  Multi Server Mode . . . . . . . . . . . . . . . . . . . .   5
-   4.  Message Format  . . . . . . . . . . . . . . . . . . . . . . .   5
-     4.1.  Data types  . . . . . . . . . . . . . . . . . . . . . . .   6
-       4.1.1.  uint32  . . . . . . . . . . . . . . . . . . . . . . .   6
-       4.1.2.  uint64  . . . . . . . . . . . . . . . . . . . . . . .   6
-       4.1.3.  Tag . . . . . . . . . . . . . . . . . . . . . . . . .   7
-       4.1.4.  Timestamp . . . . . . . . . . . . . . . . . . . . . .   7
-     4.2.  Header  . . . . . . . . . . . . . . . . . . . . . . . . .   7
-   5.  Protocol Details  . . . . . . . . . . . . . . . . . . . . . .   8
-     5.1.  Requests  . . . . . . . . . . . . . . . . . . . . . . . .   9
-       5.1.1.  VER . . . . . . . . . . . . . . . . . . . . . . . . .  10
-       5.1.2.  NONC  . . . . . . . . . . . . . . . . . . . . . . . .  10
-       5.1.3.  TYPE  . . . . . . . . . . . . . . . . . . . . . . . .  10
-       5.1.4.  SRV . . . . . . . . . . . . . . . . . . . . . . . . .  10
-       5.1.5.  ZZZZ  . . . . . . . . . . . . . . . . . . . . . . . .  10
-     5.2.  Responses . . . . . . . . . . . . . . . . . . . . . . . .  11
-       5.2.1.  SIG . . . . . . . . . . . . . . . . . . . . . . . . .  12
-       5.2.2.  NONC  . . . . . . . . . . . . . . . . . . . . . . . .  12
-       5.2.3.  TYPE  . . . . . . . . . . . . . . . . . . . . . . . .  12
-       5.2.4.  PATH  . . . . . . . . . . . . . . . . . . . . . . . .  12
-       5.2.5.  SREP  . . . . . . . . . . . . . . . . . . . . . . . .  13
-       5.2.6.  CERT  . . . . . . . . . . . . . . . . . . . . . . . .  13
-       5.2.7.  INDX  . . . . . . . . . . . . . . . . . . . . . . . .  14
-     5.3.  The Merkle Tree . . . . . . . . . . . . . . . . . . . . .  14
-       5.3.1.  Root Value Validity Check Algorithm . . . . . . . . .  15
-     5.4.  Validity of Response  . . . . . . . . . . . . . . . . . .  15
-   6.  Integration into NTP  . . . . . . . . . . . . . . . . . . . .  15
-   7.  Grease  . . . . . . . . . . . . . . . . . . . . . . . . . . .  16
-
-
-
-Ladd & Dansarie         Expires 18 September 2026               [Page 2]
-
-Internet-Draft                  Roughtime                     March 2026
-
-
-   8.  Roughtime Clients . . . . . . . . . . . . . . . . . . . . . .  16
-     8.1.  Necessary configuration . . . . . . . . . . . . . . . . .  16
-     8.2.  Measurement Sequence  . . . . . . . . . . . . . . . . . .  17
-     8.3.  Server Lists  . . . . . . . . . . . . . . . . . . . . . .  17
-     8.4.  Malfeasance Reporting . . . . . . . . . . . . . . . . . .  19
-       8.4.1.  Malfeasance Report Format . . . . . . . . . . . . . .  19
-       8.4.2.  Reporting . . . . . . . . . . . . . . . . . . . . . .  19
-   9.  Security Considerations . . . . . . . . . . . . . . . . . . .  20
-     9.1.  Confidentiality . . . . . . . . . . . . . . . . . . . . .  20
-     9.2.  Integrity and Authenticity  . . . . . . . . . . . . . . .  20
-     9.3.  Generating Private Keys . . . . . . . . . . . . . . . . .  20
-     9.4.  Private Key Compromise  . . . . . . . . . . . . . . . . .  20
-     9.5.  Quantum Resistance  . . . . . . . . . . . . . . . . . . .  20
-     9.6.  Maintaining Lists of Servers  . . . . . . . . . . . . . .  21
-     9.7.  Amplification Attacks . . . . . . . . . . . . . . . . . .  21
-   10. Privacy Considerations  . . . . . . . . . . . . . . . . . . .  21
-   11. Operational Considerations  . . . . . . . . . . . . . . . . .  21
-   12. IANA Considerations . . . . . . . . . . . . . . . . . . . . .  21
-     12.1.  Service Name and Transport Protocol Port Number
-            Registry . . . . . . . . . . . . . . . . . . . . . . . .  21
-     12.2.  Roughtime Versions Registry  . . . . . . . . . . . . . .  22
-     12.3.  Roughtime Tags Registry  . . . . . . . . . . . . . . . .  23
-     12.4.  Media Type Registry  . . . . . . . . . . . . . . . . . .  24
-       12.4.1.  Roughtime Server List MIME type  . . . . . . . . . .  24
-       12.4.2.  Roughtime Malfeasance MIME type  . . . . . . . . . .  25
-   13. References  . . . . . . . . . . . . . . . . . . . . . . . . .  26
-     13.1.  Normative References . . . . . . . . . . . . . . . . . .  26
-     13.2.  Informative References . . . . . . . . . . . . . . . . .  28
-   Acknowledgments . . . . . . . . . . . . . . . . . . . . . . . . .  29
-   Appendix A.  Example Server List  . . . . . . . . . . . . . . . .  29
-   Appendix B.  Example Malfeasance Report . . . . . . . . . . . . .  31
-   Authors' Addresses  . . . . . . . . . . . . . . . . . . . . . . .  33
+   1.  Introduction
+   2.  Conventions
+   3.  Protocol Overview
+     3.1.  Single Server Mode
+     3.2.  Multi-server Mode
+   4.  Message Format
+     4.1.  Data Types
+       4.1.1.  uint32
+       4.1.2.  uint64
+       4.1.3.  Tag
+       4.1.4.  Timestamp
+     4.2.  Header
+   5.  Protocol Details
+     5.1.  Requests
+       5.1.1.  VER
+       5.1.2.  NONC
+       5.1.3.  TYPE
+       5.1.4.  SRV
+       5.1.5.  ZZZZ
+     5.2.  Responses
+       5.2.1.  SIG
+       5.2.2.  NONC
+       5.2.3.  TYPE
+       5.2.4.  PATH
+       5.2.5.  SREP
+       5.2.6.  CERT
+       5.2.7.  INDX
+     5.3.  The Merkle Tree
+       5.3.1.  Root Value Validity Check Algorithm
+     5.4.  Validity of Response
+   6.  Integration into NTP
+   7.  Grease
+   8.  Roughtime Clients
+     8.1.  Necessary Configuration
+     8.2.  Measurement Sequence
+     8.3.  Server Lists
+     8.4.  Malfeasance Reporting
+       8.4.1.  Malfeasance Report Format
+       8.4.2.  Reporting
+   9.  Security Considerations
+     9.1.  Confidentiality
+     9.2.  Integrity and Authenticity
+     9.3.  Generating Private Keys
+     9.4.  Private Key Compromise
+     9.5.  Quantum Resistance
+     9.6.  Maintaining Lists of Servers
+     9.7.  Amplification Attacks
+   10. Privacy Considerations
+   11. Operational Considerations
+   12. IANA Considerations
+     12.1.  Service Name and Transport Protocol Port Number Registry
+     12.2.  Roughtime Versions Registry
+     12.3.  Roughtime Tags Registry
+     12.4.  Media Type Registry
+       12.4.1.  Media Type for Roughtime Server List
+       12.4.2.  Media Type for Roughtime Malfeasance
+   13. References
+     13.1.  Normative References
+     13.2.  Informative References
+   Appendix A.  Example Server List
+   Appendix B.  Example Malfeasance Report
+   Acknowledgments
+   Authors' Addresses
 
 1.  Introduction
 
    Time synchronization is essential to Internet security as many
-   security protocols and other applications require it [RFC738].
+   security protocols and other applications require it [RFC0738].
    Unfortunately, widely deployed protocols such as the Network Time
    Protocol (NTP) [RFC5905] lack essential security features, and even
    newer protocols like Network Time Security (NTS) [RFC8915] lack
@@ -162,14 +134,6 @@ Internet-Draft                  Roughtime                     March 2026
    The primary design goal of Roughtime is to permit devices to obtain a
    rough idea of the current time from a fairly static configuration and
    to enable them to report any inconsistencies they observe between
-
-
-
-Ladd & Dansarie         Expires 18 September 2026               [Page 3]
-
-Internet-Draft                  Roughtime                     March 2026
-
-
    servers.  The configuration consists of a list of servers and their
    associated long-term keys, which ideally remain unchanged throughout
    a server's lifetime.  This makes the long-term public keys the roots
@@ -178,11 +142,11 @@ Internet-Draft                  Roughtime                     March 2026
    with high probability, even after long periods of inactivity.  Proofs
    of malfeasance constructed by chaining together responses from
    different trusted servers can be used to prove misbehavior by a
-   server and, after analysis, result in revoking trust in that
+   server and, after analysis, can result in revoking trust in that
    particular key.
 
    Unlike Khronos [RFC9523], Roughtime produces external evidence that
-   timeservers are reporting incompatible times.  This requires changes
+   time servers are reporting incompatible times.  This requires changes
    to the format of the timestamps and hence cannot be a mere extension
    to NTP.
 
@@ -198,7 +162,7 @@ Internet-Draft                  Roughtime                     March 2026
    server list is maintained and distributed or the policies to apply to
    such a list.
 
-2.  Conventions and Definitions
+2.  Conventions
 
    The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
    "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
@@ -208,24 +172,16 @@ Internet-Draft                  Roughtime                     March 2026
 
 3.  Protocol Overview
 
-   Roughtime is a protocol for authenticated rough time synchronization
+   Roughtime is a protocol for authenticated, rough time synchronization
    that enables clients to provide cryptographic proof of server
    malfeasance.  It does so by having responses from servers include a
    signature over a value derived from the client's request, which
    includes a nonce.  This provides cryptographic proof that the
    response was issued after the server received the client's request.
    The derived value included in the server's response is the root of a
-   Merkle tree [Merkle] which includes the hash value of the client's
-   request as the value of one of its leaf nodes.  This enables the
+   Merkle tree [Merkle] that includes the hash value of the client's
+   request as the value of one of its leaf nodes.  This tree enables the
    server to amortize the relatively costly signing operation over a
-
-
-
-Ladd & Dansarie         Expires 18 September 2026               [Page 4]
-
-Internet-Draft                  Roughtime                     March 2026
-
-
    number of client requests.
 
 3.1.  Single Server Mode
@@ -236,13 +192,13 @@ Internet-Draft                  Roughtime                     March 2026
    radius used to indicate the server's certainty about the reported
    time.
 
-   The client's request contains a nonce which the server incorporates
+   The client's request contains a nonce that the server incorporates
    into its signed response.  The client can verify the server's
-   signatures and—provided that the nonce has sufficient entropy—this
-   proves that the signed response could only have been generated after
-   the nonce.
+   signatures and -- provided that the nonce has sufficient entropy --
+   this proves that the signed response could only have been generated
+   after the nonce.
 
-3.2.  Multi Server Mode
+3.2.  Multi-server Mode
 
    When using multiple servers, a client can detect, cryptographically
    prove, and report inconsistencies between different servers.
@@ -269,20 +225,11 @@ Internet-Draft                  Roughtime                     March 2026
    Roughtime messages are maps consisting of one or more (tag, value)
    pairs.  They start with a header, which contains the number of pairs,
    the value offsets, and the tags.  The header is followed by a message
-   values section which contains the values associated with the tags in
+   values section, which contains the values associated with the tags in
    the header.  Messages are formatted according to Figure 1 as
-   described in the following sections.
+   described in the following subsections.
 
-
-
-
-
-Ladd & Dansarie         Expires 18 September 2026               [Page 5]
-
-Internet-Draft                  Roughtime                     March 2026
-
-
-   In some cases, messages are recursive, i.e. the value of a tag can
+   In some cases, messages are recursive, i.e., the value of a tag can
    itself be a Roughtime message.
 
     0                   1                   2                   3
@@ -311,7 +258,7 @@ Internet-Draft                  Roughtime                     March 2026
 
                         Figure 1: Roughtime Message
 
-4.1.  Data types
+4.1.  Data Types
 
 4.1.1.  uint32
 
@@ -323,33 +270,18 @@ Internet-Draft                  Roughtime                     March 2026
    A uint64 is a 64-bit unsigned integer.  It is serialized with the
    least significant byte first.
 
-
-
-
-
-
-
-
-
-
-
-Ladd & Dansarie         Expires 18 September 2026               [Page 6]
-
-Internet-Draft                  Roughtime                     March 2026
-
-
 4.1.3.  Tag
 
    Tags are used to identify values in Roughtime messages.  A tag is a
    sequence of four octets.  Each tag sequence starts with one to four
-   capital ASCII letters (A-Z) [RFC20] followed by zero to three padding
-   zero octets.  Throughout this document, tags are referred to by their
-   ASCII string representation.  However, they are registered and sorted
-   as uint32 values, where the least significant byte is the first octet
-   in the sequence.
+   capital ASCII letters (A-Z) [RFC0020] followed by zero to three
+   padding zero octets.  Throughout this document, tags are referred to
+   by their ASCII string representation.  However, they are registered
+   and sorted as uint32 values, where the least significant byte is the
+   first octet in the sequence.
 
    For example, the ASCII string "NONC" would correspond to the uint32
-   0x434e4f4e which is serialized as {0x4e, 0x4f, 0x4e, 0x43}. "VER"
+   0x434e4f4e, which is serialized as {0x4e, 0x4f, 0x4e, 0x43}. "VER"
    would correspond to 0x00524556 and be serialized as {0x56, 0x45,
    0x52, 0x00}.
 
@@ -379,20 +311,11 @@ Internet-Draft                  Roughtime                     March 2026
    value.  As a consequence, the offset array is also sorted in
    ascending order.  A tag MUST NOT appear more than once in a header.
 
-   The first post-header byte, i.e. the first byte of the message values
-   section, is at offset 0.  The value associated with the ith tag
-   begins at offset[i] and ends at offset[i+1]-1, with the exception of
-   the last value which ends at the end of the message.  Values MAY have
-   zero length.  All lengths and offsets are in bytes.
-
-
-
-
-
-Ladd & Dansarie         Expires 18 September 2026               [Page 7]
-
-Internet-Draft                  Roughtime                     March 2026
-
+   The first post-header byte, i.e., the first byte of the message
+   values section, is at offset 0.  The value associated with the ith
+   tag begins at offset[i] and ends at offset[i+1]-1, with the exception
+   of the last value, which ends at the end of the message.  Values MAY
+   have zero length.  All lengths and offsets are in bytes.
 
 5.  Protocol Details
 
@@ -423,11 +346,11 @@ Internet-Draft                  Roughtime                     March 2026
    |                                                               |
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
-                         Figure 2: Roughtime packet
+                         Figure 2: Roughtime Packet
 
    Roughtime request and response packets MUST be transmitted in a
    single datagram when the UDP transport mode is used.  Setting the
-   packet's Don't Fragment bit [RFC791] is OPTIONAL in IPv4 networks.
+   packet's Don't Fragment bit [RFC0791] is OPTIONAL in IPv4 networks.
    Setting it may cause packets to get dropped, but not setting it could
    lead to long delays due to reconstruction and dropped fragments.
 
@@ -437,24 +360,11 @@ Internet-Draft                  Roughtime                     March 2026
    transport mode for Roughtime queries to a server if it does not
    receive responses to its UDP queries.
 
-
-
-
-
-
-
-
-
-Ladd & Dansarie         Expires 18 September 2026               [Page 8]
-
-Internet-Draft                  Roughtime                     March 2026
-
-
    Clients MUST implement exponential backoff in establishing TCP
    connections and making requests over UDP.  It is RECOMMENDED that
    clients use an initial retry interval of 1 second, a maximum interval
    of 24 hours, and a base of 1.5.  Therefore, the minimum interval, in
-   seconds, before retrying after n failures is min(1.5^{n-1}, 86400).
+   seconds, before retrying after n failures is min(1.5^(n-1), 86400).
    Guidance for implementers considering other values can be found in
    Section 3.1.3 of [RFC8085].
 
@@ -473,10 +383,6 @@ Internet-Draft                  Roughtime                     March 2026
    of one or more uint32 version numbers.  The version of Roughtime
    specified by this document has version number 1.
 
-   NOTE TO RFC EDITOR: remove this paragraph before publication.  For
-   testing this draft of the document, a version number of 0x8000000c is
-   used.
-
 5.1.  Requests
 
    A request contains the tags VER, NONC, and TYPE.  It SHOULD include
@@ -494,18 +400,6 @@ Internet-Draft                  Roughtime                     March 2026
    larger than the request messages they are replying to; see
    Section 9.7.
 
-
-
-
-
-
-
-
-Ladd & Dansarie         Expires 18 September 2026               [Page 9]
-
-Internet-Draft                  Roughtime                     March 2026
-
-
 5.1.1.  VER
 
    In a request, the VER tag contains a list of uint32 version numbers.
@@ -520,12 +414,12 @@ Internet-Draft                  Roughtime                     March 2026
    Servers MUST ignore any unknown version numbers in the list supplied
    by the client.  If the list contains no version numbers supported by
    the server, it MAY respond with another version or ignore the request
-   entirely, see Section 5.2.5.
+   entirely; see Section 5.2.5.
 
 5.1.2.  NONC
 
    The value of the NONC tag is a 32-byte nonce.  It SHOULD be generated
-   in a manner indistinguishable from random.  BCP 106 [RFC4086]
+   in a manner indistinguishable from random.  RFC 4086 [BCP106]
    contains specific guidelines regarding this.  Section 8.2 describes
    how to securely generate nonces when querying multiple servers in
    sequence.
@@ -542,25 +436,13 @@ Internet-Draft                  Roughtime                     March 2026
    The SRV tag is used by the client to indicate which long-term public
    key it expects to verify the response with.  The value of the SRV tag
    is H(0xff || public_key) where public_key is the server's long-term,
-   32-byte Ed25519 public key and H is SHA-512 truncated to the first 32
-   bytes.
+   32-byte Ed25519 public key, and H is SHA-512 truncated to the first
+   32 bytes.
 
 5.1.5.  ZZZZ
 
    The ZZZZ tag is used to expand the request to the minimum required
    length.  Its value is all zero bytes.
-
-
-
-
-
-
-
-
-Ladd & Dansarie         Expires 18 September 2026              [Page 10]
-
-Internet-Draft                  Roughtime                     March 2026
-
 
 5.2.  Responses
 
@@ -599,27 +481,10 @@ Internet-Draft                  Roughtime                     March 2026
    |  |  |--MAXT
    |--INDX
 
-              Figure 3: Roughtime response message structure.
+               Figure 3: Roughtime Response Message Structure
 
-
-
-
-
-
-
-
-
-
-
-
-
-Ladd & Dansarie         Expires 18 September 2026              [Page 11]
-
-Internet-Draft                  Roughtime                     March 2026
-
-
-   No mechanism for reporting errors—such as wrong request format,
-   unsupported version, or unknown SRV value—back to the client is
+   No mechanism for reporting errors -- such as wrong request format,
+   unsupported version, or unknown SRV value -- back to the client is
    provided.  This is based on experience from the NTP protocol, where
    Kiss-o'-Death packets (see Section 7.4 of [RFC5905]) are used to
    indicate errors.  The existence of this unauthenticated protocol
@@ -633,13 +498,12 @@ Internet-Draft                  Roughtime                     March 2026
 5.2.1.  SIG
 
    In general, a SIG tag value is a 64-byte Ed25519 signature [RFC8032]
-   over a concatenation of a signature context ASCII string and the
-   entire value of a tag.  All context strings include a terminating
-   zero byte.
+   over a concatenation of a context string and the entire value of a
+   tag.  All context strings include a terminating zero byte.
 
    The SIG tag in the root of a response is a signature over the SREP
    value using the public key contained in CERT and the context string
-   "RoughTime v1 response signature".
+   "Roughtime v1 response signature".
 
 5.2.2.  NONC
 
@@ -661,18 +525,9 @@ Internet-Draft                  Roughtime                     March 2026
 
    The PATH MUST NOT contain more than 32 hash values.  The maximum
    length of PATH is normally limited by the maximum size of the
-   response message, see Section 5.1 and Section 9.7.  Server
-   implementations MUST select a maximum Merkle tree height (see
-   Section 5.3) that ensures this.
-
-
-
-
-
-Ladd & Dansarie         Expires 18 September 2026              [Page 12]
-
-Internet-Draft                  Roughtime                     March 2026
-
+   response message; see Sections 5.1 and 9.7.  Server implementations
+   MUST select a maximum Merkle tree height (see Section 5.3) that
+   ensures this.
 
 5.2.5.  SREP
 
@@ -708,27 +563,19 @@ Internet-Draft                  Roughtime                     March 2026
 
 5.2.6.  CERT
 
-   The CERT tag contains a public-key certificate signed with the
+   The CERT tag contains a public key certificate signed with the
    server's private long-term key.  Its value is a Roughtime message
    with the tags SIG and DELE, where SIG is a signature over the DELE
-   value with the context string "RoughTime v1 delegation signature".
+   value with the context string "Roughtime v1 delegation signature".
 
-   The DELE tag contains a delegated public-key certificate used by the
+   The DELE tag contains a delegated public key certificate used by the
    server to sign the SREP tag.  Its value is a Roughtime message with
    the tags PUBK, MINT, and MAXT.  The purpose of the DELE tag is to
    enable separation of a long-term public key from keys on devices
    exposed to the public Internet.
 
-   The PUBK tag contains a temporary 32-byte Ed25519 public key which is
+   The PUBK tag contains a temporary 32-byte Ed25519 public key that is
    used to sign the SREP tag.
-
-
-
-
-Ladd & Dansarie         Expires 18 September 2026              [Page 13]
-
-Internet-Draft                  Roughtime                     March 2026
-
 
    The MINT tag is the minimum timestamp for which the key in PUBK is
    trusted to sign responses.  MIDP MUST be more than or equal to MINT
@@ -772,26 +619,14 @@ Internet-Draft                  Roughtime                     March 2026
    can reconstruct and validate the value in the ROOT tag using its
    request packet.  These values are each 32 bytes and are stored one
    after the other with no additional padding or structure.  The order
-   in which they are stored is described in the next section.
-
-
-
-
-
-
-
-
-Ladd & Dansarie         Expires 18 September 2026              [Page 14]
-
-Internet-Draft                  Roughtime                     March 2026
-
+   in which they are stored is described in the following subsection.
 
 5.3.1.  Root Value Validity Check Algorithm
 
    This section describes how to compute the value of the root of the
    Merkle tree from the values in the tags PATH, INDX, and NONC.  The
    bits of INDX are ordered from least to most significant.  H(x)
-   denotes the first 32 bytes of the SHA-512 hash digest of x and ||
+   denotes the first 32 bytes of the SHA-512 hash digest of x, and ||
    denotes concatenation.
 
    The algorithm maintains a current value h.  At initialization, h is
@@ -830,29 +665,21 @@ Internet-Draft                  Roughtime                     March 2026
 
    We assume that there is a bound phi on the frequency error in the
    clock on the machine.  Let delta be the time difference between the
-   clock on the client and the clock on the server and let sigma
+   clock on the client and the clock on the server, and let sigma
    represent the error in the measured value of delta introduced by the
    measurement process.  Given a measurement taken at a local time t, we
    know the true time is in (t-delta-sigma, t-delta+sigma).  After d
-
-
-
-Ladd & Dansarie         Expires 18 September 2026              [Page 15]
-
-Internet-Draft                  Roughtime                     March 2026
-
-
    seconds have elapsed we know the true time is within (t-delta-sigma-
    d*phi, t-delta+sigma+d*phi).
 
    This bound can be used as a simple and effective means to limit the
    error an attacker can introduce into NTP or Precision Time Protocol
    (PTP) measurements.  For example, an NTP client can ensure that its
-   observation intervals fall entirely within this range or reject
+   observation intervals fall entirely within this range or can reject
    measurements that fall outside.
 
    An application that needs to verify X.509 certificates (which
-   requires knowledge of the current time), but lacks an accurate and
+   requires knowledge of the current time) but lacks an accurate and
    trusted time source can use Roughtime to obtain a time estimate.  In
    particular, securely establishing NTS-protected NTP time
    synchronization requires verification of the NTS-KE server's
@@ -862,7 +689,7 @@ Internet-Draft                  Roughtime                     March 2026
 
    If an NTP server uses a Roughtime server as a time source for
    synchronization (and not only for filtering its NTP measurements),
-   the root dispersion SHOULD include the server's RADI value and root
+   the root dispersion SHOULD include the server's RADI value, and root
    delay SHOULD include the interval between sending the Roughtime
    request and receiving the response.
 
@@ -877,12 +704,13 @@ Internet-Draft                  Roughtime                     March 2026
    request, undefined tags, or invalid signatures together with
    incorrect times.  Clients MUST properly ignore undefined tags and
    reject invalid responses.  Servers MUST NOT send back responses with
-   incorrect times and valid signatures.  Either signature MAY be
-   invalid for this application.
+   incorrect times and valid signatures.  Either signature in the
+   response (i.e., of the SREP or DELE tag) MAY be invalid for this
+   application.
 
 8.  Roughtime Clients
 
-8.1.  Necessary configuration
+8.1.  Necessary Configuration
 
    To carry out a Roughtime measurement, a client needs a list of
    servers, a minimum of three of which are operational and not run by
@@ -890,14 +718,6 @@ Internet-Draft                  Roughtime                     March 2026
    view of which servers are trustworthy in order to benefit from the
    detection of misbehavior (see Section 8.3).  Clients SHOULD also have
    a means of reporting to the provider of such a list, such as an
-
-
-
-Ladd & Dansarie         Expires 18 September 2026              [Page 16]
-
-Internet-Draft                  Roughtime                     March 2026
-
-
    operating system or software vendor, a malfeasance report as
    described in Section 8.4.
 
@@ -937,22 +757,12 @@ Internet-Draft                  Roughtime                     March 2026
    list format is OPTIONAL and clients MAY instead implement their own
    mechanisms for configuring server lists.
 
-   A server list is a JSON [RFC8259] object that contains the key
+   A server list is a JSON object [RFC8259] that contains the key
    "servers".  Server list objects MAY also contain the keys "sources"
    and "reports".  Appendix A contains an example server list in the
    format described here.
 
    Server lists have the "application/roughtime-server+json" media type.
-
-
-
-
-
-
-Ladd & Dansarie         Expires 18 September 2026              [Page 17]
-
-Internet-Draft                  Roughtime                     March 2026
-
 
    The value of the "servers" key is a list of server objects, each
    containing the keys "name", "version", "publicKeyType", "publicKey",
@@ -964,18 +774,12 @@ Internet-Draft                  Roughtime                     March 2026
    The value of "version" is an integer that indicates the highest
    Roughtime version number supported by the server.
 
-   NOTE TO RFC EDITOR: remove this paragraph before publication.  To
-   indicate compatibility with drafts of this document, a decimal
-   representation of the version number indicated in Section 5 SHOULD be
-   used.  For indicating compatibility with pre-IETF specifications of
-   Roughtime, the version number 3000600613 SHOULD be used.
-
    The value of "publicKeyType" is a string indicating the signature
    scheme used by the server.  The value for servers supporting version
    1 of Roughtime is "ed25519".
 
-   The value of "publicKey" is a base64-encoded [RFC4648] string
-   representing the long-term public key of the server in a format
+   The value of "publicKey" is a string that is base64-encoded [RFC4648]
+   and represents the long-term public key of the server in a format
    consistent with the value of "publicKeyType".
 
    The value of "addresses" is a list of address objects.  An address
@@ -983,15 +787,15 @@ Internet-Draft                  Roughtime                     March 2026
    "protocol" is either "tcp" or "udp", indicating the transport mode to
    use.  The value of "address" is a string indicating a host and a port
    number, separated by a colon character, for example
-   "roughtime.example.com:2002".  The host part is either an IPv4
+   "roughtime.example.com:5319".  The host part is either an IPv4
    address, an IPv6 address, or a fully qualified domain name (FQDN).
    IPv4 addresses are specified in dotted decimal notation.  IPv6
    addresses MUST conform to the "Text Representation of Addresses"
-   [RFC4291] and MUST NOT include zone identifiers [RFC9844].  To
-   disambiguate IPv6 addresses from ports when zero compression happens,
-   IPv6 addresses are encapsulated within [].  The port part is a
-   decimal integer representing a valid port number, i.e. in the range
-   0-65535.
+   (Section 2.2 of [RFC4291]) and MUST NOT include zone identifiers
+   [RFC9844].  To disambiguate IPv6 addresses from ports when zero
+   compression happens, IPv6 addresses are encapsulated within [].  The
+   port part is a decimal integer representing a valid port number,
+   i.e., in the range 0-65535.
 
    The value of "sources", if present, is a list of strings indicating
    where updated versions of the list may be acquired using the HTTP GET
@@ -1003,13 +807,6 @@ Internet-Draft                  Roughtime                     March 2026
    [RFC3986] where malfeasance reports can be sent by clients using the
    HTTP POST method.  The URI scheme MUST be HTTPS [RFC9110].
 
-
-
-Ladd & Dansarie         Expires 18 September 2026              [Page 18]
-
-Internet-Draft                  Roughtime                     March 2026
-
-
 8.4.  Malfeasance Reporting
 
    A malfeasance report is cryptographic proof that a sequence of
@@ -1018,12 +815,13 @@ Internet-Draft                  Roughtime                     March 2026
 
 8.4.1.  Malfeasance Report Format
 
-   A malfeasance report is a JSON [RFC8259] object that contains the key
+   A malfeasance report is a JSON object [RFC8259] that contains the key
    "responses".  Its value is a list of response objects, sorted in the
    order received.  Each response object contains the keys "rand",
    "publicKey", "request", and "response".  The values of all four keys
-   are represented as base64-encoded [RFC4648] strings.  Appendix B
-   contains an example malfeasance report in the format described here.
+   are represented as strings that are base64-encoded [RFC4648].
+   Appendix B contains an example malfeasance report in the format
+   described here.
 
    Malfeasance reports have the "application/roughtime-malfeasance+json"
    media type.
@@ -1057,15 +855,6 @@ Internet-Draft                  Roughtime                     March 2026
    1.5.  Therefore, the minimum interval, in seconds, before retrying
    after n failures is min(10 * 1.5^(n-1), 86400).
 
-
-
-
-
-Ladd & Dansarie         Expires 18 September 2026              [Page 19]
-
-Internet-Draft                  Roughtime                     March 2026
-
-
    Clients MUST NOT send malfeasance reports in response to signature
    verification failures or any other protocol errors.
 
@@ -1096,7 +885,7 @@ Internet-Draft                  Roughtime                     March 2026
 
 9.4.  Private Key Compromise
 
-   The compromise of a PUBK's private key, even past MAXT, is a problem
+   The compromise of a PUBK's private key, even past MAXT, is a problem,
    as the private key can be used to sign invalid times that are in the
    range MINT to MAXT, and thus violate the good-behavior guarantee of
    the server.  To protect against this, it is necessary for clients to
@@ -1109,18 +898,9 @@ Internet-Draft                  Roughtime                     March 2026
    resistant, the Roughtime version described in this document will not
    survive the advent of quantum computers.  A later version will have
    to be devised and implemented before then.  The use of a single
-   version number as negotiation point rather than defining a suite of
-   acceptable signatures is intended to prevent fragmentation and
+   version number as the negotiation point rather than defining a suite
+   of acceptable signatures is intended to prevent fragmentation and
    misconfiguration.
-
-
-
-
-
-Ladd & Dansarie         Expires 18 September 2026              [Page 20]
-
-Internet-Draft                  Roughtime                     March 2026
-
 
 9.6.  Maintaining Lists of Servers
 
@@ -1157,474 +937,335 @@ Internet-Draft                  Roughtime                     March 2026
 
 12.1.  Service Name and Transport Protocol Port Number Registry
 
-   IANA is requested to allocate the following entry in the Service Name
-   and Transport Protocol Port Number Registry:
+   IANA has allocated the following entry in the "Service Name and
+   Transport Protocol Port Number Registry":
 
-   Service Name: roughtime
+   Service Name:  roughtime
 
-   Transport Protocol: tcp,udp
+   Transport Protocol:  tcp, udp
 
-   Assignee: IESG iesg@ietf.org (mailto:iesg@ietf.org)
+   Assignee:  IESG <iesg@ietf.org>
 
-   Contact: IETF Chair chair@ietf.org (mailto:chair@ietf.org)
+   Contact:  IETF Chair <chair@ietf.org>
 
-   Description: Roughtime time synchronization
+   Description:  Roughtime time synchronization
 
+   Reference:  RFC 10049
 
-
-
-Ladd & Dansarie         Expires 18 September 2026              [Page 21]
-
-Internet-Draft                  Roughtime                     March 2026
-
-
-   Reference: [[this document]]
-
-   Port Number: [[TBD1]], selected by IANA from the User Port range
+   Port Number:  5319
 
 12.2.  Roughtime Versions Registry
 
-   IANA is requested to create a new registry titled "Roughtime
-   Versions" in a new "Roughtime" registry group.  Entries will have the
-   following fields:
+   IANA has created a new registry titled "Roughtime Versions" in a new
+   "Roughtime" registry group.  Entries have the following fields:
 
-   Version ID (REQUIRED): a 32-bit unsigned integer
+   Version ID (REQUIRED):  A 32-bit unsigned integer
 
-   Version name (REQUIRED): A short text string naming the version being
-   identified.
+   Version Name (REQUIRED):  A short text string naming the version
+      being identified
 
-   Reference (REQUIRED): A reference to a relevant specification
-   document.
+   Reference (REQUIRED):  A reference to a relevant specification
+      document
 
    The policy for allocation of new entries is IETF Review [RFC8126].
 
-   The initial contents of this registry are specified in Table 1.
+   The initial contents of this registry are specified below.
 
-    +=======================+=====================+===================+
-    | Version ID            | Version name        | Reference         |
-    +=======================+=====================+===================+
-    | 0x0                   | Reserved            | [[this document]] |
-    +-----------------------+---------------------+-------------------+
-    | 0x1                   | Roughtime version 1 | [[this document]] |
-    +-----------------------+---------------------+-------------------+
-    | 0x2-0x7fffffff        | Unassigned          |                   |
-    +-----------------------+---------------------+-------------------+
-    | 0x80000000-0xbfffffff | Reserved for        | [[this document]] |
-    |                       | experimental use    |                   |
-    +-----------------------+---------------------+-------------------+
-    | 0xc0000000-0xffffffff | Reserved for        | [[this document]] |
-    |                       | private use         |                   |
-    +-----------------------+---------------------+-------------------+
+   +=======================+===============================+===========+
+   | Version ID            | Version Name                  | Reference |
+   +=======================+===============================+===========+
+   | 0x0                   | Reserved                      | RFC 10049 |
+   +-----------------------+-------------------------------+-----------+
+   | 0x1                   | Roughtime version 1           | RFC 10049 |
+   +-----------------------+-------------------------------+-----------+
+   | 0x2-0x7fffffff        | Unassigned                    |           |
+   +-----------------------+-------------------------------+-----------+
+   | 0x80000000-0xbfffffff | Reserved for                  | RFC 10049 |
+   |                       | Experimental Use              |           |
+   +-----------------------+-------------------------------+-----------+
+   | 0xc0000000-0xffffffff | Reserved for                  | RFC 10049 |
+   |                       | Private Use                   |           |
+   +-----------------------+-------------------------------+-----------+
 
-       Table 1: Initial contents of the Roughtime Versions registry.
+        Table 1: Initial Contents of the Roughtime Versions Registry
 
-   Private and experimental use are defined in [RFC8126].  The
+   Private and Experimental Use are defined in [RFC8126].  The
    experimental range is intended for testing and evaluating new
    versions of the Roughtime protocol.  Such tests may be conducted over
    the open Internet.
 
-
-
-
-
-
-
-Ladd & Dansarie         Expires 18 September 2026              [Page 22]
-
-Internet-Draft                  Roughtime                     March 2026
-
-
 12.3.  Roughtime Tags Registry
 
-   IANA is requested to create a new registry titled "Roughtime Tags" in
-   a new "Roughtime" registry group.  Entries will have the following
-   fields:
+   IANA has created a new registry titled "Roughtime Tags" in a new
+   "Roughtime" registry group.  Entries have the following fields:
 
-   Tag (REQUIRED): A 32-bit unsigned integer in hexadecimal format.
+   Tag (REQUIRED):  A 32-bit unsigned integer in hexadecimal format.
 
-   ASCII Representation (REQUIRED): The ASCII representation of the tag
-   in accordance with Section 4.1.3 of this document.
+   ASCII Representation (REQUIRED):  The ASCII representation of the tag
+      in accordance with Section 4.1.3 of this document.
 
-   Reference (REQUIRED): A reference to a relevant specification
-   document.
+   Reference (REQUIRED):  A reference to a relevant specification
+      document.
 
    The policy for allocation of new entries in this registry is
    Specification Required [RFC8126].
 
-   The initial contents of this registry are specified in Table 2.
+   The initial contents of this registry are specified below.
 
+             +============+======================+===========+
+             |        Tag | ASCII Representation | Reference |
+             +============+======================+===========+
+             | 0x00474953 | SIG                  | RFC 10049 |
+             +------------+----------------------+-----------+
+             | 0x00524556 | VER                  | RFC 10049 |
+             +------------+----------------------+-----------+
+             | 0x00565253 | SRV                  | RFC 10049 |
+             +------------+----------------------+-----------+
+             | 0x434e4f4e | NONC                 | RFC 10049 |
+             +------------+----------------------+-----------+
+             | 0x454c4544 | DELE                 | RFC 10049 |
+             +------------+----------------------+-----------+
+             | 0x45505954 | TYPE                 | RFC 10049 |
+             +------------+----------------------+-----------+
+             | 0x48544150 | PATH                 | RFC 10049 |
+             +------------+----------------------+-----------+
+             | 0x49444152 | RADI                 | RFC 10049 |
+             +------------+----------------------+-----------+
+             | 0x4b425550 | PUBK                 | RFC 10049 |
+             +------------+----------------------+-----------+
+             | 0x5044494d | MIDP                 | RFC 10049 |
+             +------------+----------------------+-----------+
+             | 0x50455253 | SREP                 | RFC 10049 |
+             +------------+----------------------+-----------+
+             | 0x53524556 | VERS                 | RFC 10049 |
+             +------------+----------------------+-----------+
+             | 0x544e494d | MINT                 | RFC 10049 |
+             +------------+----------------------+-----------+
+             | 0x544f4f52 | ROOT                 | RFC 10049 |
+             +------------+----------------------+-----------+
+             | 0x54524543 | CERT                 | RFC 10049 |
+             +------------+----------------------+-----------+
+             | 0x5458414d | MAXT                 | RFC 10049 |
+             +------------+----------------------+-----------+
+             | 0x58444e49 | INDX                 | RFC 10049 |
+             +------------+----------------------+-----------+
+             | 0x5a5a5a5a | ZZZZ                 | RFC 10049 |
+             +------------+----------------------+-----------+
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Ladd & Dansarie         Expires 18 September 2026              [Page 23]
-
-Internet-Draft                  Roughtime                     March 2026
-
-
-         +============+======================+===================+
-         |        Tag | ASCII Representation | Reference         |
-         +============+======================+===================+
-         | 0x00474953 | SIG                  | [[this document]] |
-         +------------+----------------------+-------------------+
-         | 0x00524556 | VER                  | [[this document]] |
-         +------------+----------------------+-------------------+
-         | 0x00565253 | SRV                  | [[this document]] |
-         +------------+----------------------+-------------------+
-         | 0x434e4f4e | NONC                 | [[this document]] |
-         +------------+----------------------+-------------------+
-         | 0x454c4544 | DELE                 | [[this document]] |
-         +------------+----------------------+-------------------+
-         | 0x45505954 | TYPE                 | [[this document]] |
-         +------------+----------------------+-------------------+
-         | 0x48544150 | PATH                 | [[this document]] |
-         +------------+----------------------+-------------------+
-         | 0x49444152 | RADI                 | [[this document]] |
-         +------------+----------------------+-------------------+
-         | 0x4b425550 | PUBK                 | [[this document]] |
-         +------------+----------------------+-------------------+
-         | 0x5044494d | MIDP                 | [[this document]] |
-         +------------+----------------------+-------------------+
-         | 0x50455253 | SREP                 | [[this document]] |
-         +------------+----------------------+-------------------+
-         | 0x53524556 | VERS                 | [[this document]] |
-         +------------+----------------------+-------------------+
-         | 0x544e494d | MINT                 | [[this document]] |
-         +------------+----------------------+-------------------+
-         | 0x544f4f52 | ROOT                 | [[this document]] |
-         +------------+----------------------+-------------------+
-         | 0x54524543 | CERT                 | [[this document]] |
-         +------------+----------------------+-------------------+
-         | 0x5458414d | MAXT                 | [[this document]] |
-         +------------+----------------------+-------------------+
-         | 0x58444e49 | INDX                 | [[this document]] |
-         +------------+----------------------+-------------------+
-         | 0x5a5a5a5a | ZZZZ                 | [[this document]] |
-         +------------+----------------------+-------------------+
-
-         Table 2: Initial contents of the Roughtime Tags registry.
+                 Table 2: Initial Contents of the Roughtime
+                               Tags Registry
 
 12.4.  Media Type Registry
 
-12.4.1.  Roughtime Server List MIME type
+12.4.1.  Media Type for Roughtime Server List
 
-   IANA is requested to allocate the following entry in the Media Type
-   registry.
+   IANA has allocated the following entry in the "Media Types" registry.
 
+   Type name:  application
 
+   Subtype name:  roughtime-server+json
 
-Ladd & Dansarie         Expires 18 September 2026              [Page 24]
-
-Internet-Draft                  Roughtime                     March 2026
+   Required parameters:  N/A
 
+   Optional parameters:  N/A
 
-   Type name: application
+   Encoding considerations:  Encoding considerations are identical to
+      those specified for the "application/json" media type, see
+      [RFC8259].
 
-   Subtype name: roughtime-server+json
+   Security considerations:  Section 9 of RFC 10049.
 
-   Required parameters: N/A
+   Interoperability considerations:  N/A
 
-   Optional parameters: N/A
+   Published specification:  Section 8.3 of RFC 10049.
 
-   Encoding considerations: Encoding considerations are identical to
-   those specified for the "application/json" media type, see [RFC8259].
+   Applications that use this media type:  Roughtime clients (RFC 10049)
+      that update their lists of Roughtime servers.
 
-   Security considerations: Section 9 of [[this document]].
-
-   Interoperability considerations: N/A
-
-   Published specification: Section 8.3 of [[this document]].
-
-   Applications that use this media type: Roughtime clients [[this
-   document]] that update their lists of Roughtime servers.
-
-   Fragment identifier considerations: N/A
+   Fragment identifier considerations:  N/A
 
    Additional information:
-   Deprecated alias names for this type: N/A
-   Magic number(s): N/A
-   File extension(s): N/A
-   Macintosh file type code(s): N/A
 
-   Person & email address to contact for further information: See
-   Authors' Addresses section of [[this document]].
+      Deprecated alias names for this type:  N/A
+      Magic number(s):  N/A
+      File extension(s):  N/A
+      Macintosh file type code(s):  N/A
 
-   Intended usage: COMMON
+   Person & email address to contact for further information:  See
+      Authors' Addresses section of RFC 10049.
 
-   Restrictions on usage: N/A
+   Intended usage:  COMMON
 
-   Author: See Authors' Addresses section of [[this document]].
+   Restrictions on usage:  N/A
 
-   Change controller: Internet Engineering Task Force
+   Author:  See Authors' Addresses section of RFC 10049.
 
-12.4.2.  Roughtime Malfeasance MIME type
+   Change controller:  Internet Engineering Task Force
 
-   IANA is requested to allocate the following entry in the Media Type
-   registry.
+12.4.2.  Media Type for Roughtime Malfeasance
 
-   Type name: application
+   IANA has allocated the following entry in the "Media Types" registry.
 
-   Subtype name: roughtime-malfeasance+json
+   Type name:  application
 
+   Subtype name:  roughtime-malfeasance+json
 
+   Required parameters:  N/A
 
+   Optional parameters:  N/A
 
-Ladd & Dansarie         Expires 18 September 2026              [Page 25]
-
-Internet-Draft                  Roughtime                     March 2026
+   Encoding considerations:  Encoding considerations are identical to
+      those specified for the "application/json" media type, see
+      [RFC8259].
 
+   Security considerations:  Section 9 of RFC 10049.
 
-   Required parameters: N/A
+   Interoperability considerations:  N/A
 
-   Optional parameters: N/A
+   Published specification:  Section 8.4.1 of RFC 10049.
 
-   Encoding considerations: Encoding considerations are identical to
-   those specified for the "application/json" media type, see [RFC8259].
+   Applications that use this media type:  Roughtime clients (RFC 10049)
+      use this media type to report cryptographic proof that a Roughtime
+      server has sent the wrong time.
 
-   Security considerations: Section 9 of [[this document]].
-
-   Interoperability considerations: N/A
-
-   Published specification: Section 8.4.1 of [[this document]].
-
-   Applications that use this media type: Roughtime clients [[this
-   document]] use this media type to report cryptographic proof that a
-   Roughtime server has sent the wrong time.
-
-   Fragment identifier considerations: N/A
+   Fragment identifier considerations:  N/A
 
    Additional information:
-   Deprecated alias names for this type: N/A
-   Magic number(s): N/A
-   File extension(s): N/A
-   Macintosh file type code(s): N/A
 
-   Person & email address to contact for further information: See
-   Authors' Addresses section of [[this document]].
+      Deprecated alias names for this type:  N/A
+      Magic number(s):  N/A
+      File extension(s):  N/A
+      Macintosh file type code(s):  N/A
 
-   Intended usage: COMMON
+   Person & email address to contact for further information:  See
+      Authors' Addresses section of RFC 10049.
 
-   Restrictions on usage: N/A
+   Intended usage:  COMMON
 
-   Author: See Authors' Addresses section of [[this document]].
+   Restrictions on usage:  N/A
 
-   Change controller: Internet Engineering Task Force
+   Author:  See Authors' Addresses section of RFC 10049.
+
+   Change controller:  Internet Engineering Task Force
 
 13.  References
 
 13.1.  Normative References
 
-   [RFC20]    Cerf, V., "ASCII format for network interchange", STD 80,
-              RFC 20, DOI 10.17487/RFC0020, October 1969,
-              <https://www.rfc-editor.org/rfc/rfc20>.
+   [BCP106]   Best Current Practice 106,
+              <https://www.rfc-editor.org/info/bcp106>.
+              At the time of writing, this BCP comprises the following:
+
+              Eastlake 3rd, D., Schiller, J., and S. Crocker,
+              "Randomness Requirements for Security", BCP 106, RFC 4086,
+              DOI 10.17487/RFC4086, June 2005,
+              <https://www.rfc-editor.org/info/rfc4086>.
+
+   [RFC0020]  Cerf, V., "ASCII format for network interchange", STD 80,
+              RFC 20, DOI 10.17487/RFC20, October 1969,
+              <https://www.rfc-editor.org/info/rfc20>.
+
+   [RFC0791]  Postel, J., "Internet Protocol", STD 5, RFC 791,
+              DOI 10.17487/RFC791, September 1981,
+              <https://www.rfc-editor.org/info/rfc791>.
 
    [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
               Requirement Levels", BCP 14, RFC 2119,
               DOI 10.17487/RFC2119, March 1997,
-              <https://www.rfc-editor.org/rfc/rfc2119>.
-
-
-
-Ladd & Dansarie         Expires 18 September 2026              [Page 26]
-
-Internet-Draft                  Roughtime                     March 2026
-
+              <https://www.rfc-editor.org/info/rfc2119>.
 
    [RFC3986]  Berners-Lee, T., Fielding, R., and L. Masinter, "Uniform
               Resource Identifier (URI): Generic Syntax", STD 66,
               RFC 3986, DOI 10.17487/RFC3986, January 2005,
-              <https://www.rfc-editor.org/rfc/rfc3986>.
-
-   [RFC4086]  Eastlake 3rd, D., Schiller, J., and S. Crocker,
-              "Randomness Requirements for Security", BCP 106, RFC 4086,
-              DOI 10.17487/RFC4086, June 2005,
-              <https://www.rfc-editor.org/rfc/rfc4086>.
+              <https://www.rfc-editor.org/info/rfc3986>.
 
    [RFC4291]  Hinden, R. and S. Deering, "IP Version 6 Addressing
               Architecture", RFC 4291, DOI 10.17487/RFC4291, February
-              2006, <https://www.rfc-editor.org/rfc/rfc4291>.
+              2006, <https://www.rfc-editor.org/info/rfc4291>.
 
    [RFC4648]  Josefsson, S., "The Base16, Base32, and Base64 Data
               Encodings", RFC 4648, DOI 10.17487/RFC4648, October 2006,
-              <https://www.rfc-editor.org/rfc/rfc4648>.
+              <https://www.rfc-editor.org/info/rfc4648>.
 
    [RFC6234]  Eastlake 3rd, D. and T. Hansen, "US Secure Hash Algorithms
               (SHA and SHA-based HMAC and HKDF)", RFC 6234,
               DOI 10.17487/RFC6234, May 2011,
-              <https://www.rfc-editor.org/rfc/rfc6234>.
-
-   [RFC791]   Postel, J., "Internet Protocol", STD 5, RFC 791,
-              DOI 10.17487/RFC0791, September 1981,
-              <https://www.rfc-editor.org/rfc/rfc791>.
+              <https://www.rfc-editor.org/info/rfc6234>.
 
    [RFC8032]  Josefsson, S. and I. Liusvaara, "Edwards-Curve Digital
               Signature Algorithm (EdDSA)", RFC 8032,
               DOI 10.17487/RFC8032, January 2017,
-              <https://www.rfc-editor.org/rfc/rfc8032>.
+              <https://www.rfc-editor.org/info/rfc8032>.
 
    [RFC8085]  Eggert, L., Fairhurst, G., and G. Shepherd, "UDP Usage
               Guidelines", BCP 145, RFC 8085, DOI 10.17487/RFC8085,
-              March 2017, <https://www.rfc-editor.org/rfc/rfc8085>.
+              March 2017, <https://www.rfc-editor.org/info/rfc8085>.
 
    [RFC8174]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC
               2119 Key Words", BCP 14, RFC 8174, DOI 10.17487/RFC8174,
-              May 2017, <https://www.rfc-editor.org/rfc/rfc8174>.
+              May 2017, <https://www.rfc-editor.org/info/rfc8174>.
 
    [RFC8259]  Bray, T., Ed., "The JavaScript Object Notation (JSON) Data
               Interchange Format", STD 90, RFC 8259,
               DOI 10.17487/RFC8259, December 2017,
-              <https://www.rfc-editor.org/rfc/rfc8259>.
-
-
-
-
-
-
-
-Ladd & Dansarie         Expires 18 September 2026              [Page 27]
-
-Internet-Draft                  Roughtime                     March 2026
-
+              <https://www.rfc-editor.org/info/rfc8259>.
 
    [RFC9110]  Fielding, R., Ed., Nottingham, M., Ed., and J. Reschke,
               Ed., "HTTP Semantics", STD 97, RFC 9110,
               DOI 10.17487/RFC9110, June 2022,
-              <https://www.rfc-editor.org/rfc/rfc9110>.
+              <https://www.rfc-editor.org/info/rfc9110>.
 
 13.2.  Informative References
 
    [Merkle]   Merkle, R. C., "A Digital Signature Based on a
-              Conventional Encryption Function", in Pomerance, C. (eds)
-              Advances in Cryptology, Lecture Notes in Computer
-              Science vol 293, DOI 10.1007/3-540-48184-2_32, 1988,
+              Conventional Encryption Function", Advances in Cryptology
+              - CRYPTO '87, Lecture Notes in Computer Science, vol. 293,
+              pp. 369-378, DOI 10.1007/3-540-48184-2_32, 1988,
               <https://doi.org/10.1007/3-540-48184-2_32>.
+
+   [RFC0738]  Harrenstien, K., "Time server", RFC 738,
+              DOI 10.17487/RFC738, October 1977,
+              <https://www.rfc-editor.org/info/rfc738>.
 
    [RFC5905]  Mills, D., Martin, J., Ed., Burbank, J., and W. Kasch,
               "Network Time Protocol Version 4: Protocol and Algorithms
               Specification", RFC 5905, DOI 10.17487/RFC5905, June 2010,
-              <https://www.rfc-editor.org/rfc/rfc5905>.
-
-   [RFC738]   Harrenstien, K., "Time server", RFC 738,
-              DOI 10.17487/RFC0738, October 1977,
-              <https://www.rfc-editor.org/rfc/rfc738>.
+              <https://www.rfc-editor.org/info/rfc5905>.
 
    [RFC8126]  Cotton, M., Leiba, B., and T. Narten, "Guidelines for
               Writing an IANA Considerations Section in RFCs", BCP 26,
               RFC 8126, DOI 10.17487/RFC8126, June 2017,
-              <https://www.rfc-editor.org/rfc/rfc8126>.
+              <https://www.rfc-editor.org/info/rfc8126>.
 
    [RFC8633]  Reilly, D., Stenn, H., and D. Sibold, "Network Time
               Protocol Best Current Practices", BCP 223, RFC 8633,
               DOI 10.17487/RFC8633, July 2019,
-              <https://www.rfc-editor.org/rfc/rfc8633>.
+              <https://www.rfc-editor.org/info/rfc8633>.
 
    [RFC8915]  Franke, D., Sibold, D., Teichel, K., Dansarie, M., and R.
               Sundblad, "Network Time Security for the Network Time
               Protocol", RFC 8915, DOI 10.17487/RFC8915, September 2020,
-              <https://www.rfc-editor.org/rfc/rfc8915>.
+              <https://www.rfc-editor.org/info/rfc8915>.
 
    [RFC9170]  Thomson, M. and T. Pauly, "Long-Term Viability of Protocol
               Extension Mechanisms", RFC 9170, DOI 10.17487/RFC9170,
-              December 2021, <https://www.rfc-editor.org/rfc/rfc9170>.
+              December 2021, <https://www.rfc-editor.org/info/rfc9170>.
 
    [RFC9523]  Rozen-Schiff, N., Dolev, D., Mizrahi, T., and M. Schapira,
               "A Secure Selection and Filtering Mechanism for the
               Network Time Protocol with Khronos", RFC 9523,
               DOI 10.17487/RFC9523, February 2024,
-              <https://www.rfc-editor.org/rfc/rfc9523>.
-
-
-
-
-
-Ladd & Dansarie         Expires 18 September 2026              [Page 28]
-
-Internet-Draft                  Roughtime                     March 2026
-
+              <https://www.rfc-editor.org/info/rfc9523>.
 
    [RFC9844]  Carpenter, B. and R. Hinden, "Entering IPv6 Zone
               Identifiers in User Interfaces", RFC 9844,
               DOI 10.17487/RFC9844, August 2025,
-              <https://www.rfc-editor.org/rfc/rfc9844>.
-
-Acknowledgments
-
-   Aanchal Malhotra and Adam Langley authored early drafts of this
-   document.  Daniel Franke, Sarah Grant, Erik Kline, Martin Langer, Ben
-   Laurie, Peter Löthberg, Michael McCourt, Hal Murray, Tal Mizrahi,
-   Ruben Nijveld, Christopher Patton, Thomas Peterson, Rich Salz, Dieter
-   Sibold, Ragnar Sundblad, Kristof Teichel, Luke Valenta, David
-   Venhoek, Ulrich Windl, and the other members of the NTP working group
-   contributed comments and suggestions as well as pointed out errors.
-   We also acknowledge the helpful comments and suggestions provided by
-   the last call reviewers and members of the IESG.
+              <https://www.rfc-editor.org/info/rfc9844>.
 
 Appendix A.  Example Server List
 
    This appendix presents an example Roughtime server list in the format
    described by Section 8.3.
-
-   NOTE TO RFC EDITOR: replace all occurrences of the port number 2002
-   below with the port number assigned for Roughtime by IANA.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Ladd & Dansarie         Expires 18 September 2026              [Page 29]
-
-Internet-Draft                  Roughtime                     March 2026
-
 
    {
      "servers": [
@@ -1636,11 +1277,11 @@ Internet-Draft                  Roughtime                     March 2026
          "addresses": [
            {
              "protocol": "udp",
-             "address": "roughtime.example.com:2002"
+             "address": "roughtime.example.com:5319"
            },
            {
              "protocol": "tcp",
-             "address": "roughtime.example.com:2002"
+             "address": "roughtime.example.com:5319"
            }
          ]
        },
@@ -1652,11 +1293,11 @@ Internet-Draft                  Roughtime                     March 2026
          "addresses": [
            {
              "protocol": "udp",
-             "address": "192.0.2.33:2002"
+             "address": "192.0.2.33:5319"
            },
            {
              "protocol": "udp",
-             "address": "[2001:db8::2:33]:2002"
+             "address": "[2001:db8::2:33]:5319"
            }
          ]
        }
@@ -1667,20 +1308,6 @@ Internet-Draft                  Roughtime                     March 2026
      ],
      "reports":  "https://www.example.net/roughtime/malfeasance"
    }
-
-
-
-
-
-
-
-
-
-
-Ladd & Dansarie         Expires 18 September 2026              [Page 30]
-
-Internet-Draft                  Roughtime                     March 2026
-
 
 Appendix B.  Example Malfeasance Report
 
@@ -1730,14 +1357,6 @@ Appendix B.  Example Malfeasance Report
         "publicKey": "l9cdSuR8dFxtG9aJo9pWzUXaX8pftNG4UDC45Qk3znc=",
         "rand": "v/DirVBRQLGtictYD7mN3px02UlMT4J3haTRomt1NNM=",
         "request": "Uk9VR0hUSU0ABAAABQAAAAQAAAAkAAAARAAAAEgAAABWRVIAU1JW
-
-
-
-Ladd & Dansarie         Expires 18 September 2026              [Page 31]
-
-Internet-Draft                  Roughtime                     March 2026
-
-
   AE5PTkNUWVBFWlpaWgEAAABFCvadUKPN/U9OXqFalVFnv/EhsAuPPpBYfo5MDULZKv335k
   bNTZcsYLM96o77yLbvvRk1fm2TQB4yKxbP1jzeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
   AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
@@ -1786,14 +1405,6 @@ Internet-Draft                  Roughtime                     March 2026
   AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
   AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
   AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-
-
-
-Ladd & Dansarie         Expires 18 September 2026              [Page 32]
-
-Internet-Draft                  Roughtime                     March 2026
-
-
   AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
   AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
   AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
@@ -1813,6 +1424,18 @@ Internet-Draft                  Roughtime                     March 2026
     ]
   }
 
+Acknowledgments
+
+   Aanchal Malhotra and Adam Langley authored early draft versions of
+   this document.  Daniel Franke, Sarah Grant, Erik Kline, Martin
+   Langer, Ben Laurie, Peter Löthberg, Michael McCourt, Hal Murray, Tal
+   Mizrahi, Ruben Nijveld, Christopher Patton, Thomas Peterson, Rich
+   Salz, Dieter Sibold, Ragnar Sundblad, Kristof Teichel, Luke Valenta,
+   David Venhoek, Ulrich Windl, and the other members of the NTP Working
+   Group contributed comments and suggestions as well as pointed out
+   errors.  We also acknowledge the helpful comments and suggestions
+   provided by the Last Call reviewers and members of the IESG.
+
 Authors' Addresses
 
    Watson Ladd
@@ -1824,25 +1447,3 @@ Authors' Addresses
    Netnod
    Email: marcus@dansarie.se
    URI:   https://orcid.org/0000-0001-9246-0263
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Ladd & Dansarie         Expires 18 September 2026              [Page 33]

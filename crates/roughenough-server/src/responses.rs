@@ -46,21 +46,12 @@ pub struct ResponseHandler {
     online_key: OnlineKey,
     response_metrics: ResponseMetrics,
     requests: Vec<PendingRequest>,
-    batch_versions: Vec<ProtocolVersion>,
     version_templates: Vec<VersionTemplate>,
     batch_id: u64,
     response_buf: [u8; RESPONSE_BUF_SIZE],
 }
 
 impl ResponseHandler {
-    /// Maximum distinct protocol versions signed per batch.
-    pub const MAX_VERSIONS_PER_BATCH: usize = 4;
-
-    /// Off-list draft versions compete for the slots left after reserving a slot
-    /// for each advertised version.
-    const MAX_OFFLIST_VERSIONS: usize =
-        Self::MAX_VERSIONS_PER_BATCH - ProtocolVersion::ADVERTISED.len();
-
     pub fn new(batch_size: u8, key_source: KeySource) -> Self {
         let batch_size = batch_size as usize;
         let online_key = key_source.make_online_key();
@@ -76,32 +67,26 @@ impl ResponseHandler {
             merkle_path: MerklePath::default(),
             response_metrics: ResponseMetrics::default(),
             requests: Vec::with_capacity(batch_size),
-            batch_versions: Vec::with_capacity(Self::MAX_VERSIONS_PER_BATCH),
-            version_templates: Vec::with_capacity(Self::MAX_VERSIONS_PER_BATCH),
+            version_templates: Vec::with_capacity(ProtocolVersion::ADVERTISED.len()),
             batch_id: 0,
             response_buf: [0u8; RESPONSE_BUF_SIZE],
         }
     }
 
-    /// Add a request to the pending batch. Returns `false` (and does not add
-    /// the request) when its negotiated version would exceed the batch's
-    /// distinct versions cap; advertised versions always fit.
-    #[must_use = "the request is dropped when the batch's distinct versions cap is reached"]
+    /// Add a request to the pending batch. `version` is the version negotiated
+    /// for its response, one of [`ProtocolVersion::ADVERTISED`].
     pub fn add_request(
         &mut self,
         request_bytes: &[u8],
         request: Request,
         version: ProtocolVersion,
         src_addr: SocketAddr,
-    ) -> bool {
+    ) {
         debug_assert!(self.requests.len() < self.batch_size, "Batch size exceeded");
-
-        if !self.batch_versions.contains(&version) {
-            if self.would_exceed_offlist_cap(&version) {
-                return false;
-            }
-            self.batch_versions.push(version);
-        }
+        debug_assert!(
+            ProtocolVersion::ADVERTISED.contains(&version),
+            "{version:?} is not advertised"
+        );
 
         self.merkle_tree.push_leaf(request_bytes);
         self.requests.push(PendingRequest {
@@ -109,24 +94,6 @@ impl ResponseHandler {
             src_addr,
             version,
         });
-        true
-    }
-
-    /// Returns `true` if the batch contains more than `MAX_OFFLIST_VERSIONS`
-    /// non-advertised versions.
-    fn would_exceed_offlist_cap(&self, version: &ProtocolVersion) -> bool {
-        // Advertised versions are always allowed.
-        if ProtocolVersion::ADVERTISED.contains(version) {
-            return false;
-        }
-
-        let num_offlist = self
-            .batch_versions
-            .iter()
-            .filter(|v| !ProtocolVersion::ADVERTISED.contains(v))
-            .count();
-
-        num_offlist >= Self::MAX_OFFLIST_VERSIONS
     }
 
     pub fn replace_online_key(&mut self) {
@@ -188,14 +155,11 @@ impl ResponseHandler {
             .iter()
             .position(|t| t.version == version);
 
+        // At most one template per advertised version
         let slot = match existing {
-            Some(slot) => {
-                if self.version_templates[slot].batch_id == self.batch_id {
-                    return slot;
-                }
-                slot
-            }
-            None if self.version_templates.len() < Self::MAX_VERSIONS_PER_BATCH => {
+            Some(slot) if self.version_templates[slot].batch_id == self.batch_id => return slot,
+            Some(slot) => slot,
+            None => {
                 let mut response = Response::default();
                 response.set_cert(self.online_key.cert().clone());
                 self.version_templates.push(VersionTemplate {
@@ -204,15 +168,6 @@ impl ResponseHandler {
                     response,
                 });
                 self.version_templates.len() - 1
-            }
-            None => {
-                let slot = self
-                    .version_templates
-                    .iter()
-                    .position(|t| t.batch_id != self.batch_id)
-                    .expect("distinct-version cap guarantees a stale slot");
-                self.version_templates[slot].version = version;
-                slot
             }
         };
 
@@ -235,7 +190,6 @@ impl ResponseHandler {
     pub fn clear(&mut self) {
         self.merkle_tree.clear();
         self.requests.clear();
-        self.batch_versions.clear();
     }
 
     #[allow(dead_code)] // used in worker metrics collection
@@ -291,12 +245,12 @@ mod tests {
 
         // Add a request
         let request = create_test_request(42);
-        assert!(responder.add_request(
+        responder.add_request(
             &request.as_bytes().unwrap(),
             request,
-            ProtocolVersion::DRAFT,
+            ProtocolVersion::RFC,
             addr,
-        ));
+        );
 
         assert_eq!(responder.num_pending(), 1);
         assert!(!responder.merkle_tree().is_empty());
@@ -316,12 +270,12 @@ mod tests {
         // Add requests up to batch size
         for i in 0..64 {
             let request = create_test_request(i as u8);
-            assert!(responder.add_request(
+            responder.add_request(
                 &request.as_bytes().unwrap(),
                 request,
-                ProtocolVersion::DRAFT,
+                ProtocolVersion::RFC,
                 addr,
-            ));
+            );
         }
 
         assert_eq!(responder.num_pending(), 64);
@@ -329,12 +283,12 @@ mod tests {
         // This should trigger the batch size limit debug assertion in add_request
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let request = create_test_request(100);
-            assert!(responder.add_request(
+            responder.add_request(
                 &request.as_bytes().unwrap(),
                 request,
-                ProtocolVersion::DRAFT,
+                ProtocolVersion::RFC,
                 addr,
-            ));
+            );
         }));
 
         assert!(result.is_err(), "Should panic when batch size is exceeded");
@@ -347,12 +301,12 @@ mod tests {
 
         let request = create_test_request(42);
         let expected_nonce = *request.nonc();
-        assert!(responder.add_request(
+        responder.add_request(
             &request.as_bytes().unwrap(),
             request,
-            ProtocolVersion::DRAFT,
+            ProtocolVersion::RFC,
             addr,
-        ));
+        );
 
         let mut responses = Vec::new();
         responder.process_responses(|addr, bytes| {
@@ -385,12 +339,12 @@ mod tests {
 
             expected_addrs.push(addr);
             expected_nonces.push(*request.nonc());
-            assert!(responder.add_request(
+            responder.add_request(
                 &request.as_bytes().unwrap(),
                 request,
-                ProtocolVersion::DRAFT,
+                ProtocolVersion::RFC,
                 addr,
-            ));
+            );
         }
 
         let mut responses = Vec::new();
@@ -423,12 +377,7 @@ mod tests {
          -> Vec<Response> {
             for (nonce_byte, version) in requests {
                 let request = create_test_request(*nonce_byte);
-                assert!(responder.add_request(
-                    &request.as_bytes().unwrap(),
-                    request,
-                    *version,
-                    addr,
-                ));
+                responder.add_request(&request.as_bytes().unwrap(), request, *version, addr);
             }
             let mut responses = Vec::new();
             responder.process_responses(|_, bytes| {
@@ -441,23 +390,23 @@ mod tests {
             responses
         };
 
-        let batch1 = run_batch(&mut responder, &[(1, ProtocolVersion::DRAFT)]);
+        let batch1 = run_batch(&mut responder, &[(1, ProtocolVersion::RFC)]);
         let batch2 = run_batch(
             &mut responder,
-            &[(2, ProtocolVersion::RFC), (3, ProtocolVersion::DRAFT)],
+            &[(2, ProtocolVersion::RFC), (3, ProtocolVersion::RFC)],
         );
 
         assert_eq!(batch1.len(), 1);
         assert_eq!(batch2.len(), 2);
 
         // batch 2 responses must commit to batch 2's root, not batch 1's,
-        // including the response using the template slot batch 1 created
+        // even though they reuse the template batch 1 created
         assert_ne!(batch1[0].srep().root(), batch2[0].srep().root());
         assert_eq!(batch2[0].srep().root(), batch2[1].srep().root());
 
-        assert_eq!(*batch1[0].srep().ver(), ProtocolVersion::DRAFT);
-        assert_eq!(*batch2[0].srep().ver(), ProtocolVersion::RFC);
-        assert_eq!(*batch2[1].srep().ver(), ProtocolVersion::DRAFT);
+        for response in batch1.iter().chain(&batch2) {
+            assert_eq!(*response.srep().ver(), ProtocolVersion::RFC);
+        }
 
         assert_eq!(batch1[0].nonc(), &Nonce::from([1u8; 32]));
         assert_eq!(batch2[0].nonc(), &Nonce::from([2u8; 32]));
@@ -466,10 +415,10 @@ mod tests {
         assert_eq!(batch2[0].indx(), 0);
         assert_eq!(batch2[1].indx(), 1);
 
-        // distinct versions in one batch get distinct signatures; the reused
-        // DRAFT slot must have been re-signed for batch 2's root
-        assert_ne!(batch2[0].sig(), batch2[1].sig());
-        assert_ne!(batch1[0].sig(), batch2[1].sig());
+        // one SREP signature per batch; the reused template must have been
+        // re-signed for batch 2's root
+        assert_eq!(batch2[0].sig(), batch2[1].sig());
+        assert_ne!(batch1[0].sig(), batch2[0].sig());
     }
 
     #[test]
@@ -479,12 +428,12 @@ mod tests {
 
         let one_response = |responder: &mut ResponseHandler, nonce_byte: u8| -> Response {
             let request = create_test_request(nonce_byte);
-            assert!(responder.add_request(
+            responder.add_request(
                 &request.as_bytes().unwrap(),
                 request,
-                ProtocolVersion::DRAFT,
+                ProtocolVersion::RFC,
                 addr,
-            ));
+            );
             let mut responses = Vec::new();
             responder.process_responses(|_, bytes| {
                 let mut data = bytes.to_vec();

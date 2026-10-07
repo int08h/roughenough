@@ -8,11 +8,13 @@ use aws_lc_rs::signature;
 use aws_lc_rs::signature::UnparsedPublicKey;
 use data_encoding::HEXLOWER;
 use roughenough_merkle::root_from_paths;
+use roughenough_protocol::cursor::ParseCursor;
 use roughenough_protocol::header::find_value_range;
+use roughenough_protocol::request::Request;
 use roughenough_protocol::response::Response;
 use roughenough_protocol::tag::Tag;
 use roughenough_protocol::tags::{ProtocolVersion, PublicKey};
-use roughenough_protocol::wire::FRAME_OVERHEAD;
+use roughenough_protocol::wire::{FRAME_OVERHEAD, FromFrame};
 
 use crate::measurement::Measurement;
 
@@ -30,6 +32,9 @@ pub enum ValidationError {
 
     #[error("Invalid message: {0}")]
     InvalidMessage(#[from] roughenough_protocol::error::Error),
+
+    #[error("Response version {0:?} was not offered in the request")]
+    UnofferedVersion(ProtocolVersion),
 }
 
 /// An instance of causality constraints being violated. For the pair of measurements
@@ -141,6 +146,11 @@ impl ResponseValidator {
         response_bytes: &[u8],
         response: &Response,
     ) -> Result<u64, ValidationError> {
+        // RFC 7: a response with a version number not in the request is
+        // invalid. Checked first because the version selects the signature
+        // context strings.
+        Self::check_version(request, response)?;
+
         // RFC section 5.4. Validity of Response:
         //   "A client MUST check the following properties when it receives a
         //   response. We assume the long-term server public key is known to the
@@ -182,13 +192,26 @@ impl ResponseValidator {
         Ok(&msg[range])
     }
 
+    fn check_version(request: &[u8], response: &Response) -> Result<(), ValidationError> {
+        let mut request_buf = request.to_vec();
+        let mut cursor = ParseCursor::new(&mut request_buf);
+        let request = Request::from_frame(&mut cursor)?;
+
+        let version = *response.srep().ver();
+        if request.ver().versions().contains(&version) {
+            Ok(())
+        } else {
+            Err(ValidationError::UnofferedVersion(version))
+        }
+    }
+
     fn check_dele_signature(
         &self,
         response_bytes: &[u8],
         response: &Response,
     ) -> Result<(), ValidationError> {
         let dele_bytes = Self::received_value(response_bytes, &[Tag::CERT, Tag::DELE])?;
-        let prefix = ProtocolVersion::DELE_PREFIX;
+        let prefix = response.srep().ver().dele_prefix();
 
         let mut to_verify = Vec::with_capacity(prefix.len() + dele_bytes.len());
         to_verify.extend_from_slice(prefix);
@@ -210,7 +233,7 @@ impl ResponseValidator {
         response: &Response,
     ) -> Result<(), ValidationError> {
         let srep_bytes = Self::received_value(response_bytes, &[Tag::SREP])?;
-        let prefix = ProtocolVersion::SREP_PREFIX;
+        let prefix = response.srep().ver().srep_prefix();
 
         let mut to_verify = Vec::with_capacity(prefix.len() + srep_bytes.len());
         to_verify.extend_from_slice(prefix);
@@ -310,10 +333,129 @@ mod tests {
     use data_encoding::BASE64;
     use roughenough_protocol::cursor::ParseCursor;
     use roughenough_protocol::response::Response;
-    use roughenough_protocol::tags::PublicKey;
+    use roughenough_protocol::tags::{ProtocolVersion, PublicKey};
     use roughenough_protocol::wire::FromFrame;
 
     use crate::validation::{ResponseValidator, ValidationError};
+
+    const RFC10049_REQUEST: &[u8] =
+        include_bytes!("../../roughenough-protocol/testdata/rfc10049-request.104172a3");
+    const RFC10049_RESPONSE: &[u8] =
+        include_bytes!("../../roughenough-protocol/testdata/rfc10049-response.104172a3");
+    const RFC10049_PUB_KEY: &[u8] = b"GX9rI+FshTLGq8g4+s1ep4m+DHaykgM0A5v6iz02jWE=";
+
+    const DRAFT_REQUEST: &[u8] =
+        include_bytes!("../../roughenough-protocol/testdata/rfc-request.071039e5");
+    const DRAFT_RESPONSE: &[u8] =
+        include_bytes!("../../roughenough-protocol/testdata/rfc-response.071039e5");
+    const DRAFT_PUB_KEY: &[u8] = b"AW5uAoTSTDfG5NfY1bTh08GUnOqlRb+HVhbJ3ODJvsE=";
+
+    fn parse_response(response_bytes: &[u8]) -> Response {
+        let mut parse_buf = response_bytes.to_vec();
+        let mut cursor = ParseCursor::new(&mut parse_buf);
+        Response::from_frame(&mut cursor).unwrap()
+    }
+
+    fn validator_for(pub_key_b64: &[u8]) -> ResponseValidator {
+        let pub_key = BASE64.decode(pub_key_b64).unwrap();
+        ResponseValidator::new_with_key(PublicKey::from(pub_key.as_slice()))
+    }
+
+    #[test]
+    fn version_one_fixture_validates() {
+        let response = parse_response(RFC10049_RESPONSE);
+        assert_eq!(*response.srep().ver(), ProtocolVersion::RFC);
+
+        let midpoint = validator_for(RFC10049_PUB_KEY)
+            .validate(RFC10049_REQUEST, RFC10049_RESPONSE, &response)
+            .unwrap();
+        assert_eq!(midpoint, 1_791_158_400);
+    }
+
+    #[test]
+    fn draft_fixture_validates() {
+        let response = parse_response(DRAFT_RESPONSE);
+        assert_eq!(*response.srep().ver(), ProtocolVersion::DRAFT);
+
+        validator_for(DRAFT_PUB_KEY)
+            .validate(DRAFT_REQUEST, DRAFT_RESPONSE, &response)
+            .unwrap();
+    }
+
+    #[test]
+    fn signatures_verify_only_with_their_version_context_strings() {
+        use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
+        use roughenough_protocol::tag::Tag;
+
+        fn verifies(key: &[u8], prefix: &[u8], value: &[u8], sig: &[u8]) -> bool {
+            let mut msg = prefix.to_vec();
+            msg.extend_from_slice(value);
+            UnparsedPublicKey::new(&ED25519, key)
+                .verify(&msg, sig)
+                .is_ok()
+        }
+
+        for (response_bytes, pub_key_b64, own, other) in [
+            (
+                RFC10049_RESPONSE,
+                RFC10049_PUB_KEY,
+                ProtocolVersion::RFC,
+                ProtocolVersion::DRAFT,
+            ),
+            (
+                DRAFT_RESPONSE,
+                DRAFT_PUB_KEY,
+                ProtocolVersion::DRAFT,
+                ProtocolVersion::RFC,
+            ),
+        ] {
+            let response = parse_response(response_bytes);
+            let long_term_key = BASE64.decode(pub_key_b64).unwrap();
+            let dele =
+                ResponseValidator::received_value(response_bytes, &[Tag::CERT, Tag::DELE]).unwrap();
+            let srep = ResponseValidator::received_value(response_bytes, &[Tag::SREP]).unwrap();
+            let dele_sig = response.cert().sig().as_ref();
+            let srep_sig = response.sig().as_ref();
+            let online_key = response.cert().dele().pubk().as_ref();
+
+            assert!(verifies(&long_term_key, own.dele_prefix(), dele, dele_sig));
+            assert!(!verifies(
+                &long_term_key,
+                other.dele_prefix(),
+                dele,
+                dele_sig
+            ));
+            assert!(verifies(online_key, own.srep_prefix(), srep, srep_sig));
+            assert!(!verifies(online_key, other.srep_prefix(), srep, srep_sig));
+        }
+    }
+
+    #[test]
+    fn response_with_unoffered_version_is_rejected() {
+        use roughenough_protocol::ToFrame;
+        use roughenough_protocol::request::Request;
+
+        // RFC 7: "version numbers not in the request" make a response invalid
+        let response = parse_response(RFC10049_RESPONSE);
+        let request = Request::new_with_versions(response.nonc(), &[ProtocolVersion::DRAFT]);
+        let request_bytes = request.as_frame_bytes().unwrap();
+
+        match validator_for(RFC10049_PUB_KEY).validate(&request_bytes, RFC10049_RESPONSE, &response)
+        {
+            Err(ValidationError::UnofferedVersion(v)) => assert_eq!(v, ProtocolVersion::RFC),
+            other => panic!("expected UnofferedVersion, got {other:?}"),
+        }
+
+        // A draft response to a client that offered only version 1
+        let response = parse_response(DRAFT_RESPONSE);
+        let request = Request::new(response.nonc());
+        let request_bytes = request.as_frame_bytes().unwrap();
+
+        match validator_for(DRAFT_PUB_KEY).validate(&request_bytes, DRAFT_RESPONSE, &response) {
+            Err(ValidationError::UnofferedVersion(v)) => assert_eq!(v, ProtocolVersion::DRAFT),
+            other => panic!("expected UnofferedVersion, got {other:?}"),
+        }
+    }
 
     #[test]
     fn dele_signature_is_validated() {
@@ -530,7 +672,7 @@ mod tests {
         dele.set_maxt(u64::MAX);
         let dele_bytes = insert_tag(&to_bytes(&dele), *b"GREZ", &[0xcc; 4]);
 
-        let mut to_sign = ProtocolVersion::DELE_PREFIX.to_vec();
+        let mut to_sign = ProtocolVersion::RFC.dele_prefix().to_vec();
         to_sign.extend_from_slice(&dele_bytes);
         let dele_sig = longterm.sign(&to_sign);
 
@@ -541,14 +683,14 @@ mod tests {
 
         // SREP with an undefined tag spliced in, signed over those exact bytes
         let mut srep = SignedResponse::default();
-        srep.set_ver(ProtocolVersion::DRAFT);
+        srep.set_ver(ProtocolVersion::RFC);
         srep.set_radi(5);
         srep.set_midp(1000);
-        srep.set_vers(&SupportedVersions::new(&[ProtocolVersion::DRAFT]));
+        srep.set_vers(&SupportedVersions::new(&[ProtocolVersion::RFC]));
         srep.set_root(&MerkleRoot::from(root));
         let srep_bytes = insert_tag(&to_bytes(&srep), *b"GREZ", &[0xdd; 8]);
 
-        let mut to_sign = ProtocolVersion::SREP_PREFIX.to_vec();
+        let mut to_sign = ProtocolVersion::RFC.srep_prefix().to_vec();
         to_sign.extend_from_slice(&srep_bytes);
         let srep_sig = online.sign(&to_sign);
 

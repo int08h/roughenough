@@ -2,20 +2,20 @@
 authors = ["stuart@int08h.com"]
 edition = "2024"
 license = "Apache-2.0 OR MIT"
-version = "2.0.0"
+version = "2.1.0"
 homepage = "https://github.com/int08h/roughenough"
 rust-version = "1.88"
 
 [workspace.dependencies]
 # Internal workspace crates
-roughenough-client = { path = "crates/roughenough-client", version = "2.0.0" }
-roughenough-common = { path = "crates/roughenough-common", version = "2.0.0" }
-roughenough-integration-test = { path = "crates/roughenough-integration", version = "2.0.0" }
-roughenough-keys = { path = "crates/roughenough-keys", version = "2.0.0" }
-roughenough-merkle = { path = "crates/roughenough-merkle", version = "2.0.0" }
-roughenough-protocol = { path = "crates/roughenough-protocol", version = "2.0.0" }
-roughenough-server = { path = "crates/roughenough-server", version = "2.0.0" }
-roughenough-reporting-server = { path = "crates/roughenough-reporting-server", version = "2.0.0" }
+roughenough-client = { path = "crates/roughenough-client", version = "2.1.0" }
+roughenough-common = { path = "crates/roughenough-common", version = "2.1.0" }
+roughenough-integration-test = { path = "crates/roughenough-integration", version = "2.1.0" }
+roughenough-keys = { path = "crates/roughenough-keys", version = "2.1.0" }
+roughenough-merkle = { path = "crates/roughenough-merkle", version = "2.1.0" }
+roughenough-protocol = { path = "crates/roughenough-protocol", version = "2.1.0" }
+roughenough-server = { path = "crates/roughenough-server", version = "2.1.0" }
+roughenough-reporting-server = { path = "crates/roughenough-reporting-server", version = "2.1.0" }
 
 # External dependencies
 aws-config = { version = "1.12", default-features = false, features = ["default-https-client", "rt-tokio", "credentials-process"] }
@@ -24,18 +24,18 @@ aws-lc-rs = { version = "1.18", default-features = false, features = ["aws-lc-sy
 # version-mangles its symbols and links key, so skew does not fail the build,
 # it silently links two copies of AWS-LC (CI checks cargo tree --duplicates).
 aws-lc-sys = { version = "0.45", default-features = false }
-aws-sdk-kms = { version = "1.122", default-features = false, features = ["default-https-client", "rt-tokio"] }
-aws-sdk-secretsmanager = { version = "1.119", default-features = false, features = ["default-https-client", "rt-tokio"] }
+aws-sdk-kms = { version = "1.123", default-features = false, features = ["default-https-client", "rt-tokio"] }
+aws-sdk-secretsmanager = { version = "1.120", default-features = false, features = ["default-https-client", "rt-tokio"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }
 async-trait = "0.1"
 jiff = "0.2"
 clap = { version = "4.6", default-features = false, features = ["std", "color", "help", "usage", "error-context"] }
 crc32c = "0.6"
-cryptoki = "0.12.0"
+cryptoki = "0.12"
 data-encoding = "2.11"
 divan = "0.1"
-google-cloud-kms-v1 = "1.14"
-google-cloud-secretmanager-v1 = "1.13"
+google-cloud-kms-v1 = "1.15"
+google-cloud-secretmanager-v1 = "1.14"
 libc = "0.2.177"
 mio = { version = "1.2", default-features = false }
 pastey = "0.2"

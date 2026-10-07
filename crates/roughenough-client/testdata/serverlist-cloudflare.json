@@ -2,7 +2,7 @@
   "servers": [
     {
       "name": "Cloudflare-Roughtime-2",
-      "version": "IETF-Roughtime",
+      "version": 1,
       "publicKeyType": "ed25519",
       "publicKey": "0GD7c3yP8xEc4Zl2zeuN2SlLvDVVocjsPSL8/Rl/7zg=",
       "addresses": [
@@ -14,7 +14,7 @@
     },
     {
       "name": "int08h-Roughtime",
-      "version": "IETF-Roughtime",
+      "version": 1,
       "publicKeyType": "ed25519",
       "publicKey": "AW5uAoTSTDfG5NfY1bTh08GUnOqlRb+HVhbJ3ODJvsE=",
       "addresses": [
@@ -26,7 +26,7 @@
     },
     {
       "name": "roughtime.se",
-      "version": "IETF-Roughtime",
+      "version": 1,
       "publicKeyType": "ed25519",
       "publicKey": "S3AzfZJ5CjSdkJ21ZJGbxqdYP/SoE8fXKY0+aicsehI=",
       "addresses": [
@@ -38,7 +38,7 @@
     },
     {
       "name": "time.txryan.com",
-      "version": "IETF-Roughtime",
+      "version": 1,
       "publicKeyType": "ed25519",
       "publicKey": "iBVjxg/1j7y1+kQUTBYdTabxCppesU/07D4PMDJk2WA=",
       "addresses": [

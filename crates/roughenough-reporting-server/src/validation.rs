@@ -267,6 +267,62 @@ mod tests {
     }
 
     #[test]
+    fn report_with_draft_and_version_one_entries_is_accepted() {
+        use roughenough_protocol::tags::ProtocolVersion;
+
+        // Entry 0: a real draft 0x8000000c exchange (MIDP 2025-05-22)
+        let draft_request_bytes =
+            include_bytes!("../../roughenough-protocol/testdata/rfc-request.071039e5").to_vec();
+        let draft_response_bytes =
+            include_bytes!("../../roughenough-protocol/testdata/rfc-response.071039e5").to_vec();
+        let draft_key = BASE64
+            .decode(b"AW5uAoTSTDfG5NfY1bTh08GUnOqlRb+HVhbJ3ODJvsE=")
+            .unwrap();
+
+        let mut buf = draft_request_bytes.clone();
+        let draft_request = Request::from_frame(&mut ParseCursor::new(&mut buf)).unwrap();
+        let mut buf = draft_response_bytes.clone();
+        let draft_response = Response::from_frame(&mut ParseCursor::new(&mut buf)).unwrap();
+        assert_eq!(*draft_response.srep().ver(), ProtocolVersion::DRAFT);
+
+        let draft_measurement = Measurement::builder()
+            .server("127.0.0.1:2002".parse().unwrap())
+            .hostname("draft".to_string())
+            .public_key(Some(PublicKey::from(draft_key.as_slice())))
+            .request(draft_request)
+            .response(draft_response)
+            .response_bytes(draft_response_bytes.clone())
+            .rand_value(None)
+            .build()
+            .unwrap();
+
+        // Entry 1: a version 1 exchange chained to entry 0 whose MIDP is
+        // earlier than entry 0's
+        let rand = random_bytes::<32>();
+        let nonce = calculate_chained_nonce(&draft_response_bytes, &rand);
+        let mut ctx = TestContext::new_at(1, BASE_TIME);
+        let (request, response) = ctx.create_interaction_pair_with_nonce(BASE_TIME, &nonce);
+        assert_eq!(*response.srep().ver(), ProtocolVersion::RFC);
+
+        let rfc_measurement = Measurement::builder()
+            .server("127.0.0.1:5319".parse().unwrap())
+            .hostname("rfc".to_string())
+            .public_key(Some(ctx.key_source.public_key()))
+            .request(request)
+            .response(response.clone())
+            .response_bytes(response.as_frame_bytes().unwrap())
+            .rand_value(Some(rand))
+            .build()
+            .unwrap();
+
+        let measurements = vec![draft_measurement, rfc_measurement];
+        let violation = CausalityViolation::new(&measurements, 0, 1);
+        let report = MalfeasanceReport::from_violation(&violation);
+
+        validate_report(&report).expect("draft and version 1 entries must validate");
+    }
+
+    #[test]
     fn boundary_is_not_a_violation() {
         // lower_i == upper_j is causally consistent; only strictly greater
         // demonstrates a violation

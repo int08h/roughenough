@@ -3,13 +3,13 @@
 [![Build Status](https://github.com/int08h/roughenough/actions/workflows/rust.yml/badge.svg)](https://github.com/int08h/roughenough/actions/workflows/rust.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0%20OR%20MIT-blue.svg)](LICENSE-APACHE)
 
-Roughenough is an implementation of the [IETF Roughtime](https://datatracker.ietf.org/doc/draft-ietf-ntp-roughtime/) 
+Roughenough is an implementation of the [Roughtime (RFC 10049)](https://www.rfc-editor.org/info/rfc10049) 
 secure time synchronization protocol. Roughenough provides both server and client components for cryptographically 
 verifiable time synchronization.
 
 ## Features
 
-- Full implementation of the (draft) Roughtime RFC specification
+- Full implementation of the Roughtime RFC 10049 specification
 - Command-line client with multiple output formats and server validation
 - Performance oriented batching UDP server 
 - Clients can (optionally) report malfeasance to a remote server for analysis
@@ -71,7 +71,7 @@ cargo run --release --bin roughenough_server -- --seed-file roughenough.seed
 target/release/roughenough_server --seed-file /run/secrets/roughenough.seed
 ```
 
-The server will start listening for UDP requests on the default port (2003).
+The server will start listening for UDP requests on the default port (5319, assigned to Roughtime by IANA).
 
 ### Running the Client
 
@@ -79,20 +79,26 @@ Basic usage:
 
 ```bash
 # Query a Roughtime server
-cargo run --bin roughenough_client -- roughtime.int08h.com 2003
+cargo run --bin roughenough_client -- roughtime.int08h.com 5319
 
 # Verify server public key
-cargo run --bin roughenough_client -- roughtime.int08h.com 2003 -k <base64-or-hex-key>
+cargo run --bin roughenough_client -- roughtime.int08h.com 5319 -k <base64-or-hex-key>
 
 # Multiple requests
-cargo run --bin roughenough_client -- roughtime.int08h.com 2003 -n 10
+cargo run --bin roughenough_client -- roughtime.int08h.com 5319 -n 10
 
 # Verbose output
-cargo run --bin roughenough_client -- roughtime.int08h.com 2003 -v
+cargo run --bin roughenough_client -- roughtime.int08h.com 5319 -v
 
 # Different time formats
-cargo run --bin roughenough_client -- roughtime.int08h.com 2003 --epoch  # Unix timestamp
-cargo run --bin roughenough_client -- roughtime.int08h.com 2003 --zulu   # ISO 8601 UTC
+cargo run --bin roughenough_client -- roughtime.int08h.com 5319 --epoch  # Unix timestamp
+cargo run --bin roughenough_client -- roughtime.int08h.com 5319 --zulu   # ISO 8601 UTC
+```
+
+Offer draft version 0x8000000c as well as version 1 (see [Protocol Versions](#protocol-versions)):
+
+```bash
+cargo run --bin roughenough_client -- roughtime.example.com 2002 -P both
 ```
 
 Query multiple servers from an RFC compliant JSON list:
@@ -100,6 +106,16 @@ Query multiple servers from an RFC compliant JSON list:
 ```bash
 cargo run --bin roughenough_client -- -l servers.json
 ```
+
+### Protocol Versions
+
+The server answers only Roughtime version 1 (RFC 10049) and ignores requests
+that do not offer it. Version 1 signatures use the RFC 10049 context strings,
+`"Roughtime v1 response signature"` and `"Roughtime v1 delegation signature"`.
+
+The client offers version 1 by default. `-P both` offers version 1 and draft
+version 0x8000000c, and `-P 19` offers only the draft version. Draft responses
+are verified with the draft context strings (`"RoughTime v1 ..."`).
 
 ### Running Tests
 
@@ -135,7 +151,7 @@ Roughtime is structured as a Cargo workspace with multiple crates:
 - **reporting** - Enables clients to report malfeasance to a remote server
   ```bash
   cargo build -p roughenough-client --features reporting
-  cargo run --bin roughenough_client -- hostname.com 2003 --report
+  cargo run --bin roughenough_client -- hostname.com 5319 --report
   ```
 
 ### Keys Crate Features
