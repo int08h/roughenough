@@ -18,7 +18,7 @@ use roughenough_keys::seed::MemoryBackend;
 use roughenough_protocol::cursor::ParseCursor;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::response::Response;
-use roughenough_protocol::tags::Nonce;
+use roughenough_protocol::tags::{Nonce, PublicKey};
 use roughenough_protocol::util::ClockSource;
 use roughenough_protocol::{FromFrame, ToFrame};
 use roughenough_server::args::Args;
@@ -34,9 +34,19 @@ fn test_args() -> Args {
 }
 
 fn new_worker(args: Args, tx: SyncSender<WorkerMetrics>) -> (Worker, MioUdpSocket, SocketAddr) {
+    let (worker, sock, addr, _) = new_worker_with_key(args, tx);
+    (worker, sock, addr)
+}
+
+/// Like `new_worker`, also returning the responder's initial online key
+fn new_worker_with_key(
+    args: Args,
+    tx: SyncSender<WorkerMetrics>,
+) -> (Worker, MioUdpSocket, SocketAddr, PublicKey) {
     let seed = Box::new(MemoryBackend::from_value(&[42u8; 32]));
     let key_source = KeySource::new(seed, ClockSource::System, args.rotation_interval());
     let responder = ResponseHandler::new(args.batch_size, key_source);
+    let online_key = responder.public_key();
     let metrics_interval = Duration::from_secs(args.metrics_interval);
 
     let worker = Worker::new(
@@ -55,12 +65,32 @@ fn new_worker(args: Args, tx: SyncSender<WorkerMetrics>) -> (Worker, MioUdpSocke
     sock.set_nonblocking(true).expect("set_nonblocking");
     let addr = sock.local_addr().unwrap();
 
-    (worker, MioUdpSocket::from_std(sock), addr)
+    (worker, MioUdpSocket::from_std(sock), addr, online_key)
 }
 
 fn request_bytes(nonce_value: u8) -> Vec<u8> {
     let nonce = Nonce::from([nonce_value; 32]);
     Request::new(&nonce).as_frame_bytes().unwrap()
+}
+
+/// Send requests until one is answered; None if every attempt times out
+fn exchange(server_addr: SocketAddr) -> Option<Vec<u8>> {
+    let client = UdpSocket::bind("127.0.0.1:0").unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_millis(500)))
+        .unwrap();
+
+    // UDP delivery is best-effort even on loopback: retry a few times
+    for attempt in 0..4 {
+        client
+            .send_to(&request_bytes(attempt), server_addr)
+            .unwrap();
+        let mut buf = [0u8; 1500];
+        if let Ok((nbytes, _)) = client.recv_from(&mut buf) {
+            return Some(buf[..nbytes].to_vec());
+        }
+    }
+    None
 }
 
 #[test]
@@ -71,24 +101,7 @@ fn worker_answers_request_end_to_end() {
 
     thread::scope(|s| {
         let worker_thread = s.spawn(|| worker.run(sock, &keep_running));
-
-        let client = UdpSocket::bind("127.0.0.1:0").unwrap();
-        client
-            .set_read_timeout(Some(Duration::from_millis(500)))
-            .unwrap();
-
-        // UDP delivery is best-effort even on loopback: retry a few times
-        let mut reply = None;
-        for attempt in 0..4 {
-            client
-                .send_to(&request_bytes(attempt), server_addr)
-                .unwrap();
-            let mut buf = [0u8; 1500];
-            if let Ok((nbytes, _)) = client.recv_from(&mut buf) {
-                reply = Some(buf[..nbytes].to_vec());
-                break;
-            }
-        }
+        let reply = exchange(server_addr);
 
         keep_running.store(false, Release);
         worker_thread.join().expect("worker thread panicked");
@@ -96,6 +109,28 @@ fn worker_answers_request_end_to_end() {
         let mut reply = reply.expect("no response from worker");
         let mut cursor = ParseCursor::new(&mut reply);
         Response::from_frame(&mut cursor).expect("reply must parse as a Response");
+    });
+}
+
+#[test]
+fn worker_does_not_replace_online_key_at_startup() {
+    // Each online key costs a long-term-key signature, which may be an HSM
+    // or remote KMS call; the responder's initial key must be used as-is
+    let keep_running = AtomicBool::new(true);
+    let (tx, _rx) = sync_channel(4);
+    let (mut worker, sock, server_addr, initial_key) = new_worker_with_key(test_args(), tx);
+
+    thread::scope(|s| {
+        let worker_thread = s.spawn(|| worker.run(sock, &keep_running));
+        let reply = exchange(server_addr);
+
+        keep_running.store(false, Release);
+        worker_thread.join().expect("worker thread panicked");
+
+        let mut reply = reply.expect("no response from worker");
+        let mut cursor = ParseCursor::new(&mut reply);
+        let response = Response::from_frame(&mut cursor).unwrap();
+        assert_eq!(response.cert().dele().pubk(), &initial_key);
     });
 }
 

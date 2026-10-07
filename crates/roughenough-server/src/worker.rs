@@ -18,6 +18,13 @@ use crate::responses::ResponseHandler;
 /// Batches processed per wakeup before deadlines and the shutdown flag are re-checked.
 const MAX_BATCHES_PER_WAKEUP: usize = 8;
 
+/// `interval` shortened by up to 255 random seconds, so workers don't
+/// thundering-herd their key rotations and stall all responses at once.
+fn jittered_secs(interval: Duration) -> u64 {
+    let jitter = u64::from(random_bytes::<1>()[0]);
+    interval.as_secs().saturating_sub(jitter)
+}
+
 /// Reports a worker thread's exit to the main thread. Held for the lifetime
 /// of the worker so `Drop` runs on normal return and panic unwind.
 pub struct ExitGuard {
@@ -77,7 +84,8 @@ impl Worker {
             req_handler: RequestHandler::new(responder),
             key_replacement_interval,
             metrics_publish_interval: metrics_interval,
-            next_key_replacement: now,
+            // the responder already holds a fresh key
+            next_key_replacement: now + jittered_secs(key_replacement_interval),
             next_metrics_publication: now + metrics_interval.as_secs(),
             #[cfg(feature = "test-utils")]
             test_panic_flag: None,
@@ -98,6 +106,8 @@ impl Worker {
         poll.registry()
             .register(&mut sock, READER, mio::Interest::READABLE)
             .expect("failed to register socket");
+
+        self.log_online_key();
 
         let mut events = Events::with_capacity(1024);
         let poll_duration = Duration::from_millis(350);
@@ -156,17 +166,16 @@ impl Worker {
 
     fn replace_online_key(&mut self) {
         self.req_handler.replace_online_key();
+        self.log_online_key();
+        self.next_key_replacement += jittered_secs(self.key_replacement_interval);
+    }
 
+    fn log_online_key(&self) {
         info!(
             "worker-{}, online key {:?}",
             self.worker_id,
             self.req_handler.public_key()
         );
-
-        // jitter so that all worker threads don't thundering herd and replace their
-        // keys at the same time, stalling all responses
-        let jitter = u64::from(random_bytes::<1>()[0]);
-        self.next_key_replacement += self.key_replacement_interval.as_secs() - jitter;
     }
 
     fn publish_metrics(&mut self) {

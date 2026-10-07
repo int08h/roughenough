@@ -76,6 +76,8 @@ Roughtime is now published as RFC 10049. This release follows the RFC.
 - Server: `Response::to_wire` bounds check accounts for frame overhead
 - Server: non-WouldBlock receive errors are counted and don't busy-spin
 - Server: a worker thread dying shuts the server down with an error
+- Server: workers no longer generate a second online key at startup,
+  halving startup long-term-key signatures (HSM or KMS calls)
 - Reporting server: first report entries carrying `rand` are accepted
   (RFC 8.4.1)
 - Protocol: `UnexpectedMagic` error shows the correct 'ROUGHTIM' constant
