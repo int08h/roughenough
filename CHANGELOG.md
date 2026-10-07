@@ -46,6 +46,8 @@ Roughtime is now published as RFC 10049. This release follows the RFC.
 - Server: private-use protocol versions (0xc0000000-0xffffffff) are not
   negotiated or answered (RFC 12.2)
 - Keys: seed values are never logged
+- Docker: the runtime image runs as the distroless `nonroot` user (uid
+  65532); mounted seed files must be owned by that uid
 - Reporting server: reports are verified before storage; storage capped,
   submissions rate-limited, request bodies size-limited
 
