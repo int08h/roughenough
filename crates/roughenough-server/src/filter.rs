@@ -1,27 +1,26 @@
-//! Classic BPF socket filter that drops datagrams which cannot be valid
-//! requests before the kernel queues them on the worker's socket.
+//! Classic BPF socket filter for early, in-kernel drop of datagrams which are
+//! definitely not valid requests. Evaluated prior to the packet being queued on
+//! the worker's socket.
 //!
-//! Runts, oversized or fragmented datagrams, and anything lacking the
-//! ROUGHTIM magic never consume receive-buffer space, wake a worker, or cost
-//! a `recv_from`. The userspace checks in `network.rs` and `requests.rs` stay
-//! as the authority; this filter only sheds load early. Linux only.
+//! This is 'classic' BPF and not eBPF as classic doesn't require elevated
+//! privileges or capability grants.
 //!
 //! See `doc/BPF-FILTER.md` for design notes and how to test on Linux.
 
 use roughenough_protocol::request::{MAX_REQUEST_SIZE, REQUEST_SIZE};
 use roughenough_protocol::wire::FRAME_MAGIC;
 
-/// One classic BPF instruction, laid out like the kernel's `sock_filter`.
+/// A classic BPF instruction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Insn {
-    pub code: u16,
-    pub jt: u8,
-    pub jf: u8,
-    pub k: u32,
+    pub code: u16, // OR'ed together: instruction class, operand size, and addressing mode/jump test
+    pub jt: u8,    // # of instructions to skip when conditional jump test is true
+    pub jf: u8,    // # of instructions to skip when conditional jump test is false
+    pub k: u32,    // Constant operand: load offset, value to compare against, or return value
 }
 
-// Opcode bits from linux/filter.h, defined here so the program builds and is
-// testable on every platform; a Linux test checks them against libc
+// Opcode bits from linux/filter.h. Defined here so the program builds and
+// tests on every platform. A Linux test checks them against libc.
 pub(crate) const BPF_LD: u16 = 0x00;
 pub(crate) const BPF_JMP: u16 = 0x05;
 pub(crate) const BPF_RET: u16 = 0x06;
@@ -33,8 +32,6 @@ pub(crate) const BPF_JGT: u16 = 0x20;
 pub(crate) const BPF_JGE: u16 = 0x30;
 pub(crate) const BPF_K: u16 = 0x00;
 
-/// On a UDP socket the filter sees the 8-byte UDP header at offset 0, and the
-/// packet length includes it.
 const UDP_HEADER_LEN: u32 = 8;
 
 const MIN_LEN: u32 = UDP_HEADER_LEN + REQUEST_SIZE as u32;
@@ -50,18 +47,20 @@ const fn insn(code: u16, jt: u8, jf: u8, k: u32) -> Insn {
     Insn { code, jt, jf, k }
 }
 
-/// The filter program. Jump offsets count instructions skipped after the
-/// jump; every `jf`/`jt` that rejects lands on the final DROP.
+/// Accept only datagrams whose UDP payload is 1024 to 1472 bytes and begins
+/// with the `ROUGHTIM` magic and drop everything else. Jump offsets count
+/// instructions skipped after the jump.
+#[rustfmt::skip]
 pub const PROGRAM: [Insn; 9] = [
-    insn(BPF_LD | BPF_W | BPF_LEN, 0, 0, 0),
-    insn(BPF_JMP | BPF_JGT | BPF_K, 6, 0, MAX_LEN),
-    insn(BPF_JMP | BPF_JGE | BPF_K, 0, 5, MIN_LEN),
-    insn(BPF_LD | BPF_W | BPF_ABS, 0, 0, UDP_HEADER_LEN),
-    insn(BPF_JMP | BPF_JEQ | BPF_K, 0, 3, MAGIC_HI),
-    insn(BPF_LD | BPF_W | BPF_ABS, 0, 0, UDP_HEADER_LEN + 4),
-    insn(BPF_JMP | BPF_JEQ | BPF_K, 0, 1, MAGIC_LO),
-    insn(BPF_RET | BPF_K, 0, 0, ACCEPT),
-    insn(BPF_RET | BPF_K, 0, 0, DROP),
+    insn(BPF_LD  | BPF_W   | BPF_LEN, 0, 0, 0),
+    insn(BPF_JMP | BPF_JGT | BPF_K  , 6, 0, MAX_LEN),
+    insn(BPF_JMP | BPF_JGE | BPF_K  , 0, 5, MIN_LEN),
+    insn(BPF_LD  | BPF_W   | BPF_ABS, 0, 0, UDP_HEADER_LEN),
+    insn(BPF_JMP | BPF_JEQ | BPF_K  , 0, 3, MAGIC_HI),
+    insn(BPF_LD  | BPF_W   | BPF_ABS, 0, 0, UDP_HEADER_LEN + 4),
+    insn(BPF_JMP | BPF_JEQ | BPF_K  , 0, 1, MAGIC_LO),
+    insn(BPF_RET | BPF_K            , 0, 0, ACCEPT),
+    insn(BPF_RET | BPF_K            , 0, 0, DROP),
 ];
 
 /// Attach [`PROGRAM`] to `socket`. Call before `bind` so no datagram is
@@ -110,7 +109,9 @@ mod tests {
                     pc += usize::from(if taken { i.jt } else { i.jf });
                 }
                 c if c == BPF_RET | BPF_K => return i.k,
-                c => panic!("unsupported opcode {c:#x}"),
+                c => {
+                    panic!("unsupported opcode {c:#x}")
+                }
             }
         }
     }

@@ -19,9 +19,9 @@ impl ReportSchedule {
         }
     }
 
-    /// Returns the seconds since the last report when one is due at `now`.
+    /// Returns the seconds since the last report if one is due at `now`.
     pub(crate) fn poll(&mut self, now: u64) -> Option<u64> {
-        // After a backward clock step, restart from `now` rather than stall
+        // If the clock steps backwards, restart from `now` rather than stall
         // until the clock regains the old deadline
         if now < self.last_report {
             *self = Self::new(now, self.interval);
