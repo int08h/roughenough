@@ -1,6 +1,36 @@
 # Changelog
 
-## [2.1.0] - Unreleased
+## [Unreleased]
+
+### Security
+
+- Server: the listening socket no longer sets `SO_REUSEADDR`, which on
+  Linux let any local user bind the Roughtime port and capture traffic;
+  `SO_REUSEPORT` alone balances load across workers and is UID-checked
+- Server (Linux): a classic BPF socket filter drops runts, oversized
+  datagrams, and datagrams without the ROUGHTIM magic in the kernel, so
+  floods of them cannot fill worker receive buffers (`doc/BPF-FILTER.md`)
+- Docker: the runtime image runs as the distroless `nonroot` user (uid
+  65532); mounted seed files must be owned by that uid
+
+### Fixed
+
+- Server: `--num-threads` and `--rotation-interval` reject zero;
+  `--metrics-interval` accepts 1 to 86400 seconds
+- Server: a backward wall-clock step no longer stalls metrics reporting
+  until the clock catches up
+- Server: workers rotate the online key when the clock leaves its
+  delegation span. A backward step no longer leaves responses with MIDP
+  before MINT, which clients reject, and a forward jump no longer
+  triggers one rotation per skipped interval.
+- Server: workers no longer generate a second online key at startup,
+  halving startup long-term-key signatures (HSM or KMS calls)
+
+### Added
+
+- Protocol: `VersionList::push_back`
+
+## [2.1.0] - 2026-10-06
 
 ### Breaking: RFC 10049
 
@@ -40,17 +70,9 @@ Roughtime is now published as RFC 10049. This release follows the RFC.
 - Server: refuses to start without `--seed`; all-zero test seed requires
   `--insecure-zero-seed`
 - Server: truncated (oversized) datagrams are dropped
-- Server: the listening socket no longer sets `SO_REUSEADDR`, which on
-  Linux let any local user bind the Roughtime port and capture traffic;
-  `SO_REUSEPORT` alone balances load across workers and is UID-checked
-- Server (Linux): a classic BPF socket filter drops runts, oversized
-  datagrams, and datagrams without the ROUGHTIM magic in the kernel, so
-  floods of them cannot fill worker receive buffers (`doc/BPF-FILTER.md`)
 - Server: private-use protocol versions (0xc0000000-0xffffffff) are not
   negotiated or answered (RFC 12.2)
 - Keys: seed values are never logged
-- Docker: the runtime image runs as the distroless `nonroot` user (uid
-  65532); mounted seed files must be owned by that uid
 - Reporting server: reports are verified before storage; storage capped,
   submissions rate-limited, request bodies size-limited
 
@@ -71,20 +93,10 @@ Roughtime is now published as RFC 10049. This release follows the RFC.
 - Keys: `generate --key seed://...` no longer panics; `store` output is
   usable as a `--seed` value
 - Server: `--interface` accepts only IP addresses
-- Server: `--num-threads` and `--rotation-interval` reject zero;
-  `--metrics-interval` accepts 1 to 86400 seconds
 - Server: metrics rates computed from per-interval deltas
-- Server: a backward wall-clock step no longer stalls metrics reporting
-  until the clock catches up
-- Server: workers rotate the online key when the clock leaves its
-  delegation span. A backward step no longer leaves responses with MIDP
-  before MINT, which clients reject, and a forward jump no longer
-  triggers one rotation per skipped interval.
 - Server: `Response::to_wire` bounds check accounts for frame overhead
 - Server: non-WouldBlock receive errors are counted and don't busy-spin
 - Server: a worker thread dying shuts the server down with an error
-- Server: workers no longer generate a second online key at startup,
-  halving startup long-term-key signatures (HSM or KMS calls)
 - Reporting server: first report entries carrying `rand` are accepted
   (RFC 8.4.1)
 - Protocol: `UnexpectedMagic` error shows the correct 'ROUGHTIM' constant
