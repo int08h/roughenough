@@ -64,15 +64,35 @@ Roughtime is now published as RFC 10049. This release follows the RFC.
   `srep_prefix()` return the context strings for a version. This release
   changes public API without a major version bump.
 
+### Breaking: other
+
+- Server: the long-term seed is read from a file given by `--seed-file`
+  or `ROUGHENOUGH_SEED_FILE`. `--seed` and `ROUGHENOUGH_SEED` are removed.
+  The file must be a regular file, not a symlink, with no group or other
+  permissions, and at most 64 KiB.
+- Keys: AWS KMS and GCP KMS seed envelopes use AES-256-GCM with a random
+  nonce instead of AES-256-GCM-SIV. Envelopes sealed by 2.0.0 do not open
+  in 2.1.0; re-seal the seed with `roughenough_keys store`.
+- Client API: `Measurement::midpoint_datetime` returns `jiff::Timestamp`
+  instead of `chrono::DateTime<Utc>`
+- Merkle API: `root_from_paths` is a free function that returns
+  `Option<Hash>`, and `None` when INDX bits remain after PATH is consumed
+- Docker: the runtime image is `gcr.io/distroless/cc-debian13`, which has
+  no shell (it was `cc-debian12:debug`). The builder is Rust 1.94 on
+  Debian trixie and uses the `release-lto` profile.
+
 ### Security
 
 - Client: `--set-clock` requires `-k/--pub-key`; keyless queries warn
-- Server: refuses to start without `--seed`; all-zero test seed requires
-  `--insecure-zero-seed`
+- Server: refuses to start without `--seed-file`; all-zero test seed
+  requires `--insecure-zero-seed`
 - Server: truncated (oversized) datagrams are dropped
 - Server: private-use protocol versions (0xc0000000-0xffffffff) are not
   negotiated or answered (RFC 12.2)
-- Keys: seed values are never logged
+- Server: requests whose SRV does not match the server's long-term key
+  are dropped (RFC 5.1)
+- Keys: seed values are never logged; transient seed buffers are zeroized
+- Keys: `roughenough_keys` creates output files with mode 0600
 - Reporting server: reports are verified before storage; storage capped,
   submissions rate-limited, request bodies size-limited
 
@@ -86,13 +106,24 @@ Roughtime is now published as RFC 10049. This release follows the RFC.
 - Client: malfeasance reports carry the full measurement chain and use
   `application/roughtime-malfeasance+json`
 - Client: duplicated or stale datagrams no longer abort a measurement
+- Client: queries to IPv6 servers bind an IPv6 socket (#97)
+- Protocol: unknown tags in requests and responses are ignored (RFC 5.1,
+  RFC 7)
 - Keys: cloud backends return errors instead of panicking; seed-load
   failures exit the server cleanly
 - Keys: `try_choose_backend` returns errors for unavailable backends;
   PKCS#11 backend selectable via `--seed-backend pkcs11`
 - Keys: `generate --key seed://...` no longer panics; `store` output is
-  usable as a `--seed` value
+  usable as seed-file contents
 - Server: `--interface` accepts only IP addresses
+- Server: requests from 1024 to 1472 bytes are accepted. RFC 5.1 sets
+  only a minimum; 2.0.0 required exactly 1024 bytes.
+- Server: SIGTERM shuts the server down cleanly; 2.0.0 handled only
+  SIGINT
+- Server: workers process at most 8 batches per wakeup before checking
+  key rotation, metrics, and shutdown, so sustained load cannot starve
+  them
+- Server: `--quiet` also limits cloud SDK logging to errors
 - Server: metrics rates computed from per-interval deltas
 - Server: `Response::to_wire` bounds check accounts for frame overhead
 - Server: non-WouldBlock receive errors are counted and don't busy-spin
@@ -111,6 +142,16 @@ Roughtime is now published as RFC 10049. This release follows the RFC.
 - `roughenough-integration-test` and `roughenough-reporting-server` are
   `publish = false`
 - Dead code removed: unreachable non-Linux `stub_backend` in Linux KRS
+- `roughenough-reporting-server` is a workspace member but not a default
+  member; build it with `cargo build -p roughenough-reporting-server`
+- Keys: tokio is optional and enabled only by the `longterm-*` cloud
+  features
+- Dependencies: the default build graph drops from 102 to 49 external
+  crates, and the server binary no longer links tokio. chrono is replaced
+  by jiff, crossbeam-channel by `std::sync::mpsc`, ctrlc by signal-hook,
+  and fastrand by aws-lc-rs randomness.
+- Reporting server: report IDs are random 128-bit hex strings instead of
+  ULIDs
 
 ### Performance
 
@@ -125,6 +166,7 @@ Roughtime is now published as RFC 10049. This release follows the RFC.
   receive buffer reused; metrics snapshots allocation-free
 - Client: response validation slices signed regions in place, removing
   four heap copies per response
+- Keys: online Ed25519 signing does not allocate
 
 ### Simplified
 
@@ -132,7 +174,6 @@ Roughtime is now published as RFC 10049. This release follows the RFC.
   `SrvCommitment` and `Signature` are `Copy`
 - Protocol: `RequestedVersions`/`SupportedVersions` alias one
   `VersionList` type
-- Merkle: `root_from_paths` is a free function
 - Server: library modules are `#[doc(hidden)]`
 
 ### Added
@@ -142,6 +183,12 @@ Roughtime is now published as RFC 10049. This release follows the RFC.
 - Adversarial response-parsing tests; tests for untested tag modules
 - Integration tests cover the framed path and multi-request batches
 - Unit tests for the client's `sequence`, `transport`, and `client` modules
+- Server allocation tests and worker-loop tests
+- Common: `secure_shuffle`, a bias-free shuffle using aws-lc-rs randomness
+- Release: cargo-dist configuration for Linux x86_64 and aarch64 archives
+- Docker: `.dockerignore`
+- CI: least-privilege workflow permissions; keys feature-matrix check;
+  pre-commit hooks for `cargo fmt` and `cargo clippy`
 
 ### Documentation
 
@@ -152,7 +199,9 @@ Roughtime is now published as RFC 10049. This release follows the RFC.
 - RELEASE-CHECKLIST package names fixed; publishable crates enumerated
 - CONTRIBUTING unsafe-code policy matches reality
 - `MAX_VERSIONS` cap documented as an RFC 5.1.1 deviation; UDP-only
-  transport noted; `doc/REQUEST-FLOW.md` updated
+  transport noted
+- New `doc/REQUEST-FLOW.md` describes the request and response flow
+- New `AI_POLICY.md` and `AGENTS.md`
 - Dockerfile dependency-cache layer fixed
 
 ## [2.0.0] - 2025-10-06
