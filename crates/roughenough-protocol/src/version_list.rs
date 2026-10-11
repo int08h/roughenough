@@ -203,6 +203,50 @@ mod tests {
     }
 
     #[test]
+    fn push_back_appends_in_order() {
+        let mut versions = VersionList::default();
+
+        versions.push_back(ProtocolVersion::RFC);
+        assert_eq!(versions.versions(), &[ProtocolVersion::RFC]);
+        assert!(versions.is_supported(ProtocolVersion::RFC));
+        assert!(!versions.is_supported(ProtocolVersion::DRAFT));
+
+        versions.push_back(ProtocolVersion::DRAFT);
+        assert_eq!(
+            versions.versions(),
+            &[ProtocolVersion::RFC, ProtocolVersion::DRAFT]
+        );
+        assert!(versions.is_supported(ProtocolVersion::DRAFT));
+        assert_eq!(versions.wire_size(), 2 * size_of::<ProtocolVersion>());
+    }
+
+    #[test]
+    fn push_back_matches_new() {
+        let mut pushed = VersionList::new(&[ProtocolVersion::RFC]);
+        pushed.push_back(ProtocolVersion::DRAFT);
+
+        let built = VersionList::new(&[ProtocolVersion::RFC, ProtocolVersion::DRAFT]);
+        assert_eq!(pushed, built);
+    }
+
+    #[test]
+    fn push_back_fills_to_max_versions() {
+        let mut versions = VersionList::default();
+        for _ in 0..VersionList::MAX_VERSIONS {
+            versions.push_back(ProtocolVersion::DRAFT);
+        }
+        assert_eq!(versions.versions().len(), VersionList::MAX_VERSIONS);
+    }
+
+    #[test]
+    #[should_panic(expected = "already full")]
+    fn push_back_panics_when_full() {
+        let tmp = [ProtocolVersion::DRAFT; VersionList::MAX_VERSIONS];
+        let mut versions = VersionList::new(&tmp);
+        versions.push_back(ProtocolVersion::RFC);
+    }
+
+    #[test]
     fn unknown_versions_are_ignored() {
         // RFC 5.1.1: "Servers MUST ignore any unknown version numbers in the list
         // supplied by the client."
