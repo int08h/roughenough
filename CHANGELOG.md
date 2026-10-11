@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-11
+
+### Breaking
+
+- Docker: the runtime image runs as the distroless `nonroot` user (uid
+  65532) instead of root. Mounted seed files must be owned by uid 65532,
+  or the server cannot read them and refuses to start.
+- Server: `--num-threads 0` and `--rotation-interval 0` are rejected, and
+  `--metrics-interval` must be 1 to 86400 seconds. Configurations that
+  set these values no longer start.
+
 ### Security
 
 - Server: the listening socket no longer sets `SO_REUSEADDR`, which on
@@ -10,13 +21,10 @@
 - Server (Linux): a classic BPF socket filter drops runts, oversized
   datagrams, and datagrams without the ROUGHTIM magic in the kernel, so
   floods of them cannot fill worker receive buffers (`doc/BPF-FILTER.md`)
-- Docker: the runtime image runs as the distroless `nonroot` user (uid
-  65532); mounted seed files must be owned by that uid
+- Docker: the runtime image no longer runs as root (see Breaking)
 
 ### Fixed
 
-- Server: `--num-threads` and `--rotation-interval` reject zero;
-  `--metrics-interval` accepts 1 to 86400 seconds
 - Server: a backward wall-clock step no longer stalls metrics reporting
   until the clock catches up
 - Server: workers rotate the online key when the clock leaves its
