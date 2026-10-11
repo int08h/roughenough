@@ -9,6 +9,7 @@ use roughenough_protocol::util::ClockSource;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
 
+use crate::metrics::ReportSchedule;
 use crate::metrics::snapshot::{AggregatedMetrics, MetricsSnapshot, calc_aggregated_metrics};
 use crate::metrics::types::{NetworkMetrics, RequestMetrics, ResponseMetrics};
 
@@ -78,8 +79,10 @@ impl MetricsAggregator {
             self.reporting_interval.as_secs()
         );
 
-        let mut next_report = self.clock.epoch_seconds() + self.reporting_interval.as_secs();
-        let mut last_report_time = self.clock.epoch_seconds();
+        let mut schedule = ReportSchedule::new(
+            self.clock.epoch_seconds(),
+            self.reporting_interval.as_secs(),
+        );
 
         while self.keep_running.load(Ordering::Relaxed) {
             std::thread::sleep(Duration::from_millis(500));
@@ -89,14 +92,8 @@ impl MetricsAggregator {
                 self.accumulate(metrics);
             }
 
-            let now = self.clock.epoch_seconds();
-
-            if now >= next_report {
-                let elapsed_secs = (now - last_report_time) as f64;
-                self.report_metrics(elapsed_secs);
-
-                last_report_time = now;
-                next_report = now + self.reporting_interval.as_secs();
+            if let Some(elapsed_secs) = schedule.poll(self.clock.epoch_seconds()) {
+                self.report_metrics(elapsed_secs as f64);
             }
         }
 

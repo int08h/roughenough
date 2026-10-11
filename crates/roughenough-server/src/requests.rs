@@ -83,6 +83,10 @@ impl RequestHandler {
         self.responder.public_key()
     }
 
+    pub fn key_validity(&self) -> (u64, u64) {
+        self.responder.key_validity()
+    }
+
     #[allow(dead_code)] // used in tests, but compiler can't see that
     pub fn metrics(&self) -> RequestMetrics {
         self.metrics

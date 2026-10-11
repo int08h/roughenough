@@ -51,8 +51,8 @@ COPY crates crates
 RUN find crates -name '*.rs' -exec touch {} + \
     && cargo build --profile release-lto --bin roughenough_server --all-features
 
-# Runtime stage - minimal distroless (no shell)
-FROM gcr.io/distroless/cc-debian13
+# Runtime stage - minimal distroless (no shell), runs as uid/gid 65532
+FROM gcr.io/distroless/cc-debian13:nonroot
 
 # Copy binary from correct profile path
 COPY --from=builder /app/target/release-lto/roughenough_server /roughenough_server
@@ -60,7 +60,8 @@ COPY --from=builder /app/target/release-lto/roughenough_server /roughenough_serv
 EXPOSE 5319/udp
 
 # The server requires a seed file. Mount a mode-0400/0600 regular file
-# and append `--seed-file /run/secrets/roughenough.seed`, or set
-# ROUGHENOUGH_SEED_FILE to a valid seed file.
+# owned by uid 65532 and append `--seed-file /run/secrets/roughenough.seed`,
+# or set ROUGHENOUGH_SEED_FILE to a valid seed file. A --metrics-output
+# directory must also be writable by uid 65532.
 ENTRYPOINT ["/roughenough_server"]
 CMD ["--interface", "0.0.0.0", "--port", "5319"]

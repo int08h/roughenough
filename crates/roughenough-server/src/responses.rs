@@ -24,14 +24,13 @@ const _: () = assert!(RESPONSE_BUF_SIZE >= MAX_FRAMED_RESPONSE_SIZE);
 pub struct PendingRequest {
     nonce: Nonce,
     src_addr: SocketAddr,
-    /// The protocol version negotiated for this request's response
-    version: ProtocolVersion,
+    negotiated_version: ProtocolVersion,
 }
 
-/// Per-version response template. CERT persists until key rotation.
-/// SREP and SIG are re-signed once per batch (`batch_id` tracks which
-/// batch last signed them); PATH, NONC, and INDX are overwritten
-/// per request.
+/// Per-version response template:
+///  - CERT persists until key rotation.
+///  - SREP and SIG are re-signed once per batch (`batch_id` tracks which batch last signed them).
+///  - PATH, NONC, and INDX are overwritten per request.
 struct VersionTemplate {
     version: ProtocolVersion,
     batch_id: u64,
@@ -73,26 +72,25 @@ impl ResponseHandler {
         }
     }
 
-    /// Add a request to the pending batch. `version` is the version negotiated
-    /// for its response, one of [`ProtocolVersion::ADVERTISED`].
+    /// Add a request to the pending batch.
     pub fn add_request(
         &mut self,
         request_bytes: &[u8],
         request: Request,
-        version: ProtocolVersion,
+        negotiated_version: ProtocolVersion,
         src_addr: SocketAddr,
     ) {
         debug_assert!(self.requests.len() < self.batch_size, "Batch size exceeded");
         debug_assert!(
-            ProtocolVersion::ADVERTISED.contains(&version),
-            "{version:?} is not advertised"
+            ProtocolVersion::ADVERTISED.contains(&negotiated_version),
+            "{negotiated_version:?} is not advertised"
         );
 
         self.merkle_tree.push_leaf(request_bytes);
         self.requests.push(PendingRequest {
             nonce: *request.nonc(),
             src_addr,
-            version,
+            negotiated_version,
         });
     }
 
@@ -120,7 +118,7 @@ impl ResponseHandler {
         self.batch_id += 1;
 
         for index in 0..self.requests.len() {
-            let version = self.requests[index].version;
+            let version = self.requests[index].negotiated_version;
             let slot = self.template_slot_for(version, &merkle_root);
 
             self.merkle_path.clear();
@@ -181,6 +179,12 @@ impl ResponseHandler {
 
     pub fn public_key(&self) -> PublicKey {
         self.online_key.public_key()
+    }
+
+    /// The online key's delegation span, (MINT, MAXT)
+    pub fn key_validity(&self) -> (u64, u64) {
+        let dele = self.online_key.cert().dele();
+        (dele.mint(), dele.maxt())
     }
 
     pub fn long_term_public_key(&self) -> PublicKey {

@@ -9,6 +9,7 @@ use roughenough_common::crypto::random_bytes;
 use roughenough_protocol::util::ClockSource;
 use tracing::info;
 
+use crate::metrics::ReportSchedule;
 use crate::metrics::aggregator::WorkerMetrics;
 use crate::network::CollectResult::Empty;
 use crate::network::{CollectResult, NetworkHandler};
@@ -18,8 +19,17 @@ use crate::responses::ResponseHandler;
 /// Batches processed per wakeup before deadlines and the shutdown flag are re-checked.
 const MAX_BATCHES_PER_WAKEUP: usize = 8;
 
+/// Validity time span for the current online key, (MINT, rotate_at).
+/// `rotate_at` is jittered up to 255 random seconds before MAXT, so workers
+/// don't thundering-herd their key rotations and stall responses.
+fn rotation_window(req_handler: &RequestHandler) -> (u64, u64) {
+    let (mint, maxt) = req_handler.key_validity();
+    let jitter = u64::from(random_bytes::<1>()[0]);
+    (mint, maxt.saturating_sub(jitter))
+}
+
 /// Reports a worker thread's exit to the main thread. Held for the lifetime
-/// of the worker so `Drop` runs on normal return and panic unwind.
+/// of the worker thread.
 pub struct ExitGuard {
     worker_id: usize,
     exit_channel: Sender<usize>,
@@ -36,8 +46,6 @@ impl ExitGuard {
 
 impl Drop for ExitGuard {
     fn drop(&mut self) {
-        // The receiver disappears only when the main thread is already
-        // exiting; there is nothing left to notify then
         let _ = self.exit_channel.send(self.worker_id);
     }
 }
@@ -48,37 +56,37 @@ pub struct Worker {
     net_handler: NetworkHandler,
     req_handler: RequestHandler,
     metrics_channel: SyncSender<WorkerMetrics>,
-    key_replacement_interval: Duration,
-    metrics_publish_interval: Duration,
-    next_key_replacement: u64,
-    next_metrics_publication: u64,
+    metrics_schedule: ReportSchedule,
+    key_mint: u64,
+    rotate_at: u64,
     /// Test-only: when true the worker panics at the top of its next loop iteration
     #[cfg(feature = "test-utils")]
     test_panic_flag: Option<std::sync::Arc<AtomicBool>>,
 }
 
 impl Worker {
+    /// `clock` must be the same clock as the responder's `KeySource`
     pub fn new(
         worker_id: usize,
         batch_size: usize,
-        key_replacement_interval: Duration,
         responder: ResponseHandler,
         clock: ClockSource,
         metrics_channel: SyncSender<WorkerMetrics>,
         metrics_interval: Duration,
     ) -> Self {
         let now = clock.epoch_seconds();
+        let req_handler = RequestHandler::new(responder);
+        let (key_mint, rotate_at) = rotation_window(&req_handler);
 
         Self {
             worker_id,
             clock,
             metrics_channel,
             net_handler: NetworkHandler::new(batch_size),
-            req_handler: RequestHandler::new(responder),
-            key_replacement_interval,
-            metrics_publish_interval: metrics_interval,
-            next_key_replacement: now,
-            next_metrics_publication: now + metrics_interval.as_secs(),
+            req_handler,
+            metrics_schedule: ReportSchedule::new(now, metrics_interval.as_secs()),
+            key_mint,
+            rotate_at,
             #[cfg(feature = "test-utils")]
             test_panic_flag: None,
         }
@@ -99,6 +107,8 @@ impl Worker {
             .register(&mut sock, READER, mio::Interest::READABLE)
             .expect("failed to register socket");
 
+        self.log_online_key();
+
         let mut events = Events::with_capacity(1024);
         let poll_duration = Duration::from_millis(350);
 
@@ -114,11 +124,12 @@ impl Worker {
 
             let now = self.clock.epoch_seconds();
 
-            if now >= self.next_metrics_publication {
+            if self.metrics_schedule.poll(now).is_some() {
                 self.publish_metrics();
             }
 
-            if now >= self.next_key_replacement {
+            // Covers expiry and clock steps in either direction
+            if now < self.key_mint || now >= self.rotate_at {
                 self.replace_online_key();
             }
 
@@ -156,17 +167,16 @@ impl Worker {
 
     fn replace_online_key(&mut self) {
         self.req_handler.replace_online_key();
+        (self.key_mint, self.rotate_at) = rotation_window(&self.req_handler);
+        self.log_online_key();
+    }
 
+    fn log_online_key(&self) {
         info!(
             "worker-{}, online key {:?}",
             self.worker_id,
             self.req_handler.public_key()
         );
-
-        // jitter so that all worker threads don't thundering herd and replace their
-        // keys at the same time, stalling all responses
-        let jitter = u64::from(random_bytes::<1>()[0]);
-        self.next_key_replacement += self.key_replacement_interval.as_secs() - jitter;
     }
 
     fn publish_metrics(&mut self) {
@@ -182,8 +192,5 @@ impl Worker {
 
         self.net_handler.reset_metrics();
         self.req_handler.reset_metrics();
-
-        let now = self.clock.epoch_seconds();
-        self.next_metrics_publication = now + self.metrics_publish_interval.as_secs();
     }
 }

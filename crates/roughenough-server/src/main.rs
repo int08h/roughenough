@@ -38,6 +38,7 @@ use roughenough_server::metrics::snapshot::validate_metrics_directory;
 use roughenough_server::responses::ResponseHandler;
 use roughenough_server::seed_file;
 use roughenough_server::worker::{ExitGuard, Worker};
+use signal_hook::iterator::Signals;
 use socket2::{Domain, Socket, Type};
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::layer::SubscriberExt;
@@ -51,7 +52,6 @@ static KEEP_RUNNING: AtomicBool = AtomicBool::new(true);
 struct WorkerConfig {
     socket_addr: SocketAddr,
     batch_size: usize,
-    key_replacement_interval: Duration,
     metrics_interval: Duration,
 }
 
@@ -76,7 +76,6 @@ fn main() {
     let worker_config = WorkerConfig {
         socket_addr: args.udp_socket_addr(),
         batch_size: args.batch_size as usize,
-        key_replacement_interval: args.rotation_interval(),
         metrics_interval: Duration::from_secs(args.metrics_interval),
     };
 
@@ -212,7 +211,6 @@ fn worker_task(
     let mut worker = Worker::new(
         idx,
         config.batch_size,
-        config.key_replacement_interval,
         responder,
         clock,
         metrics_channel,
@@ -222,14 +220,19 @@ fn worker_task(
     worker.run(sock, &KEEP_RUNNING);
 }
 
-// Bind to the server port using SO_REUSEPORT and SO_REUSEADDR so the kernel will fairly
+// Bind to the server port using SO_REUSEPORT so the kernel will fairly
 // balance traffic to each worker. https://lwn.net/Articles/542629/
 fn bind_socket(sock_addr: SocketAddr) -> io::Result<MioUdpSocket> {
     let sock_domain = Domain::for_address(sock_addr);
     let socket = Socket::new(sock_domain, Type::DGRAM, None)?;
     socket.set_nonblocking(true)?;
-    socket.set_reuse_address(true)?;
     socket.set_reuse_port(true)?;
+
+    #[cfg(target_os = "linux")]
+    if let Err(e) = roughenough_server::filter::attach(&socket) {
+        warn!("BPF request filter not attached, continuing without it: {e}");
+    }
+
     socket.bind(&sock_addr.into())?;
 
     let std_socket: StdUdpSocket = socket.into();
@@ -238,14 +241,10 @@ fn bind_socket(sock_addr: SocketAddr) -> io::Result<MioUdpSocket> {
 }
 
 fn set_signal_handler() {
-    let mut signals = signal_hook::iterator::Signals::new([
-        signal_hook::consts::SIGINT,
-        signal_hook::consts::SIGTERM,
-    ])
-    .expect("Error setting signal handler");
+    let mut signals = Signals::new([signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM])
+        .expect("Error setting signal handler");
 
-    // detached on purpose: Signals::forever() never returns, so this thread
-    // must not be joined at shutdown
+    // detached on purpose: Signals::forever() never returns
     std::thread::Builder::new()
         .name("signal-handler".to_string())
         .spawn(move || {

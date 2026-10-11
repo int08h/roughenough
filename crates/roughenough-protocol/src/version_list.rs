@@ -73,6 +73,14 @@ impl VersionList {
         vers
     }
 
+    /// Pushes a version onto the end of the list. Panics if the list is full.
+    pub fn push_back(&mut self, version: ProtocolVersion) {
+        assert!(self.num_versions < Self::MAX_VERSIONS, "already full");
+
+        self.versions[self.num_versions] = version;
+        self.num_versions += 1;
+    }
+
     pub fn versions(&self) -> &[ProtocolVersion] {
         &self.versions[..self.num_versions]
     }
@@ -107,7 +115,6 @@ impl FromWireN for VersionList {
         let mut vers = VersionList::default();
         let mut prior_value = 0u32;
         let mut num_read = 0;
-        let mut num_stored = 0;
 
         while remaining >= size_of::<u32>() && num_read < Self::MAX_VERSIONS {
             let value = cursor.try_get_u32_le()?;
@@ -123,8 +130,7 @@ impl FromWireN for VersionList {
             // RFC 5.1.1: "Servers MUST ignore any unknown version numbers in the
             // list supplied by the client."
             if let Some(version) = ProtocolVersion::from_u32(value) {
-                vers.versions[num_stored] = version;
-                num_stored += 1;
+                vers.push_back(version);
             }
 
             prior_value = value;
@@ -132,7 +138,6 @@ impl FromWireN for VersionList {
             remaining -= size_of::<u32>();
         }
 
-        vers.num_versions = num_stored;
         Ok(vers)
     }
 }
@@ -195,6 +200,41 @@ mod tests {
 
         // overly long input list is truncated to MAX_VERSIONS
         assert_eq!(versions.versions().len(), VersionList::MAX_VERSIONS);
+    }
+
+    #[test]
+    fn push_back_appends_in_order() {
+        let mut versions = VersionList::default();
+
+        versions.push_back(ProtocolVersion::RFC);
+        assert_eq!(versions.versions(), &[ProtocolVersion::RFC]);
+        assert!(versions.is_supported(ProtocolVersion::RFC));
+        assert!(!versions.is_supported(ProtocolVersion::DRAFT));
+
+        versions.push_back(ProtocolVersion::DRAFT);
+        assert_eq!(
+            versions.versions(),
+            &[ProtocolVersion::RFC, ProtocolVersion::DRAFT]
+        );
+        assert!(versions.is_supported(ProtocolVersion::DRAFT));
+        assert_eq!(versions.wire_size(), 2 * size_of::<ProtocolVersion>());
+    }
+
+    #[test]
+    fn push_back_matches_new() {
+        let mut pushed = VersionList::new(&[ProtocolVersion::RFC]);
+        pushed.push_back(ProtocolVersion::DRAFT);
+
+        let built = VersionList::new(&[ProtocolVersion::RFC, ProtocolVersion::DRAFT]);
+        assert_eq!(pushed, built);
+    }
+
+    #[test]
+    #[should_panic(expected = "already full")]
+    fn push_back_panics_when_full() {
+        let tmp = [ProtocolVersion::DRAFT; VersionList::MAX_VERSIONS];
+        let mut versions = VersionList::new(&tmp);
+        versions.push_back(ProtocolVersion::RFC);
     }
 
     #[test]

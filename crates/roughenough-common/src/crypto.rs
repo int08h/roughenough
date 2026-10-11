@@ -7,9 +7,7 @@ use roughenough_protocol::tags::{Nonce, PublicKey, SrvCommitment};
 /// Returns `SHA512(prior_response_frame || rand)[0:32]`
 ///
 /// `prior_response_frame` is the prior response packet exactly as received,
-/// including the "ROUGHTIM" framing. The received bytes are used because a
-/// response may contain tags unknown to this implementation, which a
-/// re-serialization of the parsed response would not reproduce.
+/// including the "ROUGHTIM" framing.
 pub fn calculate_chained_nonce(prior_response_frame: &[u8], rand: &[u8]) -> Nonce {
     let mut chain_value = prior_response_frame.to_vec();
     chain_value.extend_from_slice(rand);

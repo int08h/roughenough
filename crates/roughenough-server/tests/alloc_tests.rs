@@ -100,8 +100,7 @@ fn mio_loop_steady_state_is_allocation_free() {
     let mut args = Args::try_parse_from(["roughenough_server", "--insecure-zero-seed"]).unwrap();
     // deadline work allocates (a metrics snapshot clones a Vec-bearing
     // struct; rotation regenerates the online key): pin both far beyond the
-    // measurement window. Rotation still fires once at startup, inside
-    // warmup.
+    // measurement window.
     args.metrics_interval = 3600;
     args.rotation_interval = 24;
     args.batch_size = 1;
@@ -113,7 +112,6 @@ fn mio_loop_steady_state_is_allocation_free() {
     let mut worker = Worker::new(
         0,
         args.batch_size as usize,
-        args.rotation_interval(),
         responder,
         ClockSource::System,
         tx,

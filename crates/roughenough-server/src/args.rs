@@ -38,7 +38,8 @@ pub struct Args {
         long,
         value_name = "N",
         env = "ROUGHENOUGH_NUM_THREADS",
-        default_value_t = default_num_threads()
+        default_value_t = default_num_threads(),
+        value_parser = clap::value_parser!(u16).range(1..)
     )]
     pub num_threads: u16,
 
@@ -60,16 +61,18 @@ pub struct Args {
         long,
         value_name = "HOURS",
         env = "ROUGHENOUGH_ROTATION_INTERVAL",
-        default_value = "24"
+        default_value = "24",
+        value_parser = clap::value_parser!(u16).range(1..)
     )]
     pub rotation_interval: u16,
 
-    /// How often (in seconds) to log operational information
+    /// How often (in seconds, at most one day) to log operational information
     #[clap(
         long,
         value_name = "SECONDS",
         env = "ROUGHENOUGH_METRICS_INTERVAL",
-        default_value = "60"
+        default_value = "60",
+        value_parser = clap::value_parser!(u64).range(1..=86_400)
     )]
     pub metrics_interval: u64,
 
@@ -201,6 +204,32 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(args.rotation_interval(), Duration::from_secs(65535 * 3600));
+    }
+
+    #[test]
+    fn out_of_range_intervals_and_thread_counts_are_rejected() {
+        for bad in [
+            ["--num-threads", "0"],
+            ["--rotation-interval", "0"],
+            ["--metrics-interval", "0"],
+            ["--metrics-interval", "86401"],
+        ] {
+            let mut argv = vec!["prog", "--insecure-zero-seed"];
+            argv.extend(bad);
+            assert!(Args::try_parse_from(&argv).is_err(), "{bad:?} accepted");
+        }
+
+        let args = Args::try_parse_from([
+            "prog",
+            "--insecure-zero-seed",
+            "--num-threads",
+            "1",
+            "--metrics-interval",
+            "86400",
+        ])
+        .unwrap();
+        assert_eq!(args.num_threads, 1);
+        assert_eq!(args.metrics_interval, 86_400);
     }
 
     #[test]
