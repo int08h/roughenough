@@ -36,8 +36,7 @@ impl ProtocolVersion {
     /// wire order (required of VERS tag by RFC 5.2.5).
     pub const ADVERTISED: [ProtocolVersion; 1] = [Self::RFC];
 
-    // RFC 10049 5.2.1 and 5.2.6. Draft 0x8000000c used "RoughTime"; the RFC
-    // changed the case for version 1. Both include a terminating zero byte.
+    // RFC 10049 5.2.1 and 5.2.6.
     const RFC_SREP_PREFIX: &'static [u8] = b"Roughtime v1 response signature\x00";
     const RFC_DELE_PREFIX: &'static [u8] = b"Roughtime v1 delegation signature\x00";
     const DRAFT_SREP_PREFIX: &'static [u8] = b"RoughTime v1 response signature\x00";
