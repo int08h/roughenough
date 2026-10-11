@@ -38,6 +38,7 @@ use roughenough_server::metrics::snapshot::validate_metrics_directory;
 use roughenough_server::responses::ResponseHandler;
 use roughenough_server::seed_file;
 use roughenough_server::worker::{ExitGuard, Worker};
+use signal_hook::iterator::Signals;
 use socket2::{Domain, Socket, Type};
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::layer::SubscriberExt;
@@ -221,15 +222,12 @@ fn worker_task(
 
 // Bind to the server port using SO_REUSEPORT so the kernel will fairly
 // balance traffic to each worker. https://lwn.net/Articles/542629/
-// No SO_REUSEADDR: unlike SO_REUSEPORT it has no UID check on Linux, letting
-// other local users bind the port and capture traffic.
 fn bind_socket(sock_addr: SocketAddr) -> io::Result<MioUdpSocket> {
     let sock_domain = Domain::for_address(sock_addr);
     let socket = Socket::new(sock_domain, Type::DGRAM, None)?;
     socket.set_nonblocking(true)?;
     socket.set_reuse_port(true)?;
 
-    // Load shedding only; userspace checks still reject what the filter misses
     #[cfg(target_os = "linux")]
     if let Err(e) = roughenough_server::filter::attach(&socket) {
         warn!("BPF request filter not attached, continuing without it: {e}");
@@ -243,14 +241,10 @@ fn bind_socket(sock_addr: SocketAddr) -> io::Result<MioUdpSocket> {
 }
 
 fn set_signal_handler() {
-    let mut signals = signal_hook::iterator::Signals::new([
-        signal_hook::consts::SIGINT,
-        signal_hook::consts::SIGTERM,
-    ])
-    .expect("Error setting signal handler");
+    let mut signals = Signals::new([signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM])
+        .expect("Error setting signal handler");
 
-    // detached on purpose: Signals::forever() never returns, so this thread
-    // must not be joined at shutdown
+    // detached on purpose: Signals::forever() never returns
     std::thread::Builder::new()
         .name("signal-handler".to_string())
         .spawn(move || {

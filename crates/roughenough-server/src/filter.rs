@@ -1,5 +1,5 @@
 //! Classic BPF socket filter for early, in-kernel drop of datagrams which are
-//! definitely not valid requests. Evaluated prior to the packet being queued on
+//! definitely not valid requests. Evaluated prior to the packet being enqueued on
 //! the worker's socket.
 //!
 //! This is 'classic' BPF and not eBPF as classic doesn't require elevated

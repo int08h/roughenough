@@ -40,10 +40,11 @@ impl MeasurementSequence {
     pub fn run(&mut self, rounds: usize) -> Result<Vec<Measurement>, ClientError> {
         for client in &self.clients {
             if client.public_key.is_none() {
-                return Err(ClientError::InvalidConfiguration(format!(
+                let msg = format!(
                     "measurement sequence requires all servers to have public keys ('{}' missing public key)",
                     client.hostname
-                )));
+                );
+                return Err(ClientError::InvalidConfiguration(msg));
             }
         }
 
@@ -75,7 +76,7 @@ impl MeasurementSequence {
         };
 
         let request_bytes = request.as_frame_bytes()?;
-        let _nbytes = client.transport.send(&request_bytes, client.server)?;
+        let _ = client.transport.send(&request_bytes, client.server)?;
 
         let (response, response_bytes) = Self::recv_validated(client, &request_bytes)?;
 

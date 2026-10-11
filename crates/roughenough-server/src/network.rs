@@ -65,9 +65,6 @@ impl NetworkHandler {
         for _ in 0..self.batch_size {
             match sock.recv_from(&mut self.recv_buf) {
                 Ok((nbytes, _)) if nbytes > request::MAX_REQUEST_SIZE => {
-                    // dropped with no response, matching the RFC posture of
-                    // ignoring invalid requests (see `recv_buf` for why the
-                    // size cutoff exists)
                     self.metrics.num_oversized_dropped += 1;
                 }
                 Ok((nbytes, src_addr)) => {
@@ -79,12 +76,6 @@ impl NetworkHandler {
         MoreData
     }
 
-    /// Both error classes send the worker loop back to `poll`: WouldBlock
-    /// means the socket is drained, and any other error must not re-enter the
-    /// receive loop without polling, which would busy-spin a worker at 100%
-    /// CPU if the error is persistent. Deliberately not logged (a persistent
-    /// error would flood the logs); the counters surface it through the
-    /// periodic metrics reporting.
     fn record_recv_error(&mut self, error: &io::Error) -> CollectResult {
         if error.kind() == io::ErrorKind::WouldBlock {
             self.metrics.num_recv_wouldblock += 1;
@@ -105,9 +96,6 @@ impl NetworkHandler {
         }
     }
 
-    /// Stage a response for the next `flush_responses`. Batching the sends
-    /// lets Linux deliver a whole batch with one `sendmmsg` syscall instead
-    /// of one `send_to` per response.
     pub fn queue_response(&mut self, data: &[u8], addr: SocketAddr) {
         let start = self.send_bufs.len();
         self.send_bufs.extend_from_slice(data);
@@ -117,11 +105,7 @@ impl NetworkHandler {
         });
     }
 
-    /// Send every queued response. On Linux the queue goes out via
-    /// `sendmmsg`, resuming after partial sends; a send error drops the
-    /// remaining queued responses (UDP is best-effort, and the plausible
-    /// errors on an unconnected nonblocking socket would fail the rest of
-    /// the batch too). Elsewhere each response is sent individually.
+    /// Send all queued responses.
     pub fn flush_responses(&mut self, sock: &mut MioUdpSocket) {
         #[cfg(target_os = "linux")]
         {
@@ -177,8 +161,7 @@ where
     (sent, msgs.len() - sent)
 }
 
-/// `sendmmsg` support. The only unsafe code in this crate lives here; the
-/// crate-level `#![deny(unsafe_code)]` is relaxed for this module alone.
+/// `sendmmsg` support. The only unsafe code in this crate lives here.
 #[cfg(target_os = "linux")]
 #[allow(unsafe_code)]
 mod mmsg {
@@ -253,7 +236,6 @@ mod mmsg {
             }
 
             for (addr, iovec) in addrs.iter().zip(iovecs.iter_mut()) {
-                // zeroed: msghdr has platform-dependent padding fields
                 let mut msg_hdr: libc::msghdr = unsafe { std::mem::zeroed() };
                 msg_hdr.msg_name = addr.as_ptr() as *mut libc::c_void;
                 msg_hdr.msg_namelen = addr.len();

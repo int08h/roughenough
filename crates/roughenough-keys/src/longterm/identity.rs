@@ -49,14 +49,14 @@ impl LongTermIdentity {
         let pubkey = PublicKey::from(olk.public_key_bytes());
         let dele = Delegation::new(pubkey, now, validity_length);
 
-        // One CERT serves every response, so every advertised version must
-        // share the DELE context string
         let dele_prefix = ProtocolVersion::RFC.dele_prefix();
         debug_assert!(
             ProtocolVersion::ADVERTISED
                 .iter()
-                .all(|v| v.dele_prefix() == dele_prefix)
+                .all(|v| v.dele_prefix() == dele_prefix),
+            "all advertised versions must share the same DELE context string"
         );
+
         let mut to_sign = dele_prefix.to_vec();
         to_sign.extend_from_slice(&dele.as_bytes().expect("DELE serialization should not fail"));
 
