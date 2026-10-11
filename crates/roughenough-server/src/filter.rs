@@ -52,15 +52,15 @@ const fn insn(code: u16, jt: u8, jf: u8, k: u32) -> Insn {
 /// instructions skipped after the jump.
 #[rustfmt::skip]
 pub const PROGRAM: [Insn; 9] = [
-    insn(BPF_LD  | BPF_W   | BPF_LEN, 0, 0, 0),
-    insn(BPF_JMP | BPF_JGT | BPF_K  , 6, 0, MAX_LEN),
-    insn(BPF_JMP | BPF_JGE | BPF_K  , 0, 5, MIN_LEN),
-    insn(BPF_LD  | BPF_W   | BPF_ABS, 0, 0, UDP_HEADER_LEN),
-    insn(BPF_JMP | BPF_JEQ | BPF_K  , 0, 3, MAGIC_HI),
-    insn(BPF_LD  | BPF_W   | BPF_ABS, 0, 0, UDP_HEADER_LEN + 4),
-    insn(BPF_JMP | BPF_JEQ | BPF_K  , 0, 1, MAGIC_LO),
-    insn(BPF_RET | BPF_K            , 0, 0, ACCEPT),
-    insn(BPF_RET | BPF_K            , 0, 0, DROP),
+    insn(BPF_LD  | BPF_W   | BPF_LEN, 0, 0, 0),                  // 0: A = datagram length, UDP header included
+    insn(BPF_JMP | BPF_JGT | BPF_K  , 6, 0, MAX_LEN),            // 1: A > MAX_LEN: goto 8 (drop)
+    insn(BPF_JMP | BPF_JGE | BPF_K  , 0, 5, MIN_LEN),            // 2: A < MIN_LEN: goto 8 (drop)
+    insn(BPF_LD  | BPF_W   | BPF_ABS, 0, 0, UDP_HEADER_LEN),     // 3: A = payload bytes 0..4, big-endian
+    insn(BPF_JMP | BPF_JEQ | BPF_K  , 0, 3, MAGIC_HI),           // 4: A != "ROUG": goto 8 (drop)
+    insn(BPF_LD  | BPF_W   | BPF_ABS, 0, 0, UDP_HEADER_LEN + 4), // 5: A = payload bytes 4..8, big-endian
+    insn(BPF_JMP | BPF_JEQ | BPF_K  , 0, 1, MAGIC_LO),           // 6: A != "HTIM": goto 8 (drop)
+    insn(BPF_RET | BPF_K            , 0, 0, ACCEPT),             // 7: accept, keeping the whole datagram
+    insn(BPF_RET | BPF_K            , 0, 0, DROP),               // 8: drop
 ];
 
 /// Attach [`PROGRAM`] to `socket`. Call before `bind` so no datagram is
