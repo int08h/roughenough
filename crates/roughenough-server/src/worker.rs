@@ -19,9 +19,9 @@ use crate::responses::ResponseHandler;
 /// Batches processed per wakeup before deadlines and the shutdown flag are re-checked.
 const MAX_BATCHES_PER_WAKEUP: usize = 8;
 
-/// The span in which to use the current online key, (MINT, rotate_at).
-/// `rotate_at` is up to 255 random seconds before MAXT, so workers don't
-/// thundering-herd their key rotations and stall all responses at once.
+/// Validity time span for the current online key, (MINT, rotate_at).
+/// `rotate_at` is jittered up to 255 random seconds before MAXT, so workers
+/// don't thundering-herd their key rotations and stall responses.
 fn rotation_window(req_handler: &RequestHandler) -> (u64, u64) {
     let (mint, maxt) = req_handler.key_validity();
     let jitter = u64::from(random_bytes::<1>()[0]);
@@ -29,7 +29,7 @@ fn rotation_window(req_handler: &RequestHandler) -> (u64, u64) {
 }
 
 /// Reports a worker thread's exit to the main thread. Held for the lifetime
-/// of the worker so `Drop` runs on normal return and panic unwind.
+/// of the worker thread.
 pub struct ExitGuard {
     worker_id: usize,
     exit_channel: Sender<usize>,
@@ -46,8 +46,6 @@ impl ExitGuard {
 
 impl Drop for ExitGuard {
     fn drop(&mut self) {
-        // The receiver disappears only when the main thread is already
-        // exiting; there is nothing left to notify then
         let _ = self.exit_channel.send(self.worker_id);
     }
 }
@@ -67,8 +65,7 @@ pub struct Worker {
 }
 
 impl Worker {
-    /// `clock` must be the clock of the responder's `KeySource`: the online
-    /// key's validity is checked against it.
+    /// `clock` must be the same clock as the responder's `KeySource`
     pub fn new(
         worker_id: usize,
         batch_size: usize,

@@ -18,7 +18,7 @@ use crate::wire::{FromWire, ToWire};
 ///     range and differs from version 1 only in its signature context strings.
 ///
 /// Every other value, including the rest of the experimental range, is unknown.
-/// The server answers only the versions in [`Self::ADVERTISED`]; the client can
+/// The server answers only the versions in [`Self::ADVERTISED`]. The client can
 /// opt into [`Self::DRAFT`] to reach servers that predate the RFC.
 #[repr(transparent)]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -61,7 +61,7 @@ impl ProtocolVersion {
     /// Choose the version for a response: the highest advertised version
     /// among those the client offered (RFC 5.2.5: the response version SHOULD
     /// be one supplied by the client). Returns `None` when there is no version
-    /// in common; RFC 5.1.1 permits ignoring such requests.
+    /// in common.
     pub fn negotiate(offered: &[ProtocolVersion]) -> Option<ProtocolVersion> {
         Self::ADVERTISED
             .iter()

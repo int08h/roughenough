@@ -14,10 +14,6 @@ pub use crate::online::sshagent::*;
 
 /// Seed backends keep the seed/long-term key available for on-line use while protecting it from
 /// unauthorized access.
-///
-/// `Send` is a supertrait so `Box<dyn SeedBackend>` can cross thread boundaries (the server
-/// shares one long-term identity across worker threads); every backend must prove it to the
-/// compiler rather than relying on hand-written `unsafe impl`s downstream.
 #[allow(clippy::len_without_is_empty)]
 pub trait SeedBackend: Send {
     fn store_seed(&mut self, seed: Seed) -> Result<(), BackendError>;
@@ -144,7 +140,7 @@ pub fn try_choose_backend(backend: &str) -> Result<Box<dyn SeedBackend>, Backend
     }
 }
 
-/// Environment variable naming the PKCS#11 module library to load.
+/// Environment variable choosing which PKCS#11 module library to load.
 pub const PKCS11_LIBRARY_ENV: &str = "ROUGHENOUGH_PKCS11_LIBRARY";
 /// Environment variable selecting the token slot index; defaults to 0 when unset.
 pub const PKCS11_SLOT_ENV: &str = "ROUGHENOUGH_PKCS11_SLOT";
