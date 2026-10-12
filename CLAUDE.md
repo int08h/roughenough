@@ -8,27 +8,27 @@ Rust implementation of the Roughtime protocol -- a cryptographic time synchroniz
 
 ## Architecture
 
-Cargo workspace with eight crates:
+Cargo workspace with eight crates under `crates/roughenough-*`:
 
 - **protocol**: Core wire format, request/response types, tag definitions, TLV encoding
 - **server**: UDP server using mio for async I/O, with batching and Merkle tree signatures
 - **client**: CLI client with output formatting, validation, optional malfeasance reporting (`reporting` feature)
 - **common**: Shared cryptography and encoding utilities
 - **merkle**: Merkle tree with Roughtime-specific leaf/node tweaks (SHA-512, first 32 bytes)
-- **keys**: Key material handling with backend options (Linux KRS, SSH agent, PKCS#11, AWS KMS/Secrets Manager, GCP KMS/Secret Manager)
+- **keys**: Key material handling. Online seed backends: in-memory (default), Linux KRS, SSH agent, PKCS#11. Long-term seed protection via the `roughenough_keys` tool: AWS KMS/Secrets Manager, GCP KMS/Secret Manager
 - **reporting-server**: Web server for malfeasance reports 
-- **integration**: End-to-end tests spawning actual server/client processes
+- **integration**: End-to-end tests spawning actual server/client processes; also a load generator (`roughenough_load_test`)
 
-Fuzzing targets in **fuzz**: `fuzz_request_parse`, `fuzz_response_parse`, `fuzz_structured`.
+Fuzzing targets in **fuzz** (excluded from the workspace): `fuzz-request-parse`, `fuzz-response-parse`, `fuzz-structured`.
 
 ## Protocol Implementation Notes
 
-See `doc/RFC-10049.txt` for protocol details. See `doc/PROTECTION.md` for seed protection strategies.
+See `doc/RFC-10049.txt` for protocol details, `doc/REQUEST-FLOW.md` for the end-to-end request path through the server, and `doc/PROTECTION.md` for seed protection strategies.
 
 - Wire encoding: 8-byte 'ROUGHTIM' magic, 4-byte LE length, then TLV message bytes
 - Only Requests and Responses are framed; no other messages use framed encoding
 - Response sizes vary with Merkle tree PATH length
-- Server uses callback-based batching for O(1) allocations
+- Server uses callback-based batching with zero steady-state allocations on the hot path (enforced by `crates/roughenough-server/tests/alloc_tests.rs`)
 - Little-endian encoding throughout
 - All crates use Rust 2024 edition
 
@@ -43,8 +43,8 @@ cargo test                     # Test default members
 cargo test --workspace         # Test all crates including reporting-server
 cargo test -p roughenough-protocol    # Test specific crate
 
-# Integration test (build first, then run from project root)
-cargo build && target/debug/roughenough_integration_test
+# Integration test (tests both debug and release binaries; run from project root)
+cargo build && cargo build --release && target/debug/roughenough_integration_test
 
 # Reporting server (not a default member; build and test with -p)
 cargo build -p roughenough-reporting-server
@@ -58,14 +58,15 @@ cargo check -p roughenough-keys --features longterm-aws-kms
 ### Code Quality
 ```bash
 cargo +nightly fmt             # Format (requires nightly)
-cargo clippy                   # Lint
+cargo +nightly fmt --check     # Format check (as pre-commit runs it)
+cargo clippy --workspace --all-targets --all-features -- -D warnings   # Lint (as CI/pre-commit run it)
 cargo check                    # Type check
 ```
 
 ### Benchmarking
 ```bash
 cargo bench                            # All benchmarks
-cargo bench -p roughenough-merkle      # Specific crate
+cargo bench -p roughenough-merkle      # Specific crate (merkle, server, protocol have benches)
 ```
 
 ### Fuzzing
@@ -85,7 +86,7 @@ cargo +nightly fuzz cmin <target>           # Minimize corpus
 
 ### Running Binaries
 ```bash
-cargo run --bin roughenough_server          # Server
+cargo run --bin roughenough_server -- --insecure-zero-seed   # Server (testing; production needs --seed-file)
 cargo run --bin roughenough_client -- -h    # Client (see --help for options)
 cargo run -p roughenough-keys --bin roughenough_keys -- --help  # Keys tool
 cargo run -p roughenough-reporting-server --bin roughenough_reporting_server  # Reporting server (port 3000)
@@ -104,7 +105,7 @@ Comments explain **why**, not what. Do not narrate code or duplicate names in En
 - Measure baseline before changes, compare after. Reject changes that do not show improvement.
 - NEVER use averages. Use percentiles, medians, and distributions.
 - Show all measurements, not cherry-picked results.
-- Run `cargo bench -p roughenough-merkle` for merkle changes, `cargo bench -p roughenough-server` for server changes.
+- Run `cargo bench -p roughenough-merkle` for merkle changes, `cargo bench -p roughenough-server` for server changes, `cargo bench -p roughenough-protocol` for wire-format changes.
 
 ## Communication Style
 
@@ -117,11 +118,12 @@ Comments explain **why**, not what. Do not narrate code or duplicate names in En
 
 - NEVER ignore or disable tests to make them pass
 - ALWAYS benchmark before and after performance changes
-- Run `cargo clippy` and `cargo +nightly fmt` before committing
+- Run `cargo clippy --workspace --all-targets --all-features -- -D warnings` and `cargo +nightly fmt` before committing (matches CI and pre-commit)
 - Include Cargo.lock changes in commits when dependencies change
 - Do not include "committed by Claude" language in commit messages
 - Use todo lists for complex tasks
 - Reference `doc/RFC-10049.txt` for protocol questions
 - Reference `doc/PROTECTION.md` for key management questions
 - Reference `doc/BPF-FILTER.md` for the Linux socket filter and how to test it
+- Reference `doc/RELEASE-CHECKLIST.md` when preparing a release
 
