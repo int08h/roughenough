@@ -27,16 +27,6 @@ pub struct NetworkHandler {
     mmsg_state: mmsg::MmsgState,
 }
 
-impl std::fmt::Debug for NetworkHandler {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NetworkHandler")
-            .field("batch_size", &self.batch_size)
-            .field("metrics", &self.metrics)
-            .field("queued_responses", &self.send_msgs.len())
-            .finish()
-    }
-}
-
 #[derive(Debug, Eq, PartialEq)]
 pub enum CollectResult {
     /// Socket was drained, no more data
@@ -83,17 +73,6 @@ impl NetworkHandler {
             self.metrics.num_failed_recvs += 1;
         }
         Empty
-    }
-
-    pub fn send_response(&mut self, sock: &mut MioUdpSocket, data: &[u8], addr: SocketAddr) {
-        match sock.send_to(data, addr) {
-            Ok(_) => {
-                self.metrics.num_successful_sends += 1;
-            }
-            Err(_) => {
-                self.metrics.num_failed_sends += 1;
-            }
-        }
     }
 
     pub fn queue_response(&mut self, data: &[u8], addr: SocketAddr) {

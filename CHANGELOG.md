@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Breaking
+
+- Server library: `NetworkHandler::send_response` and `NetworkHandler`'s
+  `Debug` impl were removed; use `queue_response` + `flush_responses`
+
 ### Fixed
 
 - Keys: `roughenough_keys open` exits non-zero instead of printing a
