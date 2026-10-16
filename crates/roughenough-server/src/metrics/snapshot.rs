@@ -95,10 +95,6 @@ pub fn calc_aggregated_metrics(
         total_responses += worker.response;
     }
 
-    let total_request_count = total_requests.num_ok_requests
-        + total_requests.num_bad_requests
-        + total_requests.num_runt_requests;
-
     let interval_responses = total_responses
         .num_responses
         .saturating_sub(prev_num_responses);
@@ -117,7 +113,7 @@ pub fn calc_aggregated_metrics(
         network: total_network,
         requests: total_requests,
         responses: total_responses,
-        total_requests: total_request_count,
+        total_requests: total_requests.total(),
     }
 }
 
@@ -233,6 +229,27 @@ mod tests {
             (deserialized.totals.responses_per_second - expected_responses_per_sec).abs() < 0.01
         );
         assert!((deserialized.totals.mbytes_per_second - expected_mbytes_per_sec).abs() < 0.01);
+    }
+
+    #[test]
+    fn total_requests_counts_ignored_requests() {
+        let worker = WorkerMetrics {
+            worker_id: 0,
+            network: NetworkMetrics::default(),
+            request: RequestMetrics {
+                num_ok_requests: 1,
+                num_bad_requests: 1,
+                num_runt_requests: 1,
+                num_oversized_requests: 1,
+                num_srv_mismatch: 1,
+                num_no_common_version: 1,
+            },
+            response: ResponseMetrics::default(),
+        };
+
+        // an oversized request is also counted as ok or bad, so it adds nothing
+        let aggregated = calc_aggregated_metrics(60.0, &[worker], 0, 0);
+        assert_eq!(aggregated.total_requests, 5);
     }
 
     #[test]

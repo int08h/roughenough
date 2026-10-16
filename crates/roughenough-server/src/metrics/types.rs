@@ -39,6 +39,18 @@ pub struct RequestMetrics {
     pub num_no_common_version: usize,
 }
 
+impl RequestMetrics {
+    /// Every request that reached the request path. Oversized requests are
+    /// also counted as ok or bad, so they are not added again.
+    pub fn total(&self) -> usize {
+        self.num_ok_requests
+            + self.num_bad_requests
+            + self.num_runt_requests
+            + self.num_srv_mismatch
+            + self.num_no_common_version
+    }
+}
+
 impl AddAssign for RequestMetrics {
     fn add_assign(&mut self, rhs: Self) {
         self.num_ok_requests += rhs.num_ok_requests;

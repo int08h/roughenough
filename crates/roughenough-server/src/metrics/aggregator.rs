@@ -141,12 +141,14 @@ impl MetricsAggregator {
             aggregated.network.num_oversized_dropped,
         );
         info!(
-            "Requests: total={} ok={} bad={} runt={} oversized={}",
+            "Requests: total={} ok={} bad={} runt={} oversized={} srv_mismatch={} no_common_version={}",
             aggregated.total_requests,
             aggregated.requests.num_ok_requests,
             aggregated.requests.num_bad_requests,
             aggregated.requests.num_runt_requests,
-            aggregated.requests.num_oversized_requests
+            aggregated.requests.num_oversized_requests,
+            aggregated.requests.num_srv_mismatch,
+            aggregated.requests.num_no_common_version,
         );
         info!(
             "Responses: total={} bytes={:.1}MB, batch sizes={}",

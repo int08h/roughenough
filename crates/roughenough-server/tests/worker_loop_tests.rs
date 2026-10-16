@@ -349,3 +349,62 @@ fn worker_publishes_metrics() {
         assert!(saw_request, "no metrics snapshot contained the request");
     });
 }
+
+#[test]
+fn worker_metrics_survive_full_channel() {
+    let keep_running = AtomicBool::new(true);
+    let (tx, rx) = sync_channel::<WorkerMetrics>(1);
+    let mut args = test_args();
+    args.metrics_interval = 1;
+
+    // fill the channel so the worker's first publish finds it full
+    tx.send(WorkerMetrics {
+        worker_id: 99,
+        network: Default::default(),
+        request: Default::default(),
+        response: Default::default(),
+    })
+    .unwrap();
+
+    let (mut worker, sock, server_addr) = new_worker(args, tx.clone());
+
+    let snapshots: Vec<WorkerMetrics> = thread::scope(|s| {
+        let worker_thread = s.spawn(|| worker.run(sock, &keep_running));
+
+        let client = UdpSocket::bind("127.0.0.1:0").unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_millis(500)))
+            .unwrap();
+
+        // exactly two answered requests, so the expected count is exactly 2
+        for i in 0..2u8 {
+            client.send_to(&request_bytes(i), server_addr).unwrap();
+            let mut buf = [0u8; 1500];
+            if let Err(e) = client.recv_from(&mut buf) {
+                panic!("no reply to request {i}: {e}");
+            }
+        }
+
+        // the worker publishes into the full channel and that snapshot is dropped
+        thread::sleep(Duration::from_millis(1500));
+
+        let dummy = rx.recv().unwrap();
+        assert_eq!(dummy.worker_id, 99);
+
+        // the channel has room now, so the next publish succeeds
+        thread::sleep(Duration::from_millis(1500));
+
+        keep_running.store(false, Release);
+        worker_thread.join().expect("worker thread panicked");
+
+        rx.try_iter().collect()
+    });
+
+    let num_ok: usize = snapshots
+        .iter()
+        .filter(|m| m.worker_id != 99)
+        .map(|m| m.request.num_ok_requests)
+        .sum();
+
+    assert_eq!(num_ok, 2, "ok requests summed over published snapshots");
+}

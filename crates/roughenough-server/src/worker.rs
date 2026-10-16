@@ -187,10 +187,11 @@ impl Worker {
             response: self.req_handler.response_metrics(),
         };
 
-        // Send snapshot, ignoring if channel is full
-        let _ = self.metrics_channel.try_send(snapshot);
-
-        self.net_handler.reset_metrics();
-        self.req_handler.reset_metrics();
+        // On failure the counters keep accumulating and ride along with the next
+        // snapshot, so a full channel delays counts instead of losing them
+        if self.metrics_channel.try_send(snapshot).is_ok() {
+            self.net_handler.reset_metrics();
+            self.req_handler.reset_metrics();
+        }
     }
 }

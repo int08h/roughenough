@@ -11,6 +11,9 @@
   `--seed-file` (and rejects it), since the token holds the long-term
   key. Keys: the PKCS#11 backend reads the public key once at startup
   and reports token errors instead of panicking
+- Server: worker metrics are no longer lost when the metrics channel is
+  full, and `total_requests` (JSON and log) now includes requests dropped
+  for an SRV mismatch or no common version
 - Client: `--timeout` is honored when querying a single server (it was
   fixed at 2 seconds)
 - Client: `--timeout 0` is rejected instead of panicking
