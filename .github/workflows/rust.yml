@@ -116,10 +116,8 @@ jobs:
           - ""
           - "--features online-pkcs11"
           - "--features online-ssh-agent"
-          - "--features longterm-aws-kms"
-          - "--features longterm-gcp-kms"
-          - "--features longterm-aws-secret-manager"
-          - "--features longterm-gcp-secret-manager"
+          - "--features longterm-aws"
+          - "--features longterm-gcp"
     steps:
       - uses: actions/checkout@v7
 

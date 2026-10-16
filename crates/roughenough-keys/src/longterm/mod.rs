@@ -1,12 +1,12 @@
-#[cfg(feature = "longterm-aws-kms")]
+#[cfg(feature = "longterm-aws")]
 pub mod awskms;
-#[cfg(feature = "longterm-aws-secret-manager")]
+#[cfg(feature = "longterm-aws")]
 pub mod awssecret;
 
-#[cfg(feature = "longterm-gcp-kms")]
+#[cfg(feature = "longterm-gcp")]
 pub mod gcpkms;
 
-#[cfg(feature = "longterm-gcp-secret-manager")]
+#[cfg(feature = "longterm-gcp")]
 pub mod gcpsecret;
 
 pub mod envelope;

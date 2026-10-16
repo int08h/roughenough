@@ -52,7 +52,7 @@ cargo test -p roughenough-reporting-server
 
 # Keys backends are feature-gated and tokio is only present with a
 # longterm-* cloud feature; check a specific combination with:
-cargo check -p roughenough-keys --features longterm-aws-kms
+cargo check -p roughenough-keys --features longterm-aws
 ```
 
 ### Code Quality

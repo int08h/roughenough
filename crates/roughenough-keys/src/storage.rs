@@ -155,7 +155,7 @@ impl Protection {
         Ok(Seed::new(&data))
     }
 
-    #[cfg(feature = "longterm-aws-kms")]
+    #[cfg(feature = "longterm-aws")]
     async fn try_load_aws_kms(&self, value: &str) -> Result<Seed, StorageError> {
         use crate::longterm::awskms::AwsKms;
         use crate::longterm::envelope::SeedEnvelope;
@@ -168,16 +168,15 @@ impl Protection {
         AwsKms::decrypt_seed(&seed_envelope).await
     }
 
-    #[cfg(not(feature = "longterm-aws-kms"))]
+    #[cfg(not(feature = "longterm-aws"))]
     async fn try_load_aws_kms(&self, _value: &str) -> Result<Seed, StorageError> {
         use crate::storage::StorageError::NotImplemented;
 
-        let msg =
-            "AWS KMS is not enabled. Recompile with the 'longterm-aws-kms' feature to support it";
+        let msg = "AWS KMS is not enabled. Recompile with the 'longterm-aws' feature to support it";
         Err(NotImplemented(msg.to_string()))
     }
 
-    #[cfg(feature = "longterm-aws-kms")]
+    #[cfg(feature = "longterm-aws")]
     async fn try_store_aws_kms(
         &self,
         seed: &Seed,
@@ -187,7 +186,7 @@ impl Protection {
         AwsKms::encrypt_seed(resource_id, seed).await
     }
 
-    #[cfg(not(feature = "longterm-aws-kms"))]
+    #[cfg(not(feature = "longterm-aws"))]
     async fn try_store_aws_kms(
         &self,
         _seed: &Seed,
@@ -195,12 +194,11 @@ impl Protection {
     ) -> Result<SeedEnvelope, StorageError> {
         use crate::storage::StorageError::NotImplemented;
 
-        let msg =
-            "AWS KMS is not enabled. Recompile with the 'longterm-aws-kms' feature to support it";
+        let msg = "AWS KMS is not enabled. Recompile with the 'longterm-aws' feature to support it";
         Err(NotImplemented(msg.to_string()))
     }
 
-    #[cfg(feature = "longterm-gcp-kms")]
+    #[cfg(feature = "longterm-gcp")]
     async fn try_load_gcp_kms(&self, value: &str) -> Result<Seed, StorageError> {
         use crate::longterm::envelope::SeedEnvelope;
         use crate::longterm::gcpkms::GcpKms;
@@ -213,16 +211,15 @@ impl Protection {
         GcpKms::decrypt_seed(&seed_envelope).await
     }
 
-    #[cfg(not(feature = "longterm-gcp-kms"))]
+    #[cfg(not(feature = "longterm-gcp"))]
     async fn try_load_gcp_kms(&self, _value: &str) -> Result<Seed, StorageError> {
         use crate::storage::StorageError::NotImplemented;
 
-        let msg =
-            "GCP KMS is not enabled. Recompile with the 'longterm-gcp-kms' feature to support it";
+        let msg = "GCP KMS is not enabled. Recompile with the 'longterm-gcp' feature to support it";
         Err(NotImplemented(msg.to_string()))
     }
 
-    #[cfg(feature = "longterm-aws-secret-manager")]
+    #[cfg(feature = "longterm-aws")]
     async fn try_load_aws_secret_manager(&self, value: &str) -> Result<Seed, StorageError> {
         use crate::longterm::awssecret::AwsSecretManager;
         use crate::longterm::envelope::SeedEnvelope;
@@ -243,15 +240,15 @@ impl Protection {
         AwsSecretManager::get_seed(secret_id).await
     }
 
-    #[cfg(not(feature = "longterm-aws-secret-manager"))]
+    #[cfg(not(feature = "longterm-aws"))]
     async fn try_load_aws_secret_manager(&self, _value: &str) -> Result<Seed, StorageError> {
         use crate::storage::StorageError::NotImplemented;
 
-        let msg = "AWS Secret Manager is not enabled. Recompile with the 'longterm-aws-secret-manager' feature to support it";
+        let msg = "AWS Secret Manager is not enabled. Recompile with the 'longterm-aws' feature to support it";
         Err(NotImplemented(msg.to_string()))
     }
 
-    #[cfg(feature = "longterm-aws-secret-manager")]
+    #[cfg(feature = "longterm-aws")]
     async fn try_store_aws_secret_manager(
         &self,
         seed: &Seed,
@@ -269,7 +266,7 @@ impl Protection {
         })
     }
 
-    #[cfg(not(feature = "longterm-aws-secret-manager"))]
+    #[cfg(not(feature = "longterm-aws"))]
     async fn try_store_aws_secret_manager(
         &self,
         _seed: &Seed,
@@ -277,11 +274,11 @@ impl Protection {
     ) -> Result<SeedEnvelope, StorageError> {
         use crate::storage::StorageError::NotImplemented;
 
-        let msg = "AWS Secret Manager is not enabled. Recompile with the 'longterm-aws-secret-manager' feature to support it";
+        let msg = "AWS Secret Manager is not enabled. Recompile with the 'longterm-aws' feature to support it";
         Err(NotImplemented(msg.to_string()))
     }
 
-    #[cfg(feature = "longterm-gcp-secret-manager")]
+    #[cfg(feature = "longterm-gcp")]
     async fn try_load_gcp_secret_manager(&self, value: &str) -> Result<Seed, StorageError> {
         use crate::longterm::gcpsecret::GcpSecretManager;
 
@@ -299,15 +296,15 @@ impl Protection {
         GcpSecretManager::get_seed(secret_id).await
     }
 
-    #[cfg(not(feature = "longterm-gcp-secret-manager"))]
+    #[cfg(not(feature = "longterm-gcp"))]
     async fn try_load_gcp_secret_manager(&self, _value: &str) -> Result<Seed, StorageError> {
         use crate::storage::StorageError::NotImplemented;
 
-        let msg = "GCP Secret Manager is not enabled. Recompile with the 'longterm-gcp-secret-manager' feature to support it";
+        let msg = "GCP Secret Manager is not enabled. Recompile with the 'longterm-gcp' feature to support it";
         Err(NotImplemented(msg.to_string()))
     }
 
-    #[cfg(feature = "longterm-gcp-secret-manager")]
+    #[cfg(feature = "longterm-gcp")]
     async fn try_store_gcp_secret_manager(
         &self,
         seed: &Seed,
@@ -325,7 +322,7 @@ impl Protection {
         })
     }
 
-    #[cfg(not(feature = "longterm-gcp-secret-manager"))]
+    #[cfg(not(feature = "longterm-gcp"))]
     async fn try_store_gcp_secret_manager(
         &self,
         _seed: &Seed,
@@ -333,11 +330,11 @@ impl Protection {
     ) -> Result<SeedEnvelope, StorageError> {
         use crate::storage::StorageError::NotImplemented;
 
-        let msg = "GCP Secret Manager is not enabled. Recompile with the 'longterm-gcp-secret-manager' feature to support it";
+        let msg = "GCP Secret Manager is not enabled. Recompile with the 'longterm-gcp' feature to support it";
         Err(NotImplemented(msg.to_string()))
     }
 
-    #[cfg(feature = "longterm-gcp-kms")]
+    #[cfg(feature = "longterm-gcp")]
     async fn try_store_gcp_kms(
         &self,
         seed: &Seed,
@@ -348,7 +345,7 @@ impl Protection {
         GcpKms::encrypt_seed(resource_id, seed).await
     }
 
-    #[cfg(not(feature = "longterm-gcp-kms"))]
+    #[cfg(not(feature = "longterm-gcp"))]
     async fn try_store_gcp_kms(
         &self,
         _seed: &Seed,
@@ -356,8 +353,7 @@ impl Protection {
     ) -> Result<SeedEnvelope, StorageError> {
         use crate::storage::StorageError::NotImplemented;
 
-        let msg =
-            "GCP KMS is not enabled. Recompile with the 'longterm-gcp-kms' feature to support it";
+        let msg = "GCP KMS is not enabled. Recompile with the 'longterm-gcp' feature to support it";
         Err(NotImplemented(msg.to_string()))
     }
 }
@@ -446,7 +442,7 @@ mod tests {
         assert!(matches!(result, Err(StorageError::InvalidSeed(_))));
     }
 
-    #[cfg(not(feature = "longterm-aws-kms"))]
+    #[cfg(not(feature = "longterm-aws"))]
     #[test]
     fn aws_kms_without_feature_is_not_implemented() {
         let seed = Seed::new(&[7u8; 32]);
@@ -456,7 +452,7 @@ mod tests {
         assert!(matches!(store, Err(StorageError::NotImplemented(_))));
     }
 
-    #[cfg(not(feature = "longterm-gcp-kms"))]
+    #[cfg(not(feature = "longterm-gcp"))]
     #[test]
     fn gcp_kms_without_feature_is_not_implemented() {
         let seed = Seed::new(&[7u8; 32]);
@@ -466,7 +462,7 @@ mod tests {
         assert!(matches!(store, Err(StorageError::NotImplemented(_))));
     }
 
-    #[cfg(not(feature = "longterm-aws-secret-manager"))]
+    #[cfg(not(feature = "longterm-aws"))]
     #[test]
     fn aws_secret_manager_without_feature_is_not_implemented() {
         let seed = Seed::new(&[7u8; 32]);
@@ -476,7 +472,7 @@ mod tests {
         assert!(matches!(store, Err(StorageError::NotImplemented(_))));
     }
 
-    #[cfg(not(feature = "longterm-gcp-secret-manager"))]
+    #[cfg(not(feature = "longterm-gcp"))]
     #[test]
     fn gcp_secret_manager_without_feature_is_not_implemented() {
         let seed = Seed::new(&[7u8; 32]);

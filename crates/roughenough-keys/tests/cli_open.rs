@@ -54,7 +54,7 @@ fn run_open(extra_args: &[&str]) -> Output {
         .unwrap()
 }
 
-#[cfg(any(feature = "longterm-aws-kms", feature = "longterm-gcp-kms"))]
+#[cfg(any(feature = "longterm-aws", feature = "longterm-gcp"))]
 #[test]
 fn open_with_unprefixed_key_override_fails_without_output() {
     let output = run_open(&["--key", "arn:aws:kms:us-east-1:1:key/x"]);
@@ -71,7 +71,7 @@ fn open_with_unprefixed_key_override_fails_without_output() {
     );
 }
 
-#[cfg(not(any(feature = "longterm-aws-kms", feature = "longterm-gcp-kms")))]
+#[cfg(not(any(feature = "longterm-aws", feature = "longterm-gcp")))]
 #[test]
 fn open_without_kms_features_fails() {
     let output = run_open(&[]);

@@ -15,10 +15,8 @@ Use this checklist when preparing a new release of Roughenough for publication t
   - [ ] `cargo build -p roughenough-keys --features online-linux-krs`
   - [ ] `cargo build -p roughenough-keys --features online-ssh-agent`
   - [ ] `cargo build -p roughenough-keys --features online-pkcs11`
-  - [ ] `cargo build -p roughenough-keys --features longterm-aws-kms`
-  - [ ] `cargo build -p roughenough-keys --features longterm-gcp-kms`
-  - [ ] `cargo build -p roughenough-keys --features longterm-aws-secret-manager`
-  - [ ] `cargo build -p roughenough-keys --features longterm-gcp-secret-manager`
+  - [ ] `cargo build -p roughenough-keys --features longterm-aws`
+  - [ ] `cargo build -p roughenough-keys --features longterm-gcp`
   - [ ] `cargo build -p roughenough-client --features reporting`
 
 ### Documentation

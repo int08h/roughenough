@@ -15,12 +15,9 @@ default = ["online-linux-krs"]
 online-linux-krs = ["dep:linux-keyutils"]
 online-pkcs11 = ["dep:cryptoki"]
 online-ssh-agent = ["dep:ssh-agent-client-rs", "dep:ssh-key"]
-# The cloud backends are the only async code paths; each enables the implicit
-# "tokio" feature so tokio stays out of non-cloud builds entirely
-longterm-aws-kms = ["dep:aws-config", "dep:aws-sdk-kms", "tokio"]
-longterm-gcp-kms = ["dep:google-cloud-kms-v1", "dep:crc32c", "tokio"]
-longterm-aws-secret-manager = ["dep:aws-config", "dep:aws-sdk-secretsmanager", "tokio"]
-longterm-gcp-secret-manager = ["dep:google-cloud-secretmanager-v1", "dep:crc32c", "tokio"]
+# The cloud backends are the only async code paths; tokio stays out of non-cloud builds
+longterm-aws = ["dep:aws-config", "dep:aws-sdk-kms", "dep:aws-sdk-secretsmanager", "dep:tokio"]
+longterm-gcp = ["dep:google-cloud-kms-v1", "dep:google-cloud-secretmanager-v1", "dep:crc32c", "dep:tokio"]
 
 [package.metadata.dist]
 all-features = true

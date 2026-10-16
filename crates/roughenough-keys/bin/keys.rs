@@ -4,10 +4,10 @@ use std::fs::{File, OpenOptions};
 use std::io::{Error, ErrorKind, Read, Write};
 
 use clap::Parser;
-#[cfg(feature = "longterm-aws-kms")]
+#[cfg(feature = "longterm-aws")]
 use roughenough_keys::longterm::awskms;
 use roughenough_keys::longterm::envelope::SeedEnvelope;
-#[cfg(feature = "longterm-gcp-kms")]
+#[cfg(feature = "longterm-gcp")]
 use roughenough_keys::longterm::gcpkms;
 use roughenough_keys::seed::Seed;
 use roughenough_keys::{runtime, storage};
@@ -267,12 +267,12 @@ async fn handle_open(mut input: InFile, mut output: OutFile, key: Option<String>
     // compiler and clippy happy
 
     #[cfg_attr(
-        not(any(feature = "longterm-gcp-kms", feature = "longterm-aws-kms")),
+        not(any(feature = "longterm-gcp", feature = "longterm-aws")),
         allow(unused_mut)
     )]
     let mut seed: Option<Seed> = None;
 
-    #[cfg(feature = "longterm-gcp-kms")]
+    #[cfg(feature = "longterm-gcp")]
     {
         use crate::storage::Protection;
         if envelope.key_id.starts_with(Protection::GcpKms.prefix()) {
@@ -286,7 +286,7 @@ async fn handle_open(mut input: InFile, mut output: OutFile, key: Option<String>
         }
     }
 
-    #[cfg(feature = "longterm-aws-kms")]
+    #[cfg(feature = "longterm-aws")]
     {
         use crate::storage::Protection;
         if envelope.key_id.starts_with(Protection::AwsKms.prefix()) {

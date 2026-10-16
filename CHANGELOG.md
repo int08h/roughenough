@@ -6,6 +6,10 @@
 
 - Server library: `NetworkHandler::send_response` and `NetworkHandler`'s
   `Debug` impl were removed; use `queue_response` + `flush_responses`
+- Keys: cargo features `longterm-aws-kms` and
+  `longterm-aws-secret-manager` are replaced by `longterm-aws`;
+  `longterm-gcp-kms` and `longterm-gcp-secret-manager` are replaced by
+  `longterm-gcp`. The implicit `tokio` feature is gone
 
 ### Fixed
 

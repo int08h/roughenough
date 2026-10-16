@@ -21,8 +21,8 @@ test-utils = []
 # a "recompile with the feature" error
 online-pkcs11 = ["roughenough-keys/online-pkcs11"]
 online-ssh-agent = ["roughenough-keys/online-ssh-agent"]
-longterm-aws = ["roughenough-keys/longterm-aws-kms", "roughenough-keys/longterm-aws-secret-manager"]
-longterm-gcp = ["roughenough-keys/longterm-gcp-kms", "roughenough-keys/longterm-gcp-secret-manager"]
+longterm-aws = ["roughenough-keys/longterm-aws"]
+longterm-gcp = ["roughenough-keys/longterm-gcp"]
 # Everything a shipped server binary supports; never includes test-utils.
 # Add any new roughenough-keys backend here too.
 release = ["online-pkcs11", "online-ssh-agent", "longterm-aws", "longterm-gcp"]

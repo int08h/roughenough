@@ -173,10 +173,8 @@ See [doc/PROTECTION.md](doc/PROTECTION.md) for detailed information on seed prot
 
 #### Long-term Protection (Seed Storage)
 
-- `longterm-aws-kms` AWS Key Management Service for seed encryption
-- `longterm-gcp-kms` Google Cloud KMS for seed encryption
-- `longterm-aws-secret-manager` AWS Secrets Manager for seed storage
-- `longterm-gcp-secret-manager` Google Cloud Secret Manager for seed storage
+- `longterm-aws` AWS KMS envelope encryption and AWS Secrets Manager
+- `longterm-gcp` GCP Cloud KMS envelope encryption and GCP Secret Manager
 
 ## Contributing
 
