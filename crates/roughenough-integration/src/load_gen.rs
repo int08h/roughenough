@@ -1,4 +1,4 @@
-#![allow(dead_code)] // compiled both as a bin and a lib module
+#![forbid(unsafe_code)]
 
 use std::collections::HashMap;
 use std::io::ErrorKind;

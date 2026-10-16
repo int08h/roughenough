@@ -13,10 +13,7 @@ categories = ["development-tools"]
 publish = false
 
 [dependencies]
-roughenough-client = { workspace = true }
-roughenough-merkle = { workspace = true }
 roughenough-protocol = { workspace = true }
-roughenough-server = { workspace = true, features = ["test-utils"] }
 aws-lc-rs = { workspace = true }
 data-encoding = { workspace = true }
 clap = { workspace = true, features = ["derive"] }

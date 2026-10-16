@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use std::io::{self, BufReader, Read};
 use std::net::UdpSocket;
 use std::path::PathBuf;

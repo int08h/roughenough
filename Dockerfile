@@ -22,11 +22,12 @@ COPY crates/roughenough-reporting-server/Cargo.toml crates/roughenough-reporting
 
 # Stub every declared lib, bin, and bench target so cargo can resolve the
 # workspace and build dependencies without the real sources
-RUN for crate in roughenough-client roughenough-common roughenough-integration \
-    roughenough-keys roughenough-merkle roughenough-protocol roughenough-server \
+RUN for crate in roughenough-client roughenough-common roughenough-keys \
+    roughenough-merkle roughenough-protocol roughenough-server \
     roughenough-reporting-server; do \
     mkdir -p crates/$crate/src && touch crates/$crate/src/lib.rs; \
     done \
+    && mkdir -p crates/roughenough-integration/src \
     && echo 'fn main() {}' > crates/roughenough-client/src/main.rs \
     && echo 'fn main() {}' > crates/roughenough-server/src/main.rs \
     && echo 'fn main() {}' > crates/roughenough-reporting-server/src/main.rs \

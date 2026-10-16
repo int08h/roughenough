@@ -2896,10 +2896,7 @@ dependencies = [
  "aws-lc-rs",
  "clap",
  "data-encoding",
- "roughenough-client",
- "roughenough-merkle",
  "roughenough-protocol",
- "roughenough-server",
  "tracing",
  "tracing-subscriber",
 ]
