@@ -33,3 +33,15 @@ When the seed is required (e.g. generating a new OnlineKey):
 The `ssh-agent` backend is probably the more "secure" choice, however it introduces complexity by requiring operation
 and maintenance of an `ssh-agent` process. The KRS backend has the benefit that "it just works" and is a good choice 
 if running the server on Linux.
+
+## PKCS#11 tokens
+
+The `pkcs11` backend (`--seed-backend pkcs11`, in servers built with the `online-pkcs11` feature) signs with an
+Ed25519 private key that already lives on a PKCS#11 token, such as an HSM or a YubiKey. There is no seed: the token
+holds the long-term key, so the server takes no `--seed-file` (and rejects one, as well as `--insecure-zero-seed`).
+The server uses the first Ed25519 private key it finds on the token and reads its public key once at startup.
+Configure the token through environment variables:
+
+* `ROUGHENOUGH_PKCS11_LIBRARY`: path to the PKCS#11 module library (required)
+* `ROUGHENOUGH_PKCS11_SLOT`: index of the token slot (optional; defaults to 0)
+* `ROUGHENOUGH_PKCS11_PIN`: user PIN for the token (required)

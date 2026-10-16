@@ -7,6 +7,10 @@
 - Keys: `roughenough_keys open` exits non-zero instead of printing a
   random seed when no enabled KMS backend matches the envelope key id or
   `--key` lacks a scheme prefix
+- Server: `--seed-backend pkcs11` works; it no longer requires
+  `--seed-file` (and rejects it), since the token holds the long-term
+  key. Keys: the PKCS#11 backend reads the public key once at startup
+  and reports token errors instead of panicking
 
 ## [2.2.0] - 2026-10-11
 

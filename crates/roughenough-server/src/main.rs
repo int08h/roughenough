@@ -31,7 +31,7 @@ use mio::net::UdpSocket as MioUdpSocket;
 use roughenough_keys::seed::{Seed, SeedBackend, try_choose_backend};
 use roughenough_keys::storage::try_load_seed_sync;
 use roughenough_protocol::util::ClockSource;
-use roughenough_server::args::Args;
+use roughenough_server::args::{Args, SeedBackendArg};
 use roughenough_server::keysource::KeySource;
 use roughenough_server::metrics::aggregator::{MetricsAggregator, WorkerMetrics};
 use roughenough_server::metrics::snapshot::validate_metrics_directory;
@@ -59,6 +59,9 @@ fn main() {
     set_signal_handler();
 
     let args = Args::parse();
+    if let Err(e) = args.validate_seed_source() {
+        e.exit();
+    }
     enable_logging(&args);
     debug!(
         listen_addr = %args.udp_socket_addr(),
@@ -138,6 +141,16 @@ fn main() {
 }
 
 fn load_seed(args: &Args) -> Box<dyn SeedBackend> {
+    if matches!(args.seed_backend, SeedBackendArg::Pkcs11) {
+        return match try_choose_backend(&args.seed_backend.to_string()) {
+            Ok(backend) => backend,
+            Err(e) => {
+                error!("choosing seed backend: {e}");
+                std::process::exit(1);
+            }
+        };
+    }
+
     let seed = match &args.seed_file {
         None => {
             warn!("Using all-zero seed because --insecure-zero-seed was specified");

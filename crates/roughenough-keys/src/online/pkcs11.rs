@@ -14,6 +14,7 @@ use crate::seed::{BackendError, Seed, SeedBackend};
 pub struct Pkcs11Backend {
     session: Session,
     key_handle: ObjectHandle,
+    public_key: [u8; 32],
 }
 
 impl Pkcs11Backend {
@@ -41,10 +42,12 @@ impl Pkcs11Backend {
         session.login(UserType::User, Some(&pin))?;
 
         let key_handle = Self::get_key_handle(&session)?;
+        let public_key = Self::get_public_key(&session, key_handle)?;
 
         Ok(Self {
             session,
             key_handle,
+            public_key,
         })
     }
 
@@ -58,9 +61,12 @@ impl Pkcs11Backend {
             ));
         }
 
-        let selected_slot = *slots
-            .get(slot_index)
-            .ok_or_else(|| BackendError::NotFound("slot index {} is out of range".to_string()))?;
+        let selected_slot = *slots.get(slot_index).ok_or_else(|| {
+            BackendError::NotFound(format!(
+                "slot index {slot_index} is out of range ({} slots found)",
+                slots.len()
+            ))
+        })?;
 
         let info = library.get_slot_info(selected_slot)?;
         debug!("Selected slot: {} {:?}", slot_index, info);
@@ -94,6 +100,36 @@ impl Pkcs11Backend {
         // Use the first private key found
         Ok(handles[0])
     }
+
+    // Read once here so a token problem fails startup instead of every later public key lookup
+    fn get_public_key(
+        session: &Session,
+        key_handle: ObjectHandle,
+    ) -> Result<[u8; 32], BackendError> {
+        let attributes = session.get_attributes(key_handle, &[AttributeType::EcPoint])?;
+        match attributes.first() {
+            Some(Attribute::EcPoint(point)) => ed25519_from_ec_point(point),
+            _ => Err(BackendError::NotSupported(
+                "token returned no EC_POINT for the Ed25519 key".to_string(),
+            )),
+        }
+    }
+}
+
+/// Tokens encode the Ed25519 EC_POINT either as a DER OCTET STRING (`04 20 || key`) or as the raw
+/// 32-byte key
+fn ed25519_from_ec_point(point: &[u8]) -> Result<[u8; 32], BackendError> {
+    let raw = match point {
+        [0x04, 0x20, rest @ ..] if rest.len() == 32 => rest,
+        raw if raw.len() == 32 => raw,
+        other => {
+            return Err(BackendError::NotSupported(format!(
+                "token returned an unrecognized {}-byte EC_POINT for the Ed25519 key",
+                other.len()
+            )));
+        }
+    };
+    Ok(raw.try_into().expect("length checked above"))
 }
 
 impl SeedBackend for Pkcs11Backend {
@@ -115,7 +151,12 @@ impl SeedBackend for Pkcs11Backend {
             .session
             .sign(&Mechanism::Eddsa(params), self.key_handle, data)?;
 
-        Ok(sig.try_into().unwrap())
+        let len = sig.len();
+        sig.try_into().map_err(|_| {
+            BackendError::NotSupported(format!(
+                "token returned a {len}-byte signature, expected 64"
+            ))
+        })
     }
 
     fn seed_len(&self) -> usize {
@@ -127,33 +168,7 @@ impl SeedBackend for Pkcs11Backend {
     }
 
     fn public_key_bytes(&self) -> [u8; 32] {
-        let query_attrs = &[AttributeType::EcPoint];
-        let attributes = self
-            .session
-            .get_attributes(self.key_handle, query_attrs)
-            .unwrap();
-
-        if let Attribute::EcPoint(point_data) = &attributes[0] {
-            // For Ed25519, the EC_POINT is typically encoded as ASN.1 DER:
-            // - First byte: 0x04 (uncompressed point indicator)
-            // - Second byte: 0x20 length byte (32 in decimal)
-            // - Next 32 bytes: the actual Ed25519 public key
-            if point_data.len() >= 34 && point_data[0] == 0x04 && point_data[1] == 0x20 {
-                let mut public_key_bytes = [0u8; 32];
-                public_key_bytes.copy_from_slice(&point_data[2..34]);
-                public_key_bytes
-            }
-            // Some implementations might store the raw 32-byte key directly
-            else if point_data.len() == 32 {
-                let mut public_key_bytes = [0u8; 32];
-                public_key_bytes.copy_from_slice(point_data);
-                public_key_bytes
-            } else {
-                panic!("key cannot be obtained from device");
-            }
-        } else {
-            panic!("key cannot be obtained from device");
-        }
+        self.public_key
     }
 }
 
@@ -174,6 +189,46 @@ mod test {
             "/usr/lib/x86_64-linux-gnu/libykcs11.so"
         } else {
             panic!("Unsupported platform");
+        }
+    }
+
+    #[test]
+    fn ed25519_from_ec_point_accepts_der_and_raw() {
+        let key: [u8; 32] = std::array::from_fn(|i| i as u8);
+
+        let mut der = vec![0x04, 0x20];
+        der.extend_from_slice(&key);
+        assert_eq!(ed25519_from_ec_point(&der).unwrap(), key);
+
+        assert_eq!(ed25519_from_ec_point(&key).unwrap(), key);
+    }
+
+    #[test]
+    fn ed25519_from_ec_point_rejects_other_lengths() {
+        let key = [7u8; 32];
+
+        let mut der_with_trailing = vec![0x04, 0x20];
+        der_with_trailing.extend_from_slice(&key);
+        der_with_trailing.push(0);
+
+        let mut wrong_tag = vec![0x05, 0x20];
+        wrong_tag.extend_from_slice(&key);
+
+        for point in [
+            &[][..],
+            &key[..31],
+            &[7u8; 33][..],
+            &der_with_trailing[..],
+            &wrong_tag[..],
+        ] {
+            assert!(
+                matches!(
+                    ed25519_from_ec_point(point),
+                    Err(BackendError::NotSupported(_))
+                ),
+                "accepted a {}-byte EC_POINT",
+                point.len()
+            );
         }
     }
 

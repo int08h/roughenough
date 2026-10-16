@@ -103,3 +103,30 @@ fn seed_file_path_can_come_from_environment() {
 
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn pkcs11_backend_does_not_require_a_seed_file() {
+    let output = Command::new(server_path())
+        .args(["--seed-backend", "pkcs11"])
+        .env_remove("ROUGHENOUGH_SEED")
+        .env_remove("ROUGHENOUGH_SEED_FILE")
+        .env_remove("ROUGHENOUGH_PKCS11_LIBRARY")
+        .output()
+        .unwrap();
+
+    let logs = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    // Without a token the server cannot start, but it must get as far as pkcs11 setup
+    assert!(!output.status.success());
+    assert!(
+        logs.contains("PKCS11") || logs.contains("pkcs11"),
+        "expected a pkcs11 setup error, got: {logs}"
+    );
+    assert!(
+        !logs.contains("--seed-file <PATH>"),
+        "pkcs11 backend demanded a seed file: {logs}"
+    );
+}

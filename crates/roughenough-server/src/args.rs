@@ -3,7 +3,8 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::time::Duration;
 
-use clap::{Parser, ValueEnum};
+use clap::error::ErrorKind;
+use clap::{CommandFactory, Parser, ValueEnum};
 
 #[derive(Parser, Debug)]
 #[command(version, about = "Roughenough roughtime server")]
@@ -81,7 +82,6 @@ pub struct Args {
         long,
         value_name = "PATH",
         env = "ROUGHENOUGH_SEED_FILE",
-        required_unless_present = "insecure_zero_seed",
         conflicts_with = "insecure_zero_seed"
     )]
     pub seed_file: Option<PathBuf>,
@@ -146,6 +146,24 @@ impl Args {
     /// How long the short-term response signing key is valid
     pub fn rotation_interval(&self) -> Duration {
         Duration::from_secs(self.rotation_interval as u64 * 60 * 60)
+    }
+
+    /// A pkcs11 token holds the long-term key itself, so it takes no seed; every other backend
+    /// needs one. clap cannot express "required unless --seed-backend is pkcs11" declaratively.
+    pub fn validate_seed_source(&self) -> Result<(), clap::Error> {
+        let has_seed = self.seed_file.is_some() || self.insecure_zero_seed;
+        let takes_seed = !matches!(self.seed_backend, SeedBackendArg::Pkcs11);
+        match (takes_seed, has_seed) {
+            (true, false) => Err(Args::command().error(
+                ErrorKind::MissingRequiredArgument,
+                "a seed is required: pass --seed-file <PATH> (or --insecure-zero-seed for testing)",
+            )),
+            (false, true) => Err(Args::command().error(
+                ErrorKind::ArgumentConflict,
+                "--seed-file and --insecure-zero-seed are not used with --seed-backend pkcs11; the token holds the long-term key",
+            )),
+            _ => Ok(()),
+        }
     }
 }
 
@@ -237,6 +255,26 @@ mod tests {
         assert!(
             Args::try_parse_from(["prog", "--seed-file", "/tmp/seed", "--insecure-zero-seed",])
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn seed_source_is_required_unless_pkcs11() {
+        let args = Args::try_parse_from(["prog"]).unwrap();
+        assert_eq!(
+            args.validate_seed_source().unwrap_err().kind(),
+            ErrorKind::MissingRequiredArgument
+        );
+
+        let args = Args::try_parse_from(["prog", "--seed-backend", "pkcs11"]).unwrap();
+        assert!(args.validate_seed_source().is_ok());
+
+        let args =
+            Args::try_parse_from(["prog", "--seed-backend", "pkcs11", "--insecure-zero-seed"])
+                .unwrap();
+        assert_eq!(
+            args.validate_seed_source().unwrap_err().kind(),
+            ErrorKind::ArgumentConflict
         );
     }
 
