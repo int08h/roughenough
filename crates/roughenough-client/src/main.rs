@@ -322,29 +322,9 @@ fn display_measurement(args: &Args, measurement: &Measurement) {
 
 #[cfg(test)]
 mod tests {
-    use roughenough_protocol::ToFrame;
-    use roughenough_protocol::tags::PublicKey;
-    use roughenough_server::test_utils::TestContext;
+    use roughenough_client::test_utils::measurement;
 
     use super::*;
-
-    fn create_measurement(midpoint: u64) -> Measurement {
-        let mut ctx = TestContext::new(64);
-        let (req, resp) = ctx.create_interaction_pair(midpoint);
-        let resp_bytes = resp.as_frame_bytes().unwrap();
-        let pubkey = PublicKey::from(ctx.key_source.public_key_bytes());
-
-        Measurement::builder()
-            .server("127.0.0.1:8000".parse().unwrap())
-            .request(req)
-            .response(resp)
-            .response_bytes(resp_bytes)
-            .hostname("test".to_string())
-            .public_key(Some(pubkey))
-            .rand_value(None)
-            .build()
-            .unwrap()
-    }
 
     #[test]
     fn single_server_client_uses_timeout_flag() {
@@ -390,7 +370,7 @@ mod tests {
 
     #[test]
     fn unrepresentable_midpoint_falls_back_to_raw_value() {
-        let measurement = create_measurement(300_000_000_000);
+        let measurement = measurement(300_000_000_000);
         let output = format_measurement(&measurement, true, false, "%Y-%m-%d %H:%M:%S %Z");
         assert!(
             output.contains("<unrepresentable midpoint: 300000000000 sec>"),
@@ -400,7 +380,7 @@ mod tests {
 
     #[test]
     fn sane_midpoint_formats_normally() {
-        let measurement = create_measurement(1_748_359_193);
+        let measurement = measurement(1_748_359_193);
         let output = format_measurement(&measurement, true, false, "%Y-%m-%d");
         assert!(
             output.starts_with("2025-05-27"),

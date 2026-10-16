@@ -10,6 +10,8 @@ pub mod measurement;
 pub mod reporting;
 pub mod sequence;
 pub mod server_list;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;
 pub mod transport;
 pub mod validation;
 

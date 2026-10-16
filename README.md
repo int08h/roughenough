@@ -158,6 +158,8 @@ The server forwards the keys backends as `online-pkcs11`, `online-ssh-agent`,
   cargo build -p roughenough-client --features reporting
   cargo run --bin roughenough_client -- hostname.com 5319 --report
   ```
+- **test-utils** - Test-only: exposes shared fixtures (`roughenough_client::test_utils`)
+  for other crates' tests; pulls in `roughenough-server`. Never enable it in builds you ship
 
 ### Keys Crate Features
 

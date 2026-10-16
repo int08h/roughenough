@@ -2867,6 +2867,7 @@ dependencies = [
  "data-encoding",
  "jiff",
  "libc",
+ "roughenough-client",
  "roughenough-common",
  "roughenough-merkle",
  "roughenough-protocol",

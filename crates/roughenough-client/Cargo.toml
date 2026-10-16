@@ -13,6 +13,8 @@ categories = ["network-programming", "command-line-utilities", "date-and-time"]
 [features]
 default = []
 reporting = ["dep:ureq"]
+# Shared fixtures (Measurements from an in-process server) for this and other crates' tests
+test-utils = ["dep:roughenough-server", "roughenough-server/test-utils"]
 
 [package.metadata.dist]
 features = ["reporting"]
@@ -25,6 +27,7 @@ path = "src/main.rs"
 roughenough-common = { workspace = true }
 roughenough-merkle = { workspace = true }
 roughenough-protocol = { workspace = true }
+roughenough-server = { workspace = true, optional = true }
 aws-lc-rs = { workspace = true }
 jiff = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
@@ -42,3 +45,6 @@ roughenough-protocol = { workspace = true, features = ["test-utils"] }
 # used by tests/report_chain_tests.rs
 roughenough-reporting-server = { path = "../roughenough-reporting-server" }
 roughenough-server = { workspace = true, features = ["test-utils"] }
+# self-dependency: enables test-utils when building the binary's unit tests and
+# this crate's own tests/ targets, which see the library without cfg(test)
+roughenough-client = { path = ".", features = ["test-utils"] }

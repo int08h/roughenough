@@ -137,51 +137,15 @@ impl MalfeasanceReport {
 
 #[cfg(test)]
 mod tests {
-    const BASE_TIME: u64 = 1_700_000_000;
-
-    use roughenough_protocol::FromFrame;
-    use roughenough_protocol::request::Request;
-    use roughenough_protocol::response::Response;
-    use roughenough_protocol::tags::PublicKey;
-
     use super::*;
-
-    fn create_test_measurement(midpoint: u64, radius: u32) -> Measurement {
-        let request = Request::from_frame_bytes(include_bytes!(
-            "../../roughenough-protocol/testdata/rfc-request.071039e5"
-        ))
-        .unwrap();
-
-        let raw_response =
-            include_bytes!("../../roughenough-protocol/testdata/rfc-response.071039e5").to_vec();
-        let mut response = Response::from_frame_bytes(&raw_response).unwrap();
-
-        // Modify response for testing
-        let mut srep = response.srep().clone();
-        srep.set_midp(midpoint);
-        srep.set_radi(radius);
-        response.set_srep(srep);
-
-        let public_key = PublicKey::from([0x22u8; 32]);
-
-        Measurement::builder()
-            .server("127.0.0.1:8000".parse().unwrap())
-            .hostname("test".to_string())
-            .public_key(Some(public_key))
-            .request(request)
-            .response(response)
-            .response_bytes(raw_response)
-            .rand_value(Some([0x42u8; 32]))
-            .build()
-            .unwrap()
-    }
+    use crate::test_utils::{BASE_TIME, chained_measurements};
 
     #[test]
     fn test_report_entry_creation() {
-        let measurement = create_test_measurement(1000000, 100);
+        let measurements = chained_measurements(&[BASE_TIME + 2000, BASE_TIME + 1000], None);
 
-        // Test entry with rand value
-        let entry = ReportEntry::from_measurement(&measurement);
+        // Entry 0 has no rand; entry 1 carries the rand that chained its nonce
+        let entry = ReportEntry::from_measurement(&measurements[1]);
         assert!(entry.rand.is_some());
         assert!(!entry.request.is_empty());
         assert!(!entry.response.is_empty());
@@ -194,10 +158,9 @@ mod tests {
 
     #[test]
     fn test_json_serialization() {
-        let m1 = create_test_measurement(2000, 100);
-        let m2 = create_test_measurement(1000, 100);
+        let measurements = chained_measurements(&[BASE_TIME + 2000, BASE_TIME + 1000], None);
 
-        let violation = CausalityViolation::new(&[m1, m2], 0, 1);
+        let violation = CausalityViolation::new(&measurements, 0, 1);
         let report = MalfeasanceReport::from_violation(&violation);
 
         let json = serde_json::to_string_pretty(&report).unwrap();
@@ -212,56 +175,11 @@ mod tests {
         let _parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
     }
 
-    /// Build a properly chained measurement sequence: measurement 0 uses a
-    /// random nonce; each later measurement's nonce is
-    /// H(prior_response || rand) exactly as MeasurementSequence derives it.
-    fn create_chained_measurements(midpoints: &[u64]) -> Vec<Measurement> {
-        use roughenough_common::crypto::{calculate_chained_nonce, random_bytes};
-        use roughenough_protocol::tags::Nonce;
-        use roughenough_server::test_utils::TestContext;
-
-        let mut prior_response: Option<Vec<u8>> = None;
-        let mut measurements = Vec::new();
-
-        for &midpoint in midpoints {
-            // one context per exchange; all contexts share a seed, so the
-            // measurements present one server identity
-            let mut ctx = TestContext::new_at(1, BASE_TIME);
-
-            let (nonce, rand_value) = match prior_response.as_deref() {
-                Some(prior) => {
-                    let rand = random_bytes::<32>();
-                    (calculate_chained_nonce(prior, &rand), Some(rand))
-                }
-                None => (Nonce::from(random_bytes::<32>()), None),
-            };
-
-            let (request, response) = ctx.create_interaction_pair_with_nonce(midpoint, &nonce);
-            let response_bytes = response.as_frame_bytes().unwrap();
-
-            let measurement = Measurement::builder()
-                .server("127.0.0.1:2003".parse().unwrap())
-                .hostname("test".to_string())
-                .public_key(Some(ctx.key_source.public_key()))
-                .request(request)
-                .response(response)
-                .response_bytes(response_bytes.clone())
-                .rand_value(rand_value)
-                .build()
-                .unwrap();
-
-            prior_response = Some(response_bytes);
-            measurements.push(measurement);
-        }
-
-        measurements
-    }
-
     #[test]
     fn violation_between_first_and_third_reports_full_chain() {
         let base = BASE_TIME;
         // measurement 0 claims a time far ahead of measurement 2
-        let measurements = create_chained_measurements(&[base + 2_000_000, base + 1_000_000, base]);
+        let measurements = chained_measurements(&[base + 2_000_000, base + 1_000_000, base], None);
 
         let violation = CausalityViolation::new(&measurements, 0, 2);
         let report = MalfeasanceReport::from_violation(&violation);
@@ -331,9 +249,8 @@ mod tests {
             head
         });
 
-        let m1 = create_test_measurement(2000, 100);
-        let m2 = create_test_measurement(1000, 100);
-        let violation = CausalityViolation::new(&[m1, m2], 0, 1);
+        let measurements = chained_measurements(&[BASE_TIME + 2000, BASE_TIME + 1000], None);
+        let violation = CausalityViolation::new(&measurements, 0, 1);
         let report = MalfeasanceReport::from_violation(&violation);
 
         report.submit(&format!("http://{addr}/reports")).unwrap();

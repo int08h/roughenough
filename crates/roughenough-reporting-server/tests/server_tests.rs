@@ -3,17 +3,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use data_encoding::BASE64;
-use roughenough_client::measurement::MeasurementBuilder;
+use roughenough_client::test_utils::{BASE_TIME, chained_measurements};
 use roughenough_client::{CausalityViolation, MalfeasanceReport, REPORT_MEDIA_TYPE};
-use roughenough_common::crypto::calculate_chained_nonce;
 use roughenough_protocol::ToFrame;
 use roughenough_protocol::tags::Nonce;
 use roughenough_reporting_server::storage::{InMemoryStorage, ReportStorage};
 use roughenough_reporting_server::{AppState, CreationResponse};
 use roughenough_server::test_utils::TestContext;
 use tokio::task::JoinHandle;
-
-const BASE_TIME: u64 = 1_700_000_000;
 
 /// Finds an available port by binding to port 0
 fn find_available_port() -> u16 {
@@ -76,40 +73,7 @@ impl Drop for TestServer {
 }
 
 fn create_chained_report(midpoints: &[u64], first_rand: Option<[u8; 32]>) -> MalfeasanceReport {
-    let mut prior_response: Option<Vec<u8>> = None;
-    let mut measurements = Vec::new();
-
-    for (i, &midpoint) in midpoints.iter().enumerate() {
-        // one context per exchange; all contexts share a seed, so the
-        // measurements present one server identity
-        let mut ctx = TestContext::new_at(1, BASE_TIME);
-
-        let (nonce, rand_value) = match prior_response.as_deref() {
-            Some(prior) => {
-                let rand = [0x22u8 + i as u8; 32];
-                (calculate_chained_nonce(prior, &rand), Some(rand))
-            }
-            None => (Nonce::from([0x11u8; 32]), first_rand),
-        };
-
-        let (request, response) = ctx.create_interaction_pair_with_nonce(midpoint, &nonce);
-        let response_bytes = response.as_frame_bytes().unwrap();
-
-        let measurement = MeasurementBuilder::new()
-            .server("127.0.0.1:8080".parse().unwrap())
-            .hostname("test-server".to_string())
-            .public_key(Some(ctx.key_source.public_key()))
-            .request(request)
-            .response(response)
-            .response_bytes(response_bytes.clone())
-            .rand_value(rand_value)
-            .build()
-            .unwrap();
-
-        prior_response = Some(response_bytes);
-        measurements.push(measurement);
-    }
-
+    let measurements = chained_measurements(midpoints, first_rand);
     let violation = CausalityViolation::new(&measurements, 0, measurements.len() - 1);
     MalfeasanceReport::from_violation(&violation)
 }
@@ -205,22 +169,8 @@ async fn test_invalid_report_missing_entries() {
     let client = reqwest::Client::new();
 
     // Create report with only one entry
-    let mut ctx = TestContext::new_at(1, BASE_TIME);
-    let current_time = ctx.clock.epoch_seconds();
-    let nonce = Nonce::from([0x33u8; 32]);
-    let (request, response) = ctx.create_interaction_pair_with_nonce(current_time, &nonce);
-    let public_key = ctx.key_source.public_key();
-
-    let measurement = MeasurementBuilder::new()
-        .server("127.0.0.1:8080".parse().unwrap())
-        .hostname("test-server".to_string())
-        .public_key(Some(public_key))
-        .request(request)
-        .response(response.clone())
-        .response_bytes(response.as_frame_bytes().unwrap())
-        .rand_value(None)
-        .build()
-        .unwrap();
+    let measurements = chained_measurements(&[BASE_TIME], None);
+    let measurement = &measurements[0];
 
     // Manually create a report with only one entry
     let report_json = serde_json::json!({

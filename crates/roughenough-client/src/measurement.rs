@@ -183,41 +183,19 @@ impl Measurement {
 
 #[cfg(test)]
 mod tests {
-    use roughenough_protocol::ToFrame;
-    use roughenough_protocol::tags::PublicKey;
-    use roughenough_server::test_utils::TestContext;
-
-    use super::Measurement;
-
-    fn create_measurement(midpoint: u64) -> Measurement {
-        let mut ctx = TestContext::new(64);
-        let (req, resp) = ctx.create_interaction_pair(midpoint);
-        let resp_bytes = resp.as_frame_bytes().unwrap();
-        let pubkey = PublicKey::from(ctx.key_source.public_key_bytes());
-
-        Measurement::builder()
-            .server("127.0.0.1:8000".parse().unwrap())
-            .request(req)
-            .response(resp)
-            .response_bytes(resp_bytes)
-            .hostname("test".to_string())
-            .public_key(Some(pubkey))
-            .rand_value(None)
-            .build()
-            .unwrap()
-    }
+    use crate::test_utils::measurement;
 
     #[test]
     fn unrepresentable_midpoint_datetime_is_none() {
         // jiff's Timestamp range ends near year 9999; a signed response can
         // carry any MIDP, so conversion must fail cleanly, not panic
-        let measurement = create_measurement(300_000_000_000);
+        let measurement = measurement(300_000_000_000);
         assert!(measurement.midpoint_datetime().is_none());
     }
 
     #[test]
     fn sane_midpoint_datetime_is_some() {
-        let measurement = create_measurement(1_748_359_193);
+        let measurement = measurement(1_748_359_193);
         let timestamp = measurement.midpoint_datetime().unwrap();
         assert_eq!(timestamp.as_second(), 1_748_359_193);
     }

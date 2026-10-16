@@ -35,6 +35,8 @@
   include test hooks
 - Protocol: `FromFrame::from_frame_bytes` parses a framed Request or
   Response from a shared byte slice
+- Client: `test-utils` feature exposing shared test fixtures
+  (`roughenough_client::test_utils`) for other crates' tests
 
 ## [2.2.0] - 2026-10-11
 
