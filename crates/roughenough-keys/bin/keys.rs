@@ -266,18 +266,21 @@ async fn handle_open(mut input: InFile, mut output: OutFile, key: Option<String>
     // Below is ugly to deal with conditional compilation while keeping the
     // compiler and clippy happy
 
-    #[allow(unused_mut)]
-    let mut seed: Seed = Seed::new_random();
+    #[cfg_attr(
+        not(any(feature = "longterm-gcp-kms", feature = "longterm-aws-kms")),
+        allow(unused_mut)
+    )]
+    let mut seed: Option<Seed> = None;
 
     #[cfg(feature = "longterm-gcp-kms")]
     {
         use crate::storage::Protection;
         if envelope.key_id.starts_with(Protection::GcpKms.prefix()) {
             seed = match gcpkms::GcpKms::decrypt_seed(&envelope).await {
-                Ok(seed) => seed,
+                Ok(seed) => Some(seed),
                 Err(e) => {
                     error!("Failed to decrypt seed: {e}");
-                    return;
+                    std::process::exit(1);
                 }
             }
         }
@@ -288,21 +291,21 @@ async fn handle_open(mut input: InFile, mut output: OutFile, key: Option<String>
         use crate::storage::Protection;
         if envelope.key_id.starts_with(Protection::AwsKms.prefix()) {
             seed = match awskms::AwsKms::decrypt_seed(&envelope).await {
-                Ok(seed) => seed,
+                Ok(seed) => Some(seed),
                 Err(e) => {
                     error!("Failed to decrypt seed: {e}");
-                    return;
+                    std::process::exit(1);
                 }
             }
         }
     }
 
-    if cfg!(not(any(
-        feature = "longterm-gcp-kms",
-        feature = "longterm-aws-kms"
-    ))) {
-        error!("no KMS types enabled: {}", envelope.key_id);
-        return;
+    let Some(seed) = seed else {
+        error!(
+            "no enabled KMS backend handles key id '{}' (key ids need an aws-kms:// or gcp-kms:// prefix and the matching cargo feature)",
+            envelope.key_id
+        );
+        std::process::exit(1);
     };
 
     let encoded = as_hex(seed.expose());

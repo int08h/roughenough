@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Keys: `roughenough_keys open` exits non-zero instead of printing a
+  random seed when no enabled KMS backend matches the envelope key id or
+  `--key` lacks a scheme prefix
+
 ## [2.2.0] - 2026-10-11
 
 ### Breaking
