@@ -14,6 +14,8 @@
 - Server: worker metrics are no longer lost when the metrics channel is
   full, and `total_requests` (JSON and log) now includes requests dropped
   for an SRV mismatch or no common version
+- Merkle: `compute_root` no longer appends padding to the stored leaves,
+  so adding leaves after computing a root yields the correct tree
 - Client: `--timeout` is honored when querying a single server (it was
   fixed at 2 seconds)
 - Client: `--timeout 0` is rejected instead of panicking
