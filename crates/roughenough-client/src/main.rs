@@ -155,6 +155,12 @@ fn build_client(
     display_name: &str,
     encoded_key: Option<&str>,
 ) -> Result<Client, ClientError> {
+    // Users write IPv6 literals bracketed ("[::1]"), as in URLs and host:port strings, but
+    // resolving a (host, port) pair needs the bare address
+    let host = host
+        .strip_prefix('[')
+        .and_then(|h| h.strip_suffix(']'))
+        .unwrap_or(host);
     let addr = (host, port)
         .to_socket_addrs()?
         .next()
@@ -368,6 +374,18 @@ mod tests {
             elapsed >= Duration::from_millis(900) && elapsed < Duration::from_millis(1900),
             "single-server wait was {elapsed:?}, expected about 1s"
         );
+    }
+
+    #[test]
+    fn ipv6_host_resolves_with_or_without_brackets() {
+        let args = Args::try_parse_from(["prog", "::1", "2002"]).unwrap();
+        let expected: std::net::SocketAddr = "[::1]:2002".parse().unwrap();
+
+        for host in ["::1", "[::1]"] {
+            let client = build_client(&args, host, 2002, host, None)
+                .unwrap_or_else(|e| panic!("{host}: {e}"));
+            assert_eq!(client.server(), expected, "{host}");
+        }
     }
 
     #[test]
