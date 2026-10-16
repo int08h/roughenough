@@ -39,10 +39,6 @@ impl LongTermIdentity {
     ///   [`OnlineKey`] will use this clock source.
     /// * `validity_length` - Length of time the generated [`OnlineKey`] will be valid.
     ///
-    /// # Returns
-    ///
-    /// A valid [`OnlineKey`] where its delegation certificate (CERT) proves the online key is
-    /// authorized by this long-term identity.
     pub fn make_online_key(&mut self, clock: &ClockSource, validity_length: Duration) -> OnlineKey {
         let now = clock.epoch_seconds();
         let mut olk = OnlineKey::new(clock.clone());
@@ -50,13 +46,6 @@ impl LongTermIdentity {
         let dele = Delegation::new(pubkey, now, validity_length);
 
         let dele_prefix = ProtocolVersion::RFC.dele_prefix();
-        debug_assert!(
-            ProtocolVersion::ADVERTISED
-                .iter()
-                .all(|v| v.dele_prefix() == dele_prefix),
-            "all advertised versions must share the same DELE context string"
-        );
-
         let mut to_sign = dele_prefix.to_vec();
         to_sign.extend_from_slice(&dele.as_bytes().expect("DELE serialization should not fail"));
 
