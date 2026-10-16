@@ -79,7 +79,7 @@ fn query_multiple_servers(args: &Args, list_file: &String) -> u64 {
         std::process::exit(-1);
     });
 
-    let mut sequence = MeasurementSequence::new(clients);
+    let sequence = MeasurementSequence::new(clients);
     let measurements = sequence
         .run(args.num_measurement_rounds)
         .unwrap_or_else(|e| {

@@ -14,6 +14,8 @@
 - Client: `--timeout` is honored when querying a single server (it was
   fixed at 2 seconds)
 - Client: `--timeout 0` is rejected instead of panicking
+- Client: a late or duplicated response to an earlier request is skipped
+  instead of failing the query (affects `-n N`)
 
 ## [2.2.0] - 2026-10-11
 

@@ -61,7 +61,12 @@ use roughenough_protocol::{FromFrame, ToFrame};
 
 use crate::measurement::Measurement;
 use crate::transport::{ClientTransport, UdpTransport};
+use crate::validation::ValidationError;
 use crate::{ResponseValidator, validation};
+
+// Bounds the drain so a peer replaying stale signed responses cannot hold a query open
+// for more than a few read timeouts.
+const MAX_DISCARDED_DATAGRAMS: usize = 8;
 
 /// Get the time from a single Roughtime server, optionally authenticating the response with the
 /// server's public key.
@@ -195,14 +200,14 @@ impl ClientBuilder {
 }
 
 pub struct Client {
-    pub(crate) server: SocketAddr,
-    pub(crate) hostname: String,
-    pub(crate) transport: Box<dyn ClientTransport>,
-    pub(crate) validator: ResponseValidator,
-    pub(crate) public_key: Option<PublicKey>,
-    pub(crate) srv_commit: Option<SrvCommitment>,
+    server: SocketAddr,
+    hostname: String,
+    transport: Box<dyn ClientTransport>,
+    validator: ResponseValidator,
+    public_key: Option<PublicKey>,
+    srv_commit: Option<SrvCommitment>,
     /// Protocol versions to offer instead of the default, if configured
-    pub(crate) versions: Option<Vec<ProtocolVersion>>,
+    versions: Option<Vec<ProtocolVersion>>,
 }
 
 /// Make requests to servers and receive responses
@@ -250,6 +255,21 @@ impl Client {
         Ok(builder.build())
     }
 
+    /// The server's socket address
+    pub fn server(&self) -> SocketAddr {
+        self.server
+    }
+
+    /// The server's name, used for display and in measurements
+    pub fn hostname(&self) -> &str {
+        &self.hostname
+    }
+
+    /// The server's public key, if the client authenticates responses
+    pub fn public_key(&self) -> Option<&PublicKey> {
+        self.public_key.as_ref()
+    }
+
     /// Get the time from a server, optionally authenticating the response.
     ///
     /// ```no_run,rust
@@ -271,18 +291,41 @@ impl Client {
     /// println!("Server's time, epoch: {}", measurement.midpoint());
     /// ```
     pub fn query(&self) -> Result<Measurement, ClientError> {
-        let request = self.create_request(None);
-        let nbytes = self.send_request(&request)?;
-        assert_eq!(nbytes, request.frame_size());
+        let nonce = Nonce::from(random_bytes::<32>());
+        self.exchange(nonce, None)
+    }
 
-        let (response, response_bytes) = self.recv_response()?;
+    /// Send one request using `nonce` and return the validated [Measurement]. `rand_value` is
+    /// the chaining value that produced `nonce`, if any, and is recorded in the measurement.
+    pub(crate) fn exchange(
+        &self,
+        nonce: Nonce,
+        rand_value: Option<[u8; 32]>,
+    ) -> Result<Measurement, ClientError> {
+        let request = self.create_request(&nonce);
         let request_bytes = request.as_frame_bytes()?;
+        self.transport.send(&request_bytes, self.server)?;
 
-        // validate() ensures that the response is valid and authentic; it
-        // verifies signatures over the bytes as received
-        let _midpoint = self
-            .validator
-            .validate(&request_bytes, &response_bytes, &response)?;
+        let mut discarded = 0;
+        let (response, response_bytes) = loop {
+            let mut buf = [0u8; MAX_RESPONSE_SIZE];
+            let (nbytes, _addr) = self.transport.recv(&mut buf)?;
+            let response_bytes = buf[..nbytes].to_vec();
+            let response = Response::from_frame(&mut ParseCursor::new(&mut buf[..nbytes]))?;
+
+            // validate() verifies signatures over the bytes as received
+            match self
+                .validator
+                .validate(&request_bytes, &response_bytes, &response)
+            {
+                Ok(_midpoint) => break (response, response_bytes),
+                // A late or duplicated response to an earlier request fails only the proof
+                Err(ValidationError::FailedProof(_)) if discarded < MAX_DISCARDED_DATAGRAMS => {
+                    discarded += 1;
+                }
+                Err(e) => return Err(e.into()),
+            }
+        };
 
         Measurement::builder()
             .server(self.server)
@@ -291,52 +334,26 @@ impl Client {
             .request(request)
             .response(response)
             .response_bytes(response_bytes)
-            .rand_value(None)
+            .rand_value(rand_value)
             .build()
     }
 
-    /// Create a new Roughtime [Request] using the provided [Nonce], or generate a random nonce
-    /// if none was provided.
-    fn create_request(&self, nonce: Option<Nonce>) -> Request {
-        let nonce = nonce.unwrap_or_else(|| Nonce::from(random_bytes::<32>()));
-
+    fn create_request(&self, nonce: &Nonce) -> Request {
         match (&self.srv_commit, &self.versions) {
             (Some(srv), Some(versions)) => {
-                Request::new_with_server_and_versions(&nonce, srv, versions)
+                Request::new_with_server_and_versions(nonce, srv, versions)
             }
-            (Some(srv), None) => Request::new_with_server(&nonce, srv),
-            (None, Some(versions)) => Request::new_with_versions(&nonce, versions),
-            (None, None) => Request::new(&nonce),
+            (Some(srv), None) => Request::new_with_server(nonce, srv),
+            (None, Some(versions)) => Request::new_with_versions(nonce, versions),
+            (None, None) => Request::new(nonce),
         }
-    }
-
-    fn send_request(&self, request: &Request) -> Result<usize, ClientError> {
-        let request_bytes = request.as_frame_bytes()?;
-        self.transport.send(&request_bytes, self.server)
-    }
-
-    /// Receive a response, returning the parsed [Response] together with the
-    /// packet exactly as received (used for signature verification, nonce
-    /// chaining, and malfeasance reports)
-    fn recv_response(&self) -> Result<(Response, Vec<u8>), ClientError> {
-        let mut buf = [0u8; MAX_RESPONSE_SIZE];
-        let (nbytes, _addr) = self.transport.recv(&mut buf)?;
-        let response_bytes = buf[..nbytes].to_vec();
-
-        let mut cursor = ParseCursor::new(&mut buf[..nbytes]);
-        let response = Response::from_frame(&mut cursor)?;
-
-        Ok((response, response_bytes))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn test_addr() -> SocketAddr {
-        "127.0.0.1:2003".parse().unwrap()
-    }
+    use crate::transport::testing::{client_with_stale_datagrams, test_addr};
 
     fn test_key() -> PublicKey {
         PublicKey::from([0x42u8; 32])
@@ -365,7 +382,7 @@ mod tests {
     #[test]
     fn request_without_key_omits_srv() {
         let client = Client::builder(test_addr()).build();
-        let request = client.create_request(None);
+        let request = client.create_request(&Nonce::from([0u8; 32]));
 
         assert!(request.srv().is_none());
     }
@@ -375,7 +392,7 @@ mod tests {
         let key = test_key();
         let client = Client::builder(test_addr()).public_key(key).build();
 
-        let request = client.create_request(None);
+        let request = client.create_request(&Nonce::from([0u8; 32]));
         assert_eq!(request.srv(), Some(&make_srv_commitment(&key)));
     }
 
@@ -384,7 +401,7 @@ mod tests {
         let versions = [ProtocolVersion::RFC];
         let client = Client::builder(test_addr()).versions(&versions).build();
 
-        let request = client.create_request(None);
+        let request = client.create_request(&Nonce::from([0u8; 32]));
         assert_eq!(request.ver().versions(), &versions[..]);
     }
 
@@ -393,7 +410,7 @@ mod tests {
         let client = Client::builder(test_addr()).build();
         let nonce = Nonce::from([0x77u8; 32]);
 
-        let request = client.create_request(Some(nonce));
+        let request = client.create_request(&nonce);
         assert_eq!(request.nonc(), &nonce);
     }
 
@@ -417,6 +434,24 @@ mod tests {
         match client.query() {
             Err(ClientError::ServerTimeout) => {}
             other => panic!("expected ServerTimeout, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn query_skips_stale_datagrams() {
+        let client = client_with_stale_datagrams(2, false);
+
+        let result = client.query();
+        assert!(result.is_ok(), "expected Ok, got {result:?}");
+    }
+
+    #[test]
+    fn query_gives_up_after_too_many_stale_datagrams() {
+        let client = client_with_stale_datagrams(MAX_DISCARDED_DATAGRAMS + 1, false);
+
+        match client.query() {
+            Err(ClientError::ValidationFailed(ValidationError::FailedProof(_))) => {}
+            other => panic!("expected FailedProof, got {other:?}"),
         }
     }
 }
