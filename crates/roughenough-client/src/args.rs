@@ -122,7 +122,8 @@ pub struct Args {
         long,
         value_name = "TIMEOUT",
         help = "Seconds to wait for the server's response",
-        default_value_t = 2
+        default_value_t = 2,
+        value_parser = RangedU64ValueParser::<u16>::new().range(1..)
     )]
     pub timeout: u16,
 
@@ -192,6 +193,12 @@ mod tests {
     #[test]
     fn zero_num_requests_is_rejected() {
         let err = Args::try_parse_from(["prog", "host", "2003", "-n", "0"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::ValueValidation);
+    }
+
+    #[test]
+    fn zero_timeout_is_rejected() {
+        let err = Args::try_parse_from(["prog", "host", "2003", "-t", "0"]).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::ValueValidation);
     }
 

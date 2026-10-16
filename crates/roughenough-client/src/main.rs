@@ -6,30 +6,14 @@ use std::time::Duration;
 use clap::Parser;
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
-use roughenough_client::ClientError::{DnsLookupFailed, InvalidConfiguration};
 use roughenough_client::args::Args;
 use roughenough_client::measurement::Measurement;
 use roughenough_client::reporting::MalfeasanceReport;
 use roughenough_client::sequence::MeasurementSequence;
 use roughenough_client::server_list::ServerList;
-use roughenough_client::{CausalityViolation, Client, ResponseValidator, server_list};
+use roughenough_client::{CausalityViolation, Client, ClientError, ResponseValidator};
 use roughenough_common::encoding::try_decode_key;
 use tracing::{debug, error, info};
-
-#[derive(thiserror::Error, Debug)]
-enum CliError {
-    #[error("{0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("{0}")]
-    Client(#[from] roughenough_client::ClientError),
-
-    #[error("{0}")]
-    ServerList(#[from] server_list::Error),
-
-    #[error("{0}")]
-    Decode(#[from] data_encoding::DecodeError),
-}
 
 fn main() {
     let args = Args::parse();
@@ -63,13 +47,11 @@ fn query_single_server(args: &Args, hostname: &String) -> u64 {
         eprintln!("WARNING: no public key provided (-k); responses are NOT authenticated");
     }
 
-    let versions = args.protocol.offered();
-    let client =
-        Client::new_with_versions(hostname, port, args.pub_key.as_deref(), versions.as_deref())
-            .unwrap_or_else(|e| {
-                error!("Error creating client for '{hostname}:{port}': {e}");
-                std::process::exit(-1);
-            });
+    let client = build_client(args, hostname, port, hostname, args.pub_key.as_deref())
+        .unwrap_or_else(|e| {
+            error!("Error creating client for '{hostname}:{port}': {e}");
+            std::process::exit(-1);
+        });
 
     let mut midpoint: u64 = 0;
     for _ in 0..args.num_requests {
@@ -166,7 +148,34 @@ fn enable_logging(args: &Args) {
     builder.init();
 }
 
-fn clients_from_list(server_list: &ServerList, args: &Args) -> Result<Vec<Client>, CliError> {
+fn build_client(
+    args: &Args,
+    host: &str,
+    port: u16,
+    display_name: &str,
+    encoded_key: Option<&str>,
+) -> Result<Client, ClientError> {
+    let addr = (host, port)
+        .to_socket_addrs()?
+        .next()
+        .ok_or_else(|| ClientError::DnsLookupFailed(format!("{host}:{port}")))?;
+    let mut builder = Client::builder(addr)
+        .hostname(display_name)
+        .timeout(Duration::from_secs(u64::from(args.timeout)));
+    if let Some(key) = encoded_key {
+        let public_key = try_decode_key(key)?;
+        builder = builder.public_key(public_key);
+    }
+    if let Some(versions) = args.protocol.offered() {
+        builder = builder.versions(&versions);
+    }
+    Ok(builder.build())
+}
+
+fn clients_from_list(
+    server_list: &ServerList,
+    args: &Args,
+) -> Result<Vec<Client>, Box<dyn std::error::Error>> {
     let target_servers = server_list.choose_random(args.num_unique_servers)?;
 
     let chosen_ones = target_servers
@@ -181,7 +190,6 @@ fn clients_from_list(server_list: &ServerList, args: &Args) -> Result<Vec<Client
         chosen_ones
     );
 
-    let timeout = Duration::from_secs(args.timeout as u64);
     let mut clients = Vec::new();
 
     for server in &target_servers {
@@ -190,32 +198,18 @@ fn clients_from_list(server_list: &ServerList, args: &Args) -> Result<Vec<Client
             continue;
         };
 
-        let host = address.host();
-        let port = address.port();
-        let sock_addr = (host, port)
-            .to_socket_addrs()?
-            .next()
-            .ok_or_else(|| DnsLookupFailed(host.to_string()))?;
-
-        let encoded_key = server.public_key();
-        let public_key = try_decode_key(encoded_key)?;
-
-        let mut builder = Client::builder(sock_addr)
-            .hostname(server.name())
-            .timeout(timeout)
-            .public_key(public_key);
-
-        if let Some(versions) = args.protocol.offered() {
-            builder = builder.versions(&versions);
-        }
-
-        clients.push(builder.build());
+        let client = build_client(
+            args,
+            address.host(),
+            address.port(),
+            server.name(),
+            Some(server.public_key()),
+        )?;
+        clients.push(client);
     }
 
     if clients.is_empty() {
-        return Err(CliError::Client(InvalidConfiguration(
-            "no server has a UDP address".to_string(),
-        )));
+        return Err("no server in the list has a UDP address".into());
     }
 
     Ok(clients)
@@ -344,6 +338,36 @@ mod tests {
             .rand_value(None)
             .build()
             .unwrap()
+    }
+
+    #[test]
+    fn single_server_client_uses_timeout_flag() {
+        let silent = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let port = silent.local_addr().unwrap().port().to_string();
+        let args = Args::try_parse_from(["prog", "127.0.0.1", &port, "-t", "1"]).unwrap();
+
+        let hostname = args.hostname.as_deref().unwrap();
+        let client = build_client(
+            &args,
+            hostname,
+            args.port.unwrap(),
+            hostname,
+            args.pub_key.as_deref(),
+        )
+        .unwrap();
+
+        let start = std::time::Instant::now();
+        let result = client.query();
+        let elapsed = start.elapsed();
+
+        assert!(
+            matches!(result, Err(ClientError::ServerTimeout)),
+            "expected ServerTimeout, got {result:?}"
+        );
+        assert!(
+            elapsed >= Duration::from_millis(900) && elapsed < Duration::from_millis(1900),
+            "single-server wait was {elapsed:?}, expected about 1s"
+        );
     }
 
     #[test]
