@@ -31,9 +31,9 @@ usage. Otherwise the fuzzer wastes time on large inputs (up to 4096 bytes) that 
 
 ## Fuzz Targets
 
-- **fuzz-request-parse**: Tests parsing of request messages including frame validation
+- **fuzz-request-parse**: Fuzzes raw request parsing, including frame validation
 - **fuzz-response-parse**: Tests parsing of response messages and accessing fields
-- **fuzz-structured**: Structure-aware fuzzing for Request, Response, SREP, DELE, and CERT messages using the arbitrary crate
+- **fuzz-structured**: Builds Request, Response, SREP, DELE, and CERT messages from arbitrary fields using the arbitrary crate, and asserts that each one encodes and parses back to an equal value
 
 ## Running with Specific Options
 
