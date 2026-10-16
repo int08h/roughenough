@@ -14,6 +14,9 @@ categories = ["network-programming", "command-line-utilities", "date-and-time"]
 default = []
 reporting = ["dep:ureq"]
 
+[package.metadata.dist]
+features = ["reporting"]
+
 [[bin]]
 name = "roughenough_client"
 path = "src/main.rs"

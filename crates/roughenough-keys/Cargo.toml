@@ -22,6 +22,9 @@ longterm-gcp-kms = ["dep:google-cloud-kms-v1", "dep:crc32c", "tokio"]
 longterm-aws-secret-manager = ["dep:aws-config", "dep:aws-sdk-secretsmanager", "tokio"]
 longterm-gcp-secret-manager = ["dep:google-cloud-secretmanager-v1", "dep:crc32c", "tokio"]
 
+[package.metadata.dist]
+all-features = true
+
 [dependencies]
 roughenough-common = { workspace = true }
 roughenough-protocol = { workspace = true }

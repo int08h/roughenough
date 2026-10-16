@@ -32,11 +32,11 @@ Build all components:
 cargo build --release
 ```
 
-Build with all optional features:
+Build the server and client with every optional feature a release ships:
 
 ```bash
-# Enable all optional features
-cargo build --release --all-features 
+cargo build --release -p roughenough-server --features release
+cargo build --release -p roughenough-client --features reporting
 ```
 
 ### Running the Server
@@ -145,6 +145,11 @@ Roughtime is structured as a Cargo workspace with multiple crates:
 - **fuzz** - Fuzzing harness
 
 ## Optional Features
+
+### Server Features
+
+The server forwards the keys backends as `online-pkcs11`, `online-ssh-agent`,
+`longterm-aws`, and `longterm-gcp`; `release` enables all of them.
 
 ### Client Features
 

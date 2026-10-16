@@ -27,6 +27,13 @@
 - Client: a late or duplicated response to an earlier request is skipped
   instead of failing the query (affects `-n N`)
 
+### Added
+
+- Server: new features `online-ssh-agent`, `longterm-aws`, `longterm-gcp`,
+  and `release`; release binaries and the Docker image are built with
+  `--features release` instead of `--all-features`, so they no longer
+  include test hooks
+
 ## [2.2.0] - 2026-10-11
 
 ### Breaking

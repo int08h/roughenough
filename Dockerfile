@@ -43,14 +43,14 @@ RUN for crate in roughenough-client roughenough-common roughenough-keys \
 
 # Build dependencies only (cached unless a manifest or Cargo.lock changes).
 # This must fail loudly if the stub setup is ever incomplete.
-RUN cargo build --profile release-lto --bin roughenough_server --all-features
+RUN cargo build --profile release-lto -p roughenough-server --features release
 
 # Copy actual source and build. Touch the sources so cargo sees them as newer
 # than the stub-built artifacts (COPY preserves context mtimes, which may
 # predate the stub build and would otherwise skip recompilation).
 COPY crates crates
 RUN find crates -name '*.rs' -exec touch {} + \
-    && cargo build --profile release-lto --bin roughenough_server --all-features
+    && cargo build --profile release-lto -p roughenough-server --features release
 
 # Runtime stage - minimal distroless (no shell), runs as uid/gid 65532
 FROM gcr.io/distroless/cc-debian13:nonroot

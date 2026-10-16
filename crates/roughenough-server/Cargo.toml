@@ -16,9 +16,19 @@ path = "src/main.rs"
 
 [features]
 test-utils = []
-# Makes the pkcs11 seed backend available at runtime; without it, selecting
-# pkcs11 fails with a "recompile with the feature" error
+# Each forwards a roughenough-keys backend so a server-only build can select
+# it; without one, selecting that backend or seed scheme fails at runtime with
+# a "recompile with the feature" error
 online-pkcs11 = ["roughenough-keys/online-pkcs11"]
+online-ssh-agent = ["roughenough-keys/online-ssh-agent"]
+longterm-aws = ["roughenough-keys/longterm-aws-kms", "roughenough-keys/longterm-aws-secret-manager"]
+longterm-gcp = ["roughenough-keys/longterm-gcp-kms", "roughenough-keys/longterm-gcp-secret-manager"]
+# Everything a shipped server binary supports; never includes test-utils.
+# Add any new roughenough-keys backend here too.
+release = ["online-pkcs11", "online-ssh-agent", "longterm-aws", "longterm-gcp"]
+
+[package.metadata.dist]
+features = ["release"]
 
 [dependencies]
 roughenough-common = { workspace = true }

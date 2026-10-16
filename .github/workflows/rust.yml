@@ -268,9 +268,9 @@ jobs:
 
     - name: Build binaries
       run: |
-        cargo auditable build --release --all-features --bin roughenough_client
-        cargo auditable build --release --all-features --bin roughenough_server
-        cargo auditable build --release --all-features --bin roughenough_keys
+        cargo auditable build --release -p roughenough-client --features reporting
+        cargo auditable build --release -p roughenough-server --features release
+        cargo auditable build --release -p roughenough-keys --all-features
 
     - name: Strip binaries
       run: |
