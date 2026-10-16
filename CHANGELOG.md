@@ -33,6 +33,8 @@
   and `release`; release binaries and the Docker image are built with
   `--features release` instead of `--all-features`, so they no longer
   include test hooks
+- Protocol: `FromFrame::from_frame_bytes` parses a framed Request or
+  Response from a shared byte slice
 
 ## [2.2.0] - 2026-10-11
 

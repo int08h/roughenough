@@ -4,26 +4,18 @@
 use std::net::SocketAddr;
 
 use roughenough_client::validation::ResponseValidator;
-use roughenough_protocol::cursor::ParseCursor;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::response::Response;
 use roughenough_protocol::tags::{Nonce, ProtocolVersion, PublicKey};
 use roughenough_protocol::wire::{FromFrame, ToFrame};
 use roughenough_server::test_utils::TestContext;
 
-fn parse_frame(response_bytes: &[u8]) -> Response {
-    let mut buf = response_bytes.to_vec();
-    Response::from_frame(&mut ParseCursor::new(&mut buf)).unwrap()
-}
-
 fn validate_response(
     request_bytes: &[u8],
     response_bytes: &[u8],
     pub_key: PublicKey,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    assert!(response_bytes.starts_with(b"ROUGHTIM"));
-    let mut buf = response_bytes.to_vec();
-    let response = Response::from_frame(&mut ParseCursor::new(&mut buf))?;
+    let response = Response::from_frame_bytes(response_bytes)?;
 
     let validator = ResponseValidator::new_with_key(pub_key);
     validator.validate(request_bytes, response_bytes, &response)?;
@@ -57,7 +49,7 @@ fn single_request_validation() {
     let (response_addr, response_bytes) = &responses[0];
     assert_eq!(*response_addr, addr);
 
-    let response = parse_frame(response_bytes);
+    let response = Response::from_frame_bytes(response_bytes).unwrap();
     assert_eq!(*response.srep().ver(), ProtocolVersion::RFC);
     assert_eq!(response.srep().vers().versions(), &[ProtocolVersion::RFC]);
 
@@ -105,7 +97,7 @@ fn large_batch_validation() {
             .unwrap();
         assert_eq!(*response_addr, expected_addr);
 
-        let response = parse_frame(response_bytes);
+        let response = Response::from_frame_bytes(response_bytes).unwrap();
         assert_eq!(response.indx(), idx as u32);
         assert!(
             !response.path().as_ref().is_empty(),

@@ -8,7 +8,6 @@ use aws_lc_rs::signature;
 use aws_lc_rs::signature::UnparsedPublicKey;
 use data_encoding::HEXLOWER;
 use roughenough_merkle::root_from_paths;
-use roughenough_protocol::cursor::ParseCursor;
 use roughenough_protocol::header::find_value_range;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::response::Response;
@@ -193,9 +192,7 @@ impl ResponseValidator {
     }
 
     fn check_version(request: &[u8], response: &Response) -> Result<(), ValidationError> {
-        let mut request_buf = request.to_vec();
-        let mut cursor = ParseCursor::new(&mut request_buf);
-        let request = Request::from_frame(&mut cursor)?;
+        let request = Request::from_frame_bytes(request)?;
 
         let version = *response.srep().ver();
         if request.ver().versions().contains(&version) {
@@ -351,9 +348,7 @@ mod tests {
     const DRAFT_PUB_KEY: &[u8] = b"AW5uAoTSTDfG5NfY1bTh08GUnOqlRb+HVhbJ3ODJvsE=";
 
     fn parse_response(response_bytes: &[u8]) -> Response {
-        let mut parse_buf = response_bytes.to_vec();
-        let mut cursor = ParseCursor::new(&mut parse_buf);
-        Response::from_frame(&mut cursor).unwrap()
+        Response::from_frame_bytes(response_bytes).unwrap()
     }
 
     fn validator_for(pub_key_b64: &[u8]) -> ResponseValidator {
@@ -466,9 +461,7 @@ mod tests {
         let response_bytes =
             include_bytes!("../../roughenough-protocol/testdata/rfc-response.071039e5").to_vec();
 
-        let mut parse_buf = response_bytes.clone();
-        let mut cursor = ParseCursor::new(&mut parse_buf);
-        let response = Response::from_frame(&mut cursor).unwrap();
+        let response = Response::from_frame_bytes(&response_bytes).unwrap();
         let validator = ResponseValidator::new_with_key(PublicKey::from(pub_key.as_slice()));
 
         validator
@@ -510,9 +503,7 @@ mod tests {
             find_value_range(&response_bytes[FRAME_OVERHEAD..], &[Tag::CERT, Tag::DELE]).unwrap();
         response_bytes[FRAME_OVERHEAD + dele_range.end - 1] ^= 0xff;
 
-        let mut parse_buf = response_bytes.clone();
-        let mut cursor = ParseCursor::new(&mut parse_buf);
-        let response = Response::from_frame(&mut cursor).unwrap();
+        let response = Response::from_frame_bytes(&response_bytes).unwrap();
 
         let validator = ResponseValidator::new_with_key(PublicKey::from(pub_key.as_slice()));
 
@@ -552,10 +543,8 @@ mod tests {
     fn midpoint_is_validated() {
         let validator = ResponseValidator::new();
 
-        let mut msg_bytes =
-            include_bytes!("../../roughenough-protocol/testdata/rfc-response.071039e5").to_vec();
-        let mut cursor = ParseCursor::new(&mut msg_bytes);
-        let response1 = Response::from_frame(&mut cursor).unwrap();
+        let msg_bytes = include_bytes!("../../roughenough-protocol/testdata/rfc-response.071039e5");
+        let response1 = Response::from_frame_bytes(msg_bytes).unwrap();
 
         // Happy-path should pass
         validator.check_midpoint(&response1).unwrap();
@@ -565,10 +554,8 @@ mod tests {
     fn midpoint_outside_of_dele_bounds_is_detected() {
         let validator = ResponseValidator::new();
 
-        let mut msg_bytes =
-            include_bytes!("../../roughenough-protocol/testdata/rfc-response.071039e5").to_vec();
-        let mut cursor = ParseCursor::new(&mut msg_bytes);
-        let response = Response::from_frame(&mut cursor).unwrap();
+        let msg_bytes = include_bytes!("../../roughenough-protocol/testdata/rfc-response.071039e5");
+        let response = Response::from_frame_bytes(msg_bytes).unwrap();
 
         //
         // Change request so that the midpoint is *before* MINT
@@ -617,10 +604,8 @@ mod tests {
         let request = RequestPlain::new(&nonce);
         let request_bytes = request.as_bytes().unwrap();
 
-        let mut msg_bytes =
-            include_bytes!("../../roughenough-protocol/testdata/rfc-response.071039e5").to_vec();
-        let mut cursor = ParseCursor::new(&mut msg_bytes);
-        let response = Response::from_frame(&mut cursor).unwrap();
+        let msg_bytes = include_bytes!("../../roughenough-protocol/testdata/rfc-response.071039e5");
+        let response = Response::from_frame_bytes(msg_bytes).unwrap();
 
         // This should fail because the response was for a different nonce
         match validator.check_merkle_proof(&request_bytes, &response) {
@@ -711,9 +696,7 @@ mod tests {
         response_bytes.extend_from_slice(&(msg.len() as u32).to_le_bytes());
         response_bytes.extend_from_slice(&msg);
 
-        let mut parse_buf = response_bytes.clone();
-        let mut cursor = ParseCursor::new(&mut parse_buf);
-        let response = Response::from_frame(&mut cursor).unwrap();
+        let response = Response::from_frame_bytes(&response_bytes).unwrap();
 
         let pub_key = PublicKey::from(longterm.public_key().as_ref());
         let validator = ResponseValidator::new_with_key(pub_key);

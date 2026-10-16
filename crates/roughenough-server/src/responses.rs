@@ -219,11 +219,10 @@ impl ResponseHandler {
 
 #[cfg(test)]
 mod tests {
-    use roughenough_protocol::cursor::ParseCursor;
     use roughenough_protocol::request::Request;
     use roughenough_protocol::response::Response;
     use roughenough_protocol::tags::Nonce;
-    use roughenough_protocol::wire::{FromWire, ToWire};
+    use roughenough_protocol::wire::{FromFrame, ToWire};
 
     use super::*;
     use crate::test_utils::new_response_handler;
@@ -320,11 +319,8 @@ mod tests {
         assert_eq!(responses.len(), 1);
         let (response_addr, response_bytes) = &responses[0];
         assert_eq!(*response_addr, addr);
-        assert!(response_bytes.starts_with(b"ROUGHTIM"));
 
-        let mut response_data = response_bytes[12..].to_vec();
-        let mut cursor = ParseCursor::new(&mut response_data);
-        let resp = Response::from_wire(&mut cursor).unwrap();
+        let resp = Response::from_frame_bytes(response_bytes).unwrap();
         assert_eq!(resp.nonc(), &expected_nonce);
     }
 
@@ -360,12 +356,8 @@ mod tests {
 
         for (idx, (response_addr, response_bytes)) in responses.iter().enumerate() {
             assert_eq!(*response_addr, expected_addrs[idx]);
-            assert!(response_bytes.starts_with(b"ROUGHTIM"));
 
-            // Parse and verify the response
-            let mut response_data = response_bytes[12..].to_vec();
-            let mut cursor = ParseCursor::new(&mut response_data);
-            let resp = Response::from_wire(&mut cursor).unwrap();
+            let resp = Response::from_frame_bytes(response_bytes).unwrap();
             assert_eq!(resp.nonc(), &expected_nonces[idx]);
             assert_eq!(resp.indx(), idx as u32);
         }
@@ -385,10 +377,7 @@ mod tests {
             }
             let mut responses = Vec::new();
             responder.process_responses(|_, bytes| {
-                let mut data = bytes.to_vec();
-                let mut cursor = ParseCursor::new(&mut data);
-                use roughenough_protocol::wire::FromFrame;
-                responses.push(Response::from_frame(&mut cursor).unwrap());
+                responses.push(Response::from_frame_bytes(bytes).unwrap());
             });
             responder.clear();
             responses
@@ -440,10 +429,7 @@ mod tests {
             );
             let mut responses = Vec::new();
             responder.process_responses(|_, bytes| {
-                let mut data = bytes.to_vec();
-                let mut cursor = ParseCursor::new(&mut data);
-                use roughenough_protocol::wire::FromFrame;
-                responses.push(Response::from_frame(&mut cursor).unwrap());
+                responses.push(Response::from_frame_bytes(bytes).unwrap());
             });
             responder.clear();
             responses.pop().unwrap()

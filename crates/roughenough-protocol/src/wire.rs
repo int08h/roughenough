@@ -92,8 +92,52 @@ pub trait FromFrame: FromWire {
 
         FromWire::from_wire(cursor)
     }
+
+    /// Parse a framed message from a shared byte slice.
+    ///
+    /// Copies `bytes` because `ParseCursor` requires a mutable buffer; hot paths that
+    /// already own a mutable buffer should call `from_frame` directly.
+    fn from_frame_bytes(bytes: &[u8]) -> Result<Self, Error> {
+        let mut buf = bytes.to_vec();
+        let mut cursor = ParseCursor::new(&mut buf);
+        Self::from_frame(&mut cursor)
+    }
 }
 
 pub trait FromWireN: Sized {
     fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::request::Request;
+    use crate::response::Response;
+
+    const RFC_REQUEST: &[u8] = include_bytes!("../testdata/rfc-request.071039e5");
+    const RFC_RESPONSE: &[u8] = include_bytes!("../testdata/rfc-response.path8.index2.4c16c619");
+
+    #[test]
+    fn from_frame_bytes_matches_from_frame() {
+        let mut buf = RFC_REQUEST.to_vec();
+        let mut cursor = ParseCursor::new(&mut buf);
+        let expected = Request::from_frame(&mut cursor).unwrap();
+        let parsed = Request::from_frame_bytes(RFC_REQUEST).unwrap();
+        assert_eq!(parsed, expected);
+
+        let mut buf = RFC_RESPONSE.to_vec();
+        let mut cursor = ParseCursor::new(&mut buf);
+        let expected = Response::from_frame(&mut cursor).unwrap();
+        let parsed = Response::from_frame_bytes(RFC_RESPONSE).unwrap();
+        assert_eq!(parsed, expected);
+    }
+
+    #[test]
+    fn from_frame_bytes_rejects_bad_magic() {
+        let mut bytes = RFC_RESPONSE.to_vec();
+        bytes[0] ^= 0xff;
+
+        let result = Response::from_frame_bytes(&bytes);
+        assert!(matches!(result, Err(Error::UnexpectedMagic(_))));
+    }
 }

@@ -249,10 +249,8 @@ mod tests {
 
     #[test]
     fn version_one_response_is_parsed() {
-        let mut raw = include_bytes!("../testdata/rfc10049-response.104172a3").to_vec();
-
-        let mut cursor = ParseCursor::new(&mut raw);
-        let response = Response::from_frame(&mut cursor).unwrap();
+        let raw = include_bytes!("../testdata/rfc10049-response.104172a3");
+        let response = Response::from_frame_bytes(raw).unwrap();
 
         assert_eq!(response.msg_type(), MessageType::Response);
         assert_eq!(response.indx(), 0);
@@ -309,10 +307,8 @@ mod tests {
 
     #[test]
     fn from_wire_on_known_bytes() {
-        let mut raw = include_bytes!("../testdata/rfc-response.path8.index2.4c16c619").to_vec();
-
-        let mut cursor = ParseCursor::new(&mut raw);
-        let response = Response::from_frame(&mut cursor).unwrap();
+        let raw = include_bytes!("../testdata/rfc-response.path8.index2.4c16c619");
+        let response = Response::from_frame_bytes(raw).unwrap();
 
         // Response {
         //     header: Header7 {

@@ -1,7 +1,6 @@
 use data_encoding::BASE64;
 use roughenough_client::{MalfeasanceReport, ReportEntry, ResponseValidator};
 use roughenough_common::crypto::calculate_chained_nonce;
-use roughenough_protocol::cursor::ParseCursor;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::response::Response;
 use roughenough_protocol::tags::PublicKey;
@@ -66,14 +65,10 @@ fn parse_interaction_pair(
     decoded: &DecodedEntry,
     index: usize,
 ) -> Result<(Request, Response), String> {
-    let mut request_bytes_mut = decoded.request_bytes.clone();
-    let mut request_cursor = ParseCursor::new(&mut request_bytes_mut);
-    let request = Request::from_frame(&mut request_cursor)
+    let request = Request::from_frame_bytes(&decoded.request_bytes)
         .map_err(|e| format!("Entry {index}: invalid request: {e}"))?;
 
-    let mut response_bytes_mut = decoded.response_bytes.clone();
-    let mut response_cursor = ParseCursor::new(&mut response_bytes_mut);
-    let response = Response::from_frame(&mut response_cursor)
+    let response = Response::from_frame_bytes(&decoded.response_bytes)
         .map_err(|e| format!("Entry {index}: invalid response: {e}"))?;
 
     Ok((request, response))
@@ -279,10 +274,8 @@ mod tests {
             .decode(b"AW5uAoTSTDfG5NfY1bTh08GUnOqlRb+HVhbJ3ODJvsE=")
             .unwrap();
 
-        let mut buf = draft_request_bytes.clone();
-        let draft_request = Request::from_frame(&mut ParseCursor::new(&mut buf)).unwrap();
-        let mut buf = draft_response_bytes.clone();
-        let draft_response = Response::from_frame(&mut ParseCursor::new(&mut buf)).unwrap();
+        let draft_request = Request::from_frame_bytes(&draft_request_bytes).unwrap();
+        let draft_response = Response::from_frame_bytes(&draft_response_bytes).unwrap();
         assert_eq!(*draft_response.srep().ver(), ProtocolVersion::DRAFT);
 
         let draft_measurement = Measurement::builder()

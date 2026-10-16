@@ -11,9 +11,7 @@ fuzz_target!(|data: &[u8]| {
     // The client parses received datagrams with from_frame; fuzzing it on the
     // same input covers the framing layer (magic, length, truncate_remaining)
     // that from_wire alone never reaches
-    let mut frame_copy = data.to_vec();
-    let mut cursor = ParseCursor::new(&mut frame_copy);
-    let _ = Response::from_frame(&mut cursor);
+    let _ = Response::from_frame_bytes(data);
 
     // Try to parse a response
     let mut data_copy = data.to_vec();

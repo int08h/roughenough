@@ -126,7 +126,6 @@ pub(crate) mod testing {
     use std::collections::VecDeque;
     use std::net::SocketAddr;
 
-    use roughenough_protocol::cursor::ParseCursor;
     use roughenough_protocol::request::Request;
     use roughenough_protocol::tags::ProtocolVersion;
     use roughenough_protocol::util::ClockSource;
@@ -175,9 +174,7 @@ pub(crate) mod testing {
             }
 
             let frame = self.last_request.borrow().clone();
-            let mut parse_buf = frame.clone();
-            let mut cursor = ParseCursor::new(&mut parse_buf);
-            let request = Request::from_frame(&mut cursor).expect("mock got a valid request");
+            let request = Request::from_frame_bytes(&frame).expect("mock got a valid request");
 
             let mut ctx = self.ctx.borrow_mut();
             ctx.response_handler.clear();

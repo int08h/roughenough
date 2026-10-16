@@ -140,7 +140,6 @@ mod tests {
     const BASE_TIME: u64 = 1_700_000_000;
 
     use roughenough_protocol::FromFrame;
-    use roughenough_protocol::cursor::ParseCursor;
     use roughenough_protocol::request::Request;
     use roughenough_protocol::response::Response;
     use roughenough_protocol::tags::PublicKey;
@@ -148,20 +147,14 @@ mod tests {
     use super::*;
 
     fn create_test_measurement(midpoint: u64, radius: u32) -> Measurement {
-        let request = {
-            let mut raw =
-                include_bytes!("../../roughenough-protocol/testdata/rfc-request.071039e5").to_vec();
-            let mut cursor = ParseCursor::new(&mut raw);
-            Request::from_frame(&mut cursor).unwrap()
-        };
+        let request = Request::from_frame_bytes(include_bytes!(
+            "../../roughenough-protocol/testdata/rfc-request.071039e5"
+        ))
+        .unwrap();
 
         let raw_response =
             include_bytes!("../../roughenough-protocol/testdata/rfc-response.071039e5").to_vec();
-        let mut response = {
-            let mut parse_buf = raw_response.clone();
-            let mut cursor = ParseCursor::new(&mut parse_buf);
-            Response::from_frame(&mut cursor).unwrap()
-        };
+        let mut response = Response::from_frame_bytes(&raw_response).unwrap();
 
         // Modify response for testing
         let mut srep = response.srep().clone();

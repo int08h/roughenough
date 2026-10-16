@@ -5,7 +5,6 @@
 use std::time::Duration;
 
 use roughenough_keys::seed::MemoryBackend;
-use roughenough_protocol::cursor::ParseCursor;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::response::Response;
 use roughenough_protocol::tags::{Nonce, ProtocolVersion};
@@ -83,9 +82,7 @@ impl TestContext {
 
         self.response_handler
             .process_responses(|_addr, response_bytes| {
-                let mut bytes_copy = response_bytes.to_vec();
-                let mut cursor = ParseCursor::new(&mut bytes_copy);
-                let response = Response::from_frame(&mut cursor).unwrap();
+                let response = Response::from_frame_bytes(response_bytes).unwrap();
                 responses.push(response);
             });
         assert_eq!(responses.len(), 1, "one response was generated");
