@@ -100,6 +100,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
+    use crate::storage::{StorageError, load_seed_file};
 
     static NEXT_TEMP_DIR: AtomicUsize = AtomicUsize::new(0);
 
@@ -182,6 +183,29 @@ mod tests {
     fn rejects_non_regular_files() {
         let dir = temp_dir();
         assert!(read(&dir).is_err());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn load_seed_file_decodes_plain_seed() {
+        let dir = temp_dir();
+        let path = dir.join("seed");
+        write_seed_file(&path, format!("seed://{}\n", "ab".repeat(32)).as_bytes());
+
+        let seed = load_seed_file(&path).unwrap();
+        assert_eq!(seed.expose(), &[0xab; 32]);
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn load_seed_file_reports_io_errors_as_seed_file() {
+        let dir = temp_dir();
+        let result = load_seed_file(&dir.join("missing"));
+        assert!(
+            matches!(&result, Err(StorageError::SeedFile(e)) if e.kind() == io::ErrorKind::NotFound),
+            "{result:?}"
+        );
         fs::remove_dir_all(dir).unwrap();
     }
 }

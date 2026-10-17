@@ -14,12 +14,11 @@
 //!   the root once, then sends responses to each client. This amortizes the (relatively)
 //!   expensive Ed25519 signature calculation across all requests in a batch.
 //!
-//! - **Processing Pipeline**: UDP Socket -> NetworkHandler -> RequestHandler -> BatchingResponder
-//!   -> UDP Socket
+//! - **Processing Pipeline**: UDP Socket -> NetworkHandler -> RequestValidator -> ResponseHandler
+//!   -> NetworkHandler -> UDP Socket
 //!
 use std::io;
 use std::net::{SocketAddr, UdpSocket as StdUdpSocket};
-use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::{Acquire, Release};
 use std::sync::mpsc::{SyncSender, channel, sync_channel};
@@ -28,22 +27,22 @@ use std::time::Duration;
 
 use clap::Parser;
 use mio::net::UdpSocket as MioUdpSocket;
-use roughenough_keys::seed::{Seed, SeedBackend, try_choose_backend};
-use roughenough_keys::storage::try_load_seed_sync;
-use roughenough_protocol::util::ClockSource;
+use roughenough_common::clocksource::ClockSource;
+use roughenough_keys::logging;
+use roughenough_keys::seed::{self, Seed, SeedBackend};
+use roughenough_keys::storage::load_seed_file;
 use roughenough_server::args::Args;
 use roughenough_server::keysource::KeySource;
 use roughenough_server::metrics::aggregator::{MetricsAggregator, WorkerMetrics};
 use roughenough_server::metrics::snapshot::validate_metrics_directory;
 use roughenough_server::responses::ResponseHandler;
-use roughenough_server::seed_file;
 use roughenough_server::worker::{ExitGuard, Worker};
 use signal_hook::iterator::Signals;
 use socket2::{Domain, Socket, Type};
 use tracing::{debug, error, info, warn};
+use tracing_subscriber::Layer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::{Layer, filter};
 
 /// Global flag that will be set to `false` when all threads should exit.
 static KEEP_RUNNING: AtomicBool = AtomicBool::new(true);
@@ -59,6 +58,9 @@ fn main() {
     set_signal_handler();
 
     let args = Args::parse();
+    if let Err(e) = args.validate_seed_source() {
+        e.exit();
+    }
     enable_logging(&args);
     debug!(
         listen_addr = %args.udp_socket_addr(),
@@ -71,8 +73,8 @@ fn main() {
     );
 
     let clock = choose_clock(&args);
-    let seed = load_seed(&args);
-    let key_source = KeySource::new(seed, clock.clone(), args.rotation_interval());
+    let backend = open_seed_backend(&args);
+    let key_source = KeySource::new(backend, clock.clone(), args.rotation_interval());
     let worker_config = WorkerConfig {
         socket_addr: args.udp_socket_addr(),
         batch_size: args.batch_size as usize,
@@ -81,8 +83,7 @@ fn main() {
 
     info!("Long term public key: {:?}", key_source.public_key());
 
-    let (metrics_thread, metrics_chan_tx) =
-        start_metrics_thread(&args, clock.clone(), &KEEP_RUNNING);
+    let (metrics_thread, metrics_chan_tx) = start_metrics_thread(&args, clock, &KEEP_RUNNING);
 
     let mut threads = Vec::new();
     threads.push(metrics_thread);
@@ -90,7 +91,6 @@ fn main() {
     let (exit_tx, exit_rx) = channel();
 
     for i in 0..args.num_threads {
-        let clock = clock.clone();
         let ks = key_source.clone();
         let metrics_chan_tx = metrics_chan_tx.clone();
         let exit_tx = exit_tx.clone();
@@ -99,7 +99,7 @@ fn main() {
             .name(format!("worker-{i}"))
             .spawn(move || {
                 let _exit_guard = ExitGuard::new(i as usize, exit_tx);
-                worker_task(i, ks, worker_config, clock, metrics_chan_tx)
+                worker_task(i, ks, worker_config, metrics_chan_tx)
             })
             .unwrap();
 
@@ -137,57 +137,33 @@ fn main() {
     info!("Server finished");
 }
 
-fn load_seed(args: &Args) -> Box<dyn SeedBackend> {
-    let seed = match &args.seed_file {
-        None => {
-            warn!("Using all-zero seed because --insecure-zero-seed was specified");
-            Seed::new(&[0u8; 32])
-        }
-        Some(path) => {
-            let contents = match seed_file::read(path) {
-                Ok(contents) => contents,
-                Err(e) => {
-                    error!("reading seed file '{}': {e}", path.display());
-                    std::process::exit(1);
-                }
-            };
-            let encoded_value = match contents.encoded_value() {
-                Ok(value) => value,
-                Err(e) => {
-                    error!("reading seed file '{}': {e}", path.display());
-                    std::process::exit(1);
-                }
-            };
-
-            match try_load_seed_sync(encoded_value) {
-                Ok(seed) => seed,
-                Err(e) => {
-                    error!("loading seed from '{}': {e}", path.display());
-                    std::process::exit(1);
-                }
+fn open_seed_backend(args: &Args) -> Box<dyn SeedBackend> {
+    // validate_seed_source already ran, so a backend that takes a seed has exactly one source
+    let seed = if !args.seed_backend.takes_seed() {
+        None
+    } else if let Some(path) = &args.seed_file {
+        match load_seed_file(path) {
+            Ok(seed) => Some(seed),
+            Err(e) => {
+                error!("loading seed from '{}': {e}", path.display());
+                std::process::exit(1);
             }
         }
+    } else {
+        warn!("Using all-zero seed because --insecure-zero-seed was specified");
+        Some(Seed::from_bytes(&[0u8; 32]))
     };
 
-    let mut backend = match try_choose_backend(&args.seed_backend.to_string()) {
-        Ok(backend) => backend,
+    match seed::open(args.seed_backend, seed) {
+        Ok(backend) => {
+            info!("Opened '{}' seed backend", args.seed_backend);
+            backend
+        }
         Err(e) => {
-            error!("choosing seed backend: {e}");
+            error!("opening '{}' seed backend: {e}", args.seed_backend);
             std::process::exit(1);
         }
-    };
-
-    info!(
-        "Loaded {}-byte seed into '{}' backend",
-        seed.len(),
-        &args.seed_backend
-    );
-
-    if let Err(e) = backend.store_seed(seed) {
-        error!("storing seed in '{}' backend: {e}", &args.seed_backend);
-        std::process::exit(1);
     }
-    backend
 }
 
 fn choose_clock(args: &Args) -> ClockSource {
@@ -201,21 +177,13 @@ fn worker_task(
     idx: u16,
     key_source: KeySource,
     config: WorkerConfig,
-    clock: ClockSource,
     metrics_channel: SyncSender<WorkerMetrics>,
 ) {
     let sock = bind_socket(config.socket_addr).expect("Failed to bind socket");
     let responder = ResponseHandler::new(config.batch_size as u8, key_source);
     let idx = idx as usize;
 
-    let mut worker = Worker::new(
-        idx,
-        config.batch_size,
-        responder,
-        clock,
-        metrics_channel,
-        config.metrics_interval,
-    );
+    let mut worker = Worker::new(idx, responder, metrics_channel, config.metrics_interval);
 
     worker.run(sock, &KEEP_RUNNING);
 }
@@ -273,15 +241,7 @@ fn enable_logging(args: &Args) {
         2.. => tracing::Level::TRACE,
     };
 
-    let filters = filter::Targets::new()
-        .with_target("aws_config", cloud_sdk_verbosity)
-        .with_target("aws_sdk_kms", cloud_sdk_verbosity)
-        .with_target("aws_sdk_secretsmanager", cloud_sdk_verbosity)
-        .with_target("google_cloud_kms_v1", cloud_sdk_verbosity)
-        .with_target("google_cloud_secretmanager_v1", cloud_sdk_verbosity)
-        .with_target("hyper_util", cloud_sdk_verbosity)
-        .with_target("rustls", cloud_sdk_verbosity)
-        .with_default(verbosity); // for all other targets
+    let filters = logging::sdk_targets(cloud_sdk_verbosity, verbosity);
 
     let fmt_layer = tracing_subscriber::fmt::layer()
         .compact()
@@ -291,7 +251,7 @@ fn enable_logging(args: &Args) {
 }
 
 /// Creates metrics collection infrastructure and spawns collector thread
-pub fn start_metrics_thread(
+fn start_metrics_thread(
     args: &Args,
     clock: ClockSource,
     keep_running: &'static AtomicBool,
@@ -299,15 +259,13 @@ pub fn start_metrics_thread(
     let num_workers = args.num_threads as usize;
     let metrics_interval = Duration::from_secs(args.metrics_interval);
 
-    let metrics_path = args.metrics_output.as_ref().map(|metrics_path_arg| {
-        let path = Path::new(metrics_path_arg);
+    if let Some(path) = args.metrics_output.as_deref() {
         if let Err(e) = validate_metrics_directory(path) {
             error!("metrics path: {e}");
             std::process::exit(1);
         }
         info!("Metrics will be written to: {}", path.display());
-        path.to_path_buf()
-    });
+    }
 
     // Each worker pushes at most once per interval, so num_workers * 2 should be plenty
     let (sender, receiver) = sync_channel(num_workers * 2);
@@ -318,7 +276,7 @@ pub fn start_metrics_thread(
         metrics_interval,
         keep_running,
         clock,
-        metrics_path,
+        args.metrics_output.clone(),
     );
 
     let thread = std::thread::Builder::new()

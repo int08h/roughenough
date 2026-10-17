@@ -6,20 +6,16 @@ Use this checklist when preparing a new release of Roughenough for publication t
 
 ### Code Quality
 
-- [ ] All tests pass: `cargo test --workspace`
+- [ ] All tests pass: `cargo test --workspace --all-features` (the ssh-agent tests need a throwaway agent;
+      see CONTRIBUTING.md)
 - [ ] All benchmarks run without errors: `cargo bench --workspace`
-- [ ] No clippy warnings: `cargo clippy --workspace --all-features`
+- [ ] No clippy warnings: `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - [ ] Code is formatted: `cargo +nightly fmt --check`
-- [ ] Integration tests pass: `target/debug/roughenough_integration_test`
-- [ ] Optional features build correctly:
-  - [ ] `cargo build -p roughenough-keys --features online-linux-krs`
-  - [ ] `cargo build -p roughenough-keys --features online-ssh-agent`
-  - [ ] `cargo build -p roughenough-keys --features online-pkcs11`
-  - [ ] `cargo build -p roughenough-keys --features longterm-aws-kms`
-  - [ ] `cargo build -p roughenough-keys --features longterm-gcp-kms`
-  - [ ] `cargo build -p roughenough-keys --features longterm-aws-secret-manager`
-  - [ ] `cargo build -p roughenough-keys --features longterm-gcp-secret-manager`
-  - [ ] `cargo build -p roughenough-client --features reporting`
+- [ ] Dependencies pass `cargo deny check`
+- [ ] End-to-end tests pass:
+  - [ ] `cargo build && cargo run --bin roughenough_integration_test`
+  - [ ] `cargo build --release && cargo run --release --bin roughenough_integration_test`
+- [ ] The CI Keys Feature Matrix job is green
 
 ### Documentation
 
@@ -27,17 +23,17 @@ Use this checklist when preparing a new release of Roughenough for publication t
 - [ ] README.md is current and accurate
 - [ ] All crate-level documentation reviewed and updated
 - [ ] Doc comments are accurate and complete
-- [ ] Code examples in documentation compile: `cargo test --doc`
+- [ ] Code examples in documentation compile: `cargo test --doc --workspace --all-features`
 - [ ] Generated docs look correct: `cargo doc --open --workspace`
 
 ### Version Management
 
-- [ ] Version number follows semantic versioning (MAJOR.MINOR.PATCH)
+- [ ] Version number follows the Versioning Policy at the bottom of CHANGELOG.md
 - [ ] Version bumped in `Cargo.toml` `[workspace.package]` section
+- [ ] The internal crate versions in root `[workspace.dependencies]` bumped to match
 - [ ] Version consistent across all workspace crates
 - [ ] CHANGELOG.md reflects the new version number
-- [ ] No breaking changes in PATCH releases
-- [ ] Breaking changes documented in CHANGELOG for MAJOR releases
+- [ ] Every breaking change is listed under `### Breaking` in the release's CHANGELOG section
 
 ### Metadata Verification
 
@@ -47,111 +43,36 @@ The publishable crates are `roughenough-protocol`, `roughenough-common`,
 `roughenough-reporting-server` crates are marked `publish = false` and are
 never published.
 
-For each publishable crate, verify `Cargo.toml` contains:
+For each publishable crate (protocol, common, merkle, keys, server, client), verify `Cargo.toml` contains:
 
-- [ ] **protocol**
-  - [ ] Correct `description`
-  - [ ] Appropriate `keywords` (max 5)
-  - [ ] Relevant `categories`
-  - [ ] `readme` path is correct
-  - [ ] `repository` URL is accurate
-  - [ ] `homepage` URL is accurate
-
-- [ ] **common**
-  - [ ] Correct `description`
-  - [ ] Appropriate `keywords` (max 5)
-  - [ ] Relevant `categories`
-  - [ ] `readme` path is correct
-  - [ ] `repository` URL is accurate
-  - [ ] `homepage` URL is accurate
-
-- [ ] **merkle**
-  - [ ] Correct `description`
-  - [ ] Appropriate `keywords` (max 5)
-  - [ ] Relevant `categories`
-  - [ ] `readme` path is correct
-  - [ ] `repository` URL is accurate
-  - [ ] `homepage` URL is accurate
-
-- [ ] **keys**
-  - [ ] Correct `description`
-  - [ ] Appropriate `keywords` (max 5)
-  - [ ] Relevant `categories`
-  - [ ] `readme` path is correct
-  - [ ] `repository` URL is accurate
-  - [ ] `homepage` URL is accurate
-  - [ ] Feature flags documented
-
-- [ ] **server**
-  - [ ] Correct `description`
-  - [ ] Appropriate `keywords` (max 5)
-  - [ ] Relevant `categories`
-  - [ ] `readme` path is correct
-  - [ ] `repository` URL is accurate
-  - [ ] `homepage` URL is accurate
-
-- [ ] **client**
-  - [ ] Correct `description`
-  - [ ] Appropriate `keywords` (max 5)
-  - [ ] Relevant `categories`
-  - [ ] `readme` path is correct
-  - [ ] `repository` URL is accurate
-  - [ ] `homepage` URL is accurate
-  - [ ] Feature flags documented
+- [ ] Correct `description`
+- [ ] Appropriate `keywords` (max 5)
+- [ ] Relevant `categories`
+- [ ] `readme` path is correct
+- [ ] `repository` and `homepage` inherited from `[workspace.package]`, which has accurate URLs
+- [ ] Feature flags documented (keys and client)
 
 ### License and Legal
 
 - [ ] LICENSE-APACHE and LICENSE-MIT files are current
-- [ ] All crates have `license = "Apache-2.0 OR MIT"` in Cargo.toml
+- [ ] `[workspace.package]` has `license = "Apache-2.0 OR MIT"` and every crate inherits it
 - [ ] License files included in packages 
 - [ ] No copyright violations in code or dependencies
 - [ ] Third-party dependencies reviewed and acceptable
 
 ### Package Verification
 
-For each crate (in dependency order):
+For each publishable crate (protocol, common, merkle, keys, server, client):
 
-- [ ] **protocol**
-  - [ ] `cargo package --list` shows expected files
-  - [ ] Package size is reasonable (< 1 MiB)
-  - [ ] `cargo publish --dry-run` succeeds
-  - [ ] Package builds in isolation
-  - [ ] No unexpected files included
+- [ ] `cargo package -p <crate> --list` shows expected files and no unexpected ones
+- [ ] Package size is reasonable (< 1 MiB)
 
-- [ ] **common**
-  - [ ] `cargo package --list` shows expected files
-  - [ ] Package size is reasonable (< 1 MiB)
-  - [ ] `cargo publish --dry-run` succeeds
-  - [ ] Package builds in isolation
-  - [ ] No unexpected files included
+Then for all of them at once:
 
-- [ ] **merkle**
-  - [ ] `cargo package --list` shows expected files
-  - [ ] Package size is reasonable (< 1 MiB)
-  - [ ] `cargo publish --dry-run` succeeds
-  - [ ] Package builds in isolation
-  - [ ] No unexpected files included
-
-- [ ] **keys**
-  - [ ] `cargo package --list` shows expected files
-  - [ ] Package size is reasonable (< 1 MiB)
-  - [ ] `cargo publish --dry-run` succeeds
-  - [ ] Package builds in isolation
-  - [ ] No unexpected files included
-
-- [ ] **server**
-  - [ ] `cargo package --list` shows expected files
-  - [ ] Package size is reasonable (< 1 MiB)
-  - [ ] `cargo publish --dry-run` succeeds
-  - [ ] Package builds in isolation
-  - [ ] No unexpected files included
-
-- [ ] **client**
-  - [ ] `cargo package --list` shows expected files
-  - [ ] Package size is reasonable (< 1 MiB)
-  - [ ] `cargo publish --dry-run` succeeds
-  - [ ] Package builds in isolation
-  - [ ] No unexpected files included
+- [ ] The dry run succeeds; it packages every crate and builds each package in isolation:
+  ```bash
+  cargo publish --workspace --dry-run --exclude roughenough-integration-test --exclude roughenough-reporting-server
+  ```
 
 ### Git Repository
 
@@ -166,16 +87,11 @@ For each crate (in dependency order):
 ### Publishing to crates.io
 
 - [ ] Logged in to crates.io: `cargo login`
-- [ ] Publish **protocol**: `cargo publish -p roughenough-protocol`
-- [ ] Wait 30 seconds for crates.io to propagate
-- [ ] Publish **common**: `cargo publish -p roughenough-common`
-- [ ] Publish **merkle**: `cargo publish -p roughenough-merkle`
-- [ ] Wait 30 seconds for crates.io to propagate
-- [ ] Publish **keys**: `cargo publish -p roughenough-keys`
-- [ ] Wait 30 seconds for crates.io to propagate
-- [ ] Publish **server**: `cargo publish -p roughenough-server`
-- [ ] Wait 30 seconds for crates.io to propagate
-- [ ] Publish **client**: `cargo publish -p roughenough-client`
+- [ ] Publish every publishable crate. Cargo (1.90 or newer) publishes them in dependency order and waits
+      for each crate to reach the index before publishing the next:
+  ```bash
+  cargo publish --workspace --exclude roughenough-integration-test --exclude roughenough-reporting-server
+  ```
 
 ### Verify Publication
 
@@ -191,23 +107,19 @@ For each crate (in dependency order):
 
 ## Post-Release
 
-### Git Tagging
+### Git Tagging and GitHub Release
 
-- [ ] Create annotated tag: `git tag -a v2.0.0 -m "Release version 2.0.0"`
-- [ ] Push tag to origin: `git push origin v2.0.0`
-- [ ] Verify tag appears in GitHub
+Tags have no `v` prefix (`2.1.0`, `2.2.0`).
 
-### GitHub Release
-
-- [ ] Create GitHub release for the tag
-- [ ] Copy relevant CHANGELOG.md section to release notes
-- [ ] Mark as latest release (or pre-release if appropriate)
-- [ ] Attach any relevant artifacts (optional)
+- [ ] Create annotated tag: `git tag -a X.Y.Z -m "Release X.Y.Z"`
+- [ ] Push tag to origin: `git push origin X.Y.Z`
+- [ ] Pushing the tag runs `.github/workflows/release.yml` (dist), which builds the release artifacts and
+      creates the GitHub Release. Verify the dist-created release and its notes against CHANGELOG.md
 
 ### Version Bump for Development
 
-- [ ] Bump version to next development version in `Cargo.toml`
-  - Example: If released 2.0.0, bump to 2.0.1 or 2.1.0-dev
+- [ ] Bump `[workspace.package] version` and the internal crate versions in `[workspace.dependencies]` to
+      the next development version
 - [ ] Commit version bump: `git commit -am "Bump version for development"`
 - [ ] Push to origin
 
@@ -233,7 +145,7 @@ If critical issues are discovered after publication:
 
 1. **Yank the problematic version** (does not delete, just prevents new downloads):
    ```bash
-   cargo yank --vers 2.0.0 roughenough-protocol
+   cargo yank --vers X.Y.Z roughenough-protocol
    ```
 
 2. **Fix the issue** in a new version

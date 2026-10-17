@@ -1,14 +1,4 @@
-mod aws_lc_ed25519;
-#[cfg(all(target_os = "linux", feature = "online-linux-krs"))]
-pub mod linuxkrs;
-#[cfg(feature = "online-ssh-agent")]
-pub mod sshagent;
-
-#[cfg(feature = "online-pkcs11")]
-pub mod pkcs11;
-
-pub mod memory;
-pub mod onlinekey;
-mod test_util;
+pub(crate) mod aws_lc_ed25519;
+mod onlinekey;
 
 pub use onlinekey::OnlineKey;

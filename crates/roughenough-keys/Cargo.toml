@@ -1,11 +1,13 @@
 [package]
 name = "roughenough-keys"
 description = "Roughenough key material handling with multiple secure storage backends"
-license = "Apache-2.0 OR MIT"
+license.workspace = true
 edition.workspace = true
 version.workspace = true
-repository = "https://github.com/int08h/roughenough"
-homepage = "https://github.com/int08h/roughenough"
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+rust-version.workspace = true
 readme = "../../README.md"
 keywords = ["roughtime", "keys", "kms", "cryptography", "security"]
 categories = ["cryptography", "authentication"]
@@ -15,12 +17,12 @@ default = ["online-linux-krs"]
 online-linux-krs = ["dep:linux-keyutils"]
 online-pkcs11 = ["dep:cryptoki"]
 online-ssh-agent = ["dep:ssh-agent-client-rs", "dep:ssh-key"]
-# The cloud backends are the only async code paths; each enables the implicit
-# "tokio" feature so tokio stays out of non-cloud builds entirely
-longterm-aws-kms = ["dep:aws-config", "dep:aws-sdk-kms", "tokio"]
-longterm-gcp-kms = ["dep:google-cloud-kms-v1", "dep:crc32c", "tokio"]
-longterm-aws-secret-manager = ["dep:aws-config", "dep:aws-sdk-secretsmanager", "tokio"]
-longterm-gcp-secret-manager = ["dep:google-cloud-secretmanager-v1", "dep:crc32c", "tokio"]
+# The cloud backends are the only async code paths; tokio stays out of non-cloud builds
+longterm-aws = ["dep:aws-config", "dep:aws-sdk-kms", "dep:aws-sdk-secretsmanager", "dep:tokio"]
+longterm-gcp = ["dep:google-cloud-kms-v1", "dep:google-cloud-secretmanager-v1", "dep:crc32c", "dep:tokio"]
+
+[package.metadata.dist]
+all-features = true
 
 [dependencies]
 roughenough-common = { workspace = true }
@@ -40,11 +42,15 @@ serde_json = { workspace = true }
 ssh-agent-client-rs = { workspace = true, optional = true }
 ssh-key = { workspace = true, optional = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, optional = true, features = ["rt", "macros"] }
+tokio = { workspace = true, optional = true, features = ["rt"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-zeroize = { workspace = true, features = ["zeroize_derive"] }
+zeroize = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
+
+[target.'cfg(unix)'.dependencies]
+# O_NOFOLLOW and O_CLOEXEC for opening seed files (seed_file.rs)
+libc = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 linux-keyutils = { workspace = true, optional = true }

@@ -35,6 +35,23 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
+      - name: Dependencies fit the declared MSRV
+        run: |
+          cargo metadata --format-version 1 --locked --all-features | python3 -I -c '
+          import json, sys
+          v = lambda s: tuple(int(x) for x in s.split("."))
+          meta = json.load(sys.stdin)
+          ws = set(meta["workspace_members"])
+          declared = {p["rust_version"] for p in meta["packages"] if p["id"] in ws}
+          if len(declared) != 1:
+              sys.exit(f"workspace members disagree on rust-version: {declared}")
+          msrv = declared.pop()
+          over = sorted((p["rust_version"], p["name"]) for p in meta["packages"]
+                        if p["rust_version"] and v(p["rust_version"]) > v(msrv))
+          for rv, name in over:
+              print(f"{name} requires Rust {rv}; the workspace declares {msrv}")
+          sys.exit(1 if over else 0)'
+
   rustfmt:
     name: Rustfmt (Code Formatting)
     runs-on: ubuntu-latest
@@ -50,8 +67,24 @@ jobs:
       - name: Check formatting
         run: cargo +nightly fmt --all -- --check
 
-  security-audit:
-    name: Security Audit
+  docs:
+    name: Rustdoc
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Build documentation
+        run: cargo doc --workspace --all-features --no-deps
+
+  cargo-deny:
+    name: cargo-deny (advisories, bans, licenses, sources)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -61,46 +94,11 @@ jobs:
         with:
           toolchain: ${{ env.RUST_VERSION }}
 
-      - name: Cache cargo-audit
-        uses: actions/cache@v6
+      - uses: taiki-e/install-action@v2
         with:
-          path: ~/.cargo/bin/cargo-audit
-          key: ${{ runner.os }}-cargo-audit
+          tool: cargo-deny
 
-      - name: Install cargo-audit
-        run: |
-          if ! command -v cargo-audit &> /dev/null; then
-            cargo install cargo-audit --locked
-          fi
-
-      - name: Run security audit
-        run: cargo audit
-
-  license-check:
-    name: License Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v2
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
-
-      - name: Cache cargo-deny
-        uses: actions/cache@v6
-        with:
-          path: ~/.cargo/bin/cargo-deny
-          key: ${{ runner.os }}-cargo-deny
-
-      - name: Install cargo-deny
-        run: |
-          if ! command -v cargo-deny &> /dev/null; then
-            cargo install cargo-deny --locked
-          fi
-
-      - name: Check licenses
-        run: cargo deny check licenses
+      - run: cargo deny check
 
   # The all-features jobs above never compile roughenough-keys with a single
   # backend enabled; this matrix guards the per-feature cfg gates (notably
@@ -116,10 +114,8 @@ jobs:
           - ""
           - "--features online-pkcs11"
           - "--features online-ssh-agent"
-          - "--features longterm-aws-kms"
-          - "--features longterm-gcp-kms"
-          - "--features longterm-aws-secret-manager"
-          - "--features longterm-gcp-secret-manager"
+          - "--features longterm-aws"
+          - "--features longterm-gcp"
     steps:
       - uses: actions/checkout@v7
 
@@ -130,29 +126,6 @@ jobs:
 
       - name: Check feature combination
         run: cargo check -p roughenough-keys --all-targets ${{ matrix.features }}
-
-  # roughenough-keys depends on aws-lc-sys directly (allocation-free Ed25519
-  # FFI) and its version must match what aws-lc-rs requires. Skew does not
-  # fail the build: aws-lc-sys version-mangles its symbols and links key, so
-  # two AWS-LC copies would link silently.
-  duplicate-aws-lc-sys:
-    name: Duplicate aws-lc-sys Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v2
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
-
-      - name: Check for duplicate aws-lc-sys versions
-        run: |
-          if cargo tree --workspace --all-features --duplicates | grep aws-lc-sys; then
-            echo "error: multiple aws-lc-sys versions resolved; align the" \
-                 "workspace aws-lc-sys pin with the version aws-lc-rs requires"
-            exit 1
-          fi
 
   # fuzz/ is excluded from the workspace, so no other job compiles the fuzz
   # targets; this job keeps them from bit-rotting
@@ -167,20 +140,14 @@ jobs:
         with:
           toolchain: nightly
 
-      - name: Cache cargo-fuzz
-        uses: actions/cache@v6
-        with:
-          path: ~/.cargo/bin/cargo-fuzz
-          key: ${{ runner.os }}-cargo-fuzz
-
       - name: Install cargo-fuzz
-        run: |
-          if ! command -v cargo-fuzz &> /dev/null; then
-            cargo install cargo-fuzz --locked
-          fi
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
 
+      # The prebuilt cargo-fuzz is a musl binary, and cargo-fuzz defaults to its own target
       - name: Build fuzz targets
-        run: cargo fuzz build
+        run: cargo fuzz build --target x86_64-unknown-linux-gnu
 
   build:
     runs-on: ubuntu-latest
@@ -194,36 +161,32 @@ jobs:
         toolchain: ${{ env.RUST_VERSION }}
         components: llvm-tools-preview
 
-    - name: Cache Cargo tools
-      uses: actions/cache@v6
-      id: cache
+    - name: Install cargo-llvm-cov
+      uses: taiki-e/install-action@v2
       with:
-        path: |
-          ~/.cargo/bin/cargo-llvm-cov
-          ~/.cargo/bin/cargo-auditable
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-    - name: Install Cargo tools
-      if: steps.cache.outputs.cache-hit != 'true'
-      run: |
-          cargo install cargo-auditable --locked
-          cargo install cargo-llvm-cov --locked
+        tool: cargo-llvm-cov
 
     # For the sshagent seed backend tests
     - name: Start SSH Agent
       run: ssh-agent -a $SSH_AUTH_SOCK > /dev/null
 
-    - name: Build
-      run: cargo auditable build --verbose --workspace --all-features
+    - name: Run tests with coverage
+      run: cargo llvm-cov --workspace --all-features --no-report
 
-    - name: Run tests
-      run: cargo test --verbose --workspace --all-features
+    # llvm-cov does not run doctests on stable
+    - name: Run doctests
+      run: cargo test --doc --workspace --all-features
 
-    - name: Generate code coverage
+    # cargo run builds only the harness, not the server and client it runs
+    - name: End-to-end test
+      run: cargo build && cargo run --bin roughenough_integration_test
+
+    - name: Coverage reports
       run: |
-        cargo llvm-cov --workspace --lcov --output-path lcov.info
-        cargo llvm-cov --workspace --html
-        
+        cargo llvm-cov report --lcov --output-path lcov.info
+        cargo llvm-cov report --html
+        cargo llvm-cov report --summary-only
+
     - name: Upload coverage reports to Codecov
       uses: codecov/codecov-action@v7
       with:
@@ -239,12 +202,10 @@ jobs:
         name: coverage-report
         path: target/llvm-cov/html/
         retention-days: 30
-        
-    - name: Coverage summary
-      run: cargo llvm-cov --workspace --no-report --summary-only
 
   build-artifacts:
     name: Build Release Artifacts
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
@@ -254,23 +215,16 @@ jobs:
       with:
         toolchain: ${{ env.RUST_VERSION }}
 
-    - name: Cache Cargo auditable
-      uses: actions/cache@v6
-      id: cache-auditable
+    - name: Install cargo-auditable
+      uses: taiki-e/install-action@v2
       with:
-        path: ~/.cargo/bin/cargo-auditable
-        key: ${{ runner.os }}-cargo-auditable
-
-    - name: Install Cargo auditable
-      if: steps.cache-auditable.outputs.cache-hit != 'true'
-      run: |
-        cargo install cargo-auditable --locked
+        tool: cargo-auditable
 
     - name: Build binaries
       run: |
-        cargo auditable build --release --all-features --bin roughenough_client
-        cargo auditable build --release --all-features --bin roughenough_server
-        cargo auditable build --release --all-features --bin roughenough_keys
+        cargo auditable build --release -p roughenough-client --features reporting
+        cargo auditable build --release -p roughenough-server --features release
+        cargo auditable build --release -p roughenough-keys --all-features
 
     - name: Strip binaries
       run: |

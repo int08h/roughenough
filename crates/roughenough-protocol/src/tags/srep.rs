@@ -4,7 +4,7 @@ use crate::error::Error::{MissingTag, NoSupportedVersions, WrongTagSize};
 use crate::header::{Header, Header5, RawHeader};
 use crate::tag::Tag;
 use crate::tags::{MerkleRoot, ProtocolVersion, SupportedVersions};
-use crate::wire::{FromWire, FromWireN, ToWire};
+use crate::wire::{FromWire, ToWire};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -127,13 +127,6 @@ impl ToWire for SignedResponse {
 }
 
 impl FromWire for SignedResponse {
-    fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
-        let msg_len = cursor.remaining();
-        Self::from_wire_n(cursor, msg_len)
-    }
-}
-
-impl FromWireN for SignedResponse {
     fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error> {
         const RAW_VER: u32 = Tag::VER as u32;
         const RAW_RADI: u32 = Tag::RADI as u32;
@@ -153,12 +146,7 @@ impl FromWireN for SignedResponse {
             let value_start = cursor.position();
 
             match raw_tag {
-                RAW_VER => {
-                    if value_len != size_of::<u32>() {
-                        return Err(WrongTagSize(size_of::<u32>(), value_len));
-                    }
-                    version = Some(ProtocolVersion::from_wire(cursor)?);
-                }
+                RAW_VER => version = Some(ProtocolVersion::from_wire_n(cursor, value_len)?),
                 RAW_RADI => {
                     if value_len != size_of::<u32>() {
                         return Err(WrongTagSize(size_of::<u32>(), value_len));
@@ -172,17 +160,15 @@ impl FromWireN for SignedResponse {
                     midpoint = Some(cursor.try_get_u64_le()?);
                 }
                 RAW_VERS => {
-                    if value_len == 0 {
+                    let vers = SupportedVersions::from_wire_n(cursor, value_len)?;
+                    // RFC 5.2.5: VERS MUST contain VER, which is always a known version; a list
+                    // with no known version cannot, and could not be reserialized
+                    if vers.versions().is_empty() {
                         return Err(NoSupportedVersions);
                     }
-                    supported_versions = Some(SupportedVersions::from_wire_n(cursor, value_len)?);
+                    supported_versions = Some(vers);
                 }
-                RAW_ROOT => {
-                    if value_len != size_of::<MerkleRoot>() {
-                        return Err(WrongTagSize(size_of::<MerkleRoot>(), value_len));
-                    }
-                    merkle_root = Some(MerkleRoot::from_wire(cursor)?);
-                }
+                RAW_ROOT => merkle_root = Some(MerkleRoot::from_wire_n(cursor, value_len)?),
                 // RFC 9.2 adds new tags to SREP; RFC 7: clients MUST properly
                 // ignore undefined tags
                 _ => {}
@@ -206,6 +192,7 @@ impl FromWireN for SignedResponse {
 mod tests {
     use super::*;
     use crate::tags::{MerkleRoot, ProtocolVersion, SupportedVersions};
+    use crate::util::test_utils::replace_value;
 
     fn create_valid_signed_response() -> SignedResponse {
         let mut srep = SignedResponse::default();
@@ -262,5 +249,18 @@ mod tests {
             Err(MissingTag("ROOT")) => (), // ok, expected
             _ => panic!("unexpected result: {result:?}"),
         }
+    }
+
+    #[test]
+    fn vers_of_only_unknown_versions_is_rejected() {
+        let bytes = create_valid_signed_response().as_bytes().unwrap();
+        let mut bytes = replace_value(&bytes, *b"VERS", &5u32.to_le_bytes());
+        let mut cursor = ParseCursor::new(&mut bytes);
+
+        let result = SignedResponse::from_wire(&mut cursor);
+        assert!(
+            matches!(result, Err(NoSupportedVersions)),
+            "unexpected result: {result:?}"
+        );
     }
 }

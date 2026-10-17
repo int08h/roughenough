@@ -7,12 +7,6 @@ fixed_tag! {
     Signature, SIZE, "SIG"
 }
 
-impl AsRef<[u8]> for Signature {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_slice()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

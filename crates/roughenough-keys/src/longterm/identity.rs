@@ -1,32 +1,31 @@
 use std::time::Duration;
 
+use roughenough_common::clocksource::ClockSource;
 use roughenough_protocol::ToWire;
 use roughenough_protocol::tags::{Certificate, Delegation, ProtocolVersion, PublicKey, Signature};
-use roughenough_protocol::util::ClockSource;
 
-use crate::online::onlinekey::OnlineKey;
+use crate::online::OnlineKey;
+use crate::online::aws_lc_ed25519::KeyPair;
 use crate::seed::SeedBackend;
 
 /// The server's long-term Ed25519 identity.
 pub struct LongTermIdentity {
-    seed: Box<dyn SeedBackend>,
+    backend: Box<dyn SeedBackend>,
 }
 
 impl LongTermIdentity {
-    pub fn new(seed: Box<dyn SeedBackend>) -> LongTermIdentity {
-        assert_eq!(seed.seed_len(), 32, "seed must be 32 bytes long");
-
-        LongTermIdentity { seed }
+    pub fn new(backend: Box<dyn SeedBackend>) -> LongTermIdentity {
+        LongTermIdentity { backend }
     }
 
     /// Retrieves the raw public key bytes associated with this LongTermIdentity.
     pub fn public_key_bytes(&self) -> [u8; 32] {
-        self.seed.public_key_bytes()
+        *self.backend.public_key().as_array()
     }
 
     /// Retrieves the public key associated with this LongTermIdentity.
     pub fn public_key(&self) -> PublicKey {
-        self.seed.public_key()
+        self.backend.public_key()
     }
 
     /// Creates a new [`OnlineKey`] and delegation certificate (CERT) signed by the long-term key.
@@ -39,35 +38,25 @@ impl LongTermIdentity {
     ///   [`OnlineKey`] will use this clock source.
     /// * `validity_length` - Length of time the generated [`OnlineKey`] will be valid.
     ///
-    /// # Returns
-    ///
-    /// A valid [`OnlineKey`] where its delegation certificate (CERT) proves the online key is
-    /// authorized by this long-term identity.
     pub fn make_online_key(&mut self, clock: &ClockSource, validity_length: Duration) -> OnlineKey {
-        let now = clock.epoch_seconds();
-        let mut olk = OnlineKey::new(clock.clone());
-        let pubkey = PublicKey::from(olk.public_key_bytes());
-        let dele = Delegation::new(pubkey, now, validity_length);
-
-        let dele_prefix = ProtocolVersion::RFC.dele_prefix();
-        debug_assert!(
-            ProtocolVersion::ADVERTISED
-                .iter()
-                .all(|v| v.dele_prefix() == dele_prefix),
-            "all advertised versions must share the same DELE context string"
+        let key_pair = KeyPair::generate();
+        let dele = Delegation::new(
+            key_pair.public_key(),
+            clock.epoch_seconds(),
+            validity_length,
         );
 
+        let dele_prefix = ProtocolVersion::RFC.dele_prefix();
         let mut to_sign = dele_prefix.to_vec();
         to_sign.extend_from_slice(&dele.as_bytes().expect("DELE serialization should not fail"));
 
         let dele_sig: [u8; 64] = self
-            .seed
+            .backend
             .sign(&to_sign)
             .expect("should not fail; can't continue if it does");
         let sig = Signature::from(dele_sig);
         let cert = Certificate::new(sig, dele);
-        olk.set_cert(cert);
 
-        olk
+        OnlineKey::new(key_pair, cert, clock.clone())
     }
 }

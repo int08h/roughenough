@@ -3,7 +3,6 @@ use std::fmt::Debug;
 use Error::{BadRequestSize, BufferTooSmall, InvalidMessageType, MissingTag};
 use Request::{Plain, Srv};
 
-use crate::FromWireN;
 use crate::cursor::ParseCursor;
 use crate::error::Error;
 use crate::header::{Header4, Header5, RawHeader};
@@ -121,17 +120,17 @@ impl ToWire for Request {
 impl ToFrame for Request {}
 
 impl FromWire for Request {
-    fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
+    fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error> {
         const RAW_VER: u32 = Tag::VER as u32;
         const RAW_SRV: u32 = Tag::SRV as u32;
         const RAW_NONC: u32 = Tag::NONC as u32;
         const RAW_TYPE: u32 = Tag::TYPE as u32;
 
-        if cursor.remaining() < REQUEST_SIZE - FRAME_OVERHEAD {
-            return Err(BadRequestSize(cursor.remaining()));
+        if n < REQUEST_SIZE - FRAME_OVERHEAD {
+            return Err(BadRequestSize(n));
         }
 
-        let header = RawHeader::from_wire(cursor)?;
+        let header = RawHeader::from_wire_n(cursor, n)?;
 
         let mut version: Option<RequestedVersions> = None;
         let mut server: Option<SrvCommitment> = None;
@@ -454,6 +453,7 @@ mod tests {
 
     use super::*;
     use crate::protocol_ver::ProtocolVersion;
+    use crate::util::test_utils::{build_msg, frame};
 
     #[test]
     fn request_plain_wire_roundtrip() {
@@ -478,56 +478,24 @@ mod tests {
         assert_eq!(decoded.header, req.header);
     }
 
-    /// Build a framed message from raw (tag, value) entries. The caller is
-    /// responsible for tag ordering and for sizing values so the message body
-    /// totals 1012 bytes (1024 with framing).
-    fn raw_frame(entries: &[(&[u8; 4], Vec<u8>)]) -> Vec<u8> {
-        let mut msg = Vec::new();
-        msg.extend_from_slice(&(entries.len() as u32).to_le_bytes());
-
-        let mut acc = 0u32;
-        for (_, value) in &entries[..entries.len() - 1] {
-            acc += value.len() as u32;
-            msg.extend_from_slice(&acc.to_le_bytes());
-        }
-        for (tag, _) in entries {
-            msg.extend_from_slice(*tag);
-        }
-        for (_, value) in entries {
-            msg.extend_from_slice(value);
-        }
-
-        let mut out = Vec::new();
-        out.extend_from_slice(b"ROUGHTIM");
-        out.extend_from_slice(&(msg.len() as u32).to_le_bytes());
-        out.extend_from_slice(&msg);
-        out
-    }
-
     fn ver_value() -> Vec<u8> {
         ProtocolVersion::DRAFT.as_u32().to_le_bytes().to_vec()
-    }
-
-    fn parse_frame(bytes: &mut [u8]) -> Result<Request, crate::error::Error> {
-        use crate::wire::FromFrame;
-        let mut cursor = ParseCursor::new(bytes);
-        Request::from_frame(&mut cursor)
     }
 
     #[test]
     fn request_with_unknown_tag_is_parsed() {
         // RFC 5.1: "Unknown tags MUST be ignored by the server."
         // Tag order by little-endian value: VER < NONC < TYPE < GREZ < ZZZZ
-        let mut bytes = raw_frame(&[
-            (b"VER\x00", ver_value()),
-            (b"NONC", vec![0x42; 32]),
-            (b"TYPE", 0u32.to_le_bytes().to_vec()),
-            (b"GREZ", vec![0xaa; 4]),
-            (b"ZZZZ", vec![0; 928]),
-        ]);
+        let bytes = frame(&build_msg(&[
+            (*b"VER\x00", ver_value()),
+            (*b"NONC", vec![0x42; 32]),
+            (*b"TYPE", 0u32.to_le_bytes().to_vec()),
+            (*b"GREZ", vec![0xaa; 4]),
+            (*b"ZZZZ", vec![0; 928]),
+        ]));
         assert_eq!(bytes.len(), 1024);
 
-        let parsed = parse_frame(&mut bytes).unwrap();
+        let parsed = Request::from_frame_bytes(&bytes).unwrap();
         assert_eq!(parsed.ver().versions(), &[ProtocolVersion::DRAFT]);
         assert_eq!(parsed.nonc(), &Nonce::from([0x42; 32]));
         assert!(parsed.srv().is_none());
@@ -537,30 +505,30 @@ mod tests {
     fn oversized_request_is_parsed() {
         // A full-MTU request: the declared frame length covers all 1460
         // message bytes via an enlarged ZZZZ value
-        let mut bytes = raw_frame(&[
-            (b"VER\x00", ver_value()),
-            (b"NONC", vec![0x42; 32]),
-            (b"TYPE", 0u32.to_le_bytes().to_vec()),
-            (b"ZZZZ", vec![0; MAX_REQUEST_SIZE - 84]),
-        ]);
+        let bytes = frame(&build_msg(&[
+            (*b"VER\x00", ver_value()),
+            (*b"NONC", vec![0x42; 32]),
+            (*b"TYPE", 0u32.to_le_bytes().to_vec()),
+            (*b"ZZZZ", vec![0; MAX_REQUEST_SIZE - 84]),
+        ]));
         assert_eq!(bytes.len(), MAX_REQUEST_SIZE);
 
-        let parsed = parse_frame(&mut bytes).unwrap();
+        let parsed = Request::from_frame_bytes(&bytes).unwrap();
         assert_eq!(parsed.nonc(), &Nonce::from([0x42; 32]));
     }
 
     #[test]
     fn undersized_request_is_rejected() {
         // One byte short: a 1023-byte frame carries a 1011-byte message
-        let mut bytes = raw_frame(&[
-            (b"VER\x00", ver_value()),
-            (b"NONC", vec![0x42; 32]),
-            (b"TYPE", 0u32.to_le_bytes().to_vec()),
-            (b"ZZZZ", vec![0; 939]),
-        ]);
+        let bytes = frame(&build_msg(&[
+            (*b"VER\x00", ver_value()),
+            (*b"NONC", vec![0x42; 32]),
+            (*b"TYPE", 0u32.to_le_bytes().to_vec()),
+            (*b"ZZZZ", vec![0; 939]),
+        ]));
         assert_eq!(bytes.len(), 1023);
 
-        match parse_frame(&mut bytes) {
+        match Request::from_frame_bytes(&bytes) {
             Err(Error::BadRequestSize(1011)) => (), // ok, expected
             other => panic!("expected BadRequestSize(1011), got {other:?}"),
         }
@@ -570,36 +538,36 @@ mod tests {
     fn trailing_bytes_beyond_declared_length_are_ignored() {
         // Parsing is bounded by the declared frame length: garbage after a
         // valid 1024-byte frame must not change the parse result
-        let frame_bytes = raw_frame(&[
-            (b"VER\x00", ver_value()),
-            (b"NONC", vec![0x42; 32]),
-            (b"TYPE", 0u32.to_le_bytes().to_vec()),
-            (b"ZZZZ", vec![0; 940]),
-        ]);
+        let frame_bytes = frame(&build_msg(&[
+            (*b"VER\x00", ver_value()),
+            (*b"NONC", vec![0x42; 32]),
+            (*b"TYPE", 0u32.to_le_bytes().to_vec()),
+            (*b"ZZZZ", vec![0; 940]),
+        ]));
         assert_eq!(frame_bytes.len(), 1024);
 
-        let expected = parse_frame(&mut frame_bytes.clone()).unwrap();
+        let expected = Request::from_frame_bytes(&frame_bytes).unwrap();
 
         let mut oversized = frame_bytes;
         oversized.resize(MAX_REQUEST_SIZE, 0xff);
-        let parsed = parse_frame(&mut oversized).unwrap();
+        let parsed = Request::from_frame_bytes(&oversized).unwrap();
 
         assert_eq!(parsed, expected);
     }
 
     #[test]
     fn request_with_srv_and_unknown_tag_is_parsed() {
-        let mut bytes = raw_frame(&[
-            (b"VER\x00", ver_value()),
-            (b"SRV\x00", vec![0x77; 32]),
-            (b"NONC", vec![0x42; 32]),
-            (b"TYPE", 0u32.to_le_bytes().to_vec()),
-            (b"GREZ", vec![0xaa; 4]),
-            (b"ZZZZ", vec![0; 888]),
-        ]);
+        let bytes = frame(&build_msg(&[
+            (*b"VER\x00", ver_value()),
+            (*b"SRV\x00", vec![0x77; 32]),
+            (*b"NONC", vec![0x42; 32]),
+            (*b"TYPE", 0u32.to_le_bytes().to_vec()),
+            (*b"GREZ", vec![0xaa; 4]),
+            (*b"ZZZZ", vec![0; 888]),
+        ]));
         assert_eq!(bytes.len(), 1024);
 
-        let parsed = parse_frame(&mut bytes).unwrap();
+        let parsed = Request::from_frame_bytes(&bytes).unwrap();
         assert_eq!(parsed.srv(), Some(&SrvCommitment::from([0x77; 32])));
         assert_eq!(parsed.nonc(), &Nonce::from([0x42; 32]));
     }
@@ -607,15 +575,15 @@ mod tests {
     #[test]
     fn request_padded_with_unknown_tag_is_parsed() {
         // No ZZZZ at all; an unknown tag provides the padding to 1024 bytes
-        let mut bytes = raw_frame(&[
-            (b"VER\x00", ver_value()),
-            (b"NONC", vec![0x42; 32]),
-            (b"TYPE", 0u32.to_le_bytes().to_vec()),
-            (b"GREZ", vec![0; 940]),
-        ]);
+        let bytes = frame(&build_msg(&[
+            (*b"VER\x00", ver_value()),
+            (*b"NONC", vec![0x42; 32]),
+            (*b"TYPE", 0u32.to_le_bytes().to_vec()),
+            (*b"GREZ", vec![0; 940]),
+        ]));
         assert_eq!(bytes.len(), 1024);
 
-        let parsed = parse_frame(&mut bytes).unwrap();
+        let parsed = Request::from_frame_bytes(&bytes).unwrap();
         assert_eq!(parsed.nonc(), &Nonce::from([0x42; 32]));
     }
 
@@ -623,43 +591,43 @@ mod tests {
     fn request_missing_mandatory_tag_is_rejected() {
         // RFC 5.1: requests not containing VER, NONC, and TYPE MUST be ignored.
         // This one has no NONC.
-        let mut bytes = raw_frame(&[
-            (b"VER\x00", ver_value()),
-            (b"TYPE", 0u32.to_le_bytes().to_vec()),
-            (b"ZZZZ", vec![0; 980]),
-        ]);
+        let bytes = frame(&build_msg(&[
+            (*b"VER\x00", ver_value()),
+            (*b"TYPE", 0u32.to_le_bytes().to_vec()),
+            (*b"ZZZZ", vec![0; 980]),
+        ]));
         assert_eq!(bytes.len(), 1024);
 
-        assert!(parse_frame(&mut bytes).is_err());
+        assert!(Request::from_frame_bytes(&bytes).is_err());
     }
 
     #[test]
     fn request_with_nonzero_type_is_rejected() {
         // RFC 5.1.3: requests with a TYPE other than 0 MUST be ignored
-        let mut bytes = raw_frame(&[
-            (b"VER\x00", ver_value()),
-            (b"NONC", vec![0x42; 32]),
-            (b"TYPE", 1u32.to_le_bytes().to_vec()),
-            (b"ZZZZ", vec![0; 940]),
-        ]);
+        let bytes = frame(&build_msg(&[
+            (*b"VER\x00", ver_value()),
+            (*b"NONC", vec![0x42; 32]),
+            (*b"TYPE", 1u32.to_le_bytes().to_vec()),
+            (*b"ZZZZ", vec![0; 940]),
+        ]));
         assert_eq!(bytes.len(), 1024);
 
-        assert!(parse_frame(&mut bytes).is_err());
+        assert!(Request::from_frame_bytes(&bytes).is_err());
     }
 
     #[test]
     fn request_with_duplicate_tag_is_rejected() {
         // RFC 4.2: a tag MUST NOT appear more than once in a header
-        let mut bytes = raw_frame(&[
-            (b"VER\x00", ver_value()),
-            (b"NONC", vec![0x42; 32]),
-            (b"NONC", vec![0x43; 32]),
-            (b"TYPE", 0u32.to_le_bytes().to_vec()),
-            (b"ZZZZ", vec![0; 900]),
-        ]);
+        let bytes = frame(&build_msg(&[
+            (*b"VER\x00", ver_value()),
+            (*b"NONC", vec![0x42; 32]),
+            (*b"NONC", vec![0x43; 32]),
+            (*b"TYPE", 0u32.to_le_bytes().to_vec()),
+            (*b"ZZZZ", vec![0; 900]),
+        ]));
         assert_eq!(bytes.len(), 1024);
 
-        assert!(parse_frame(&mut bytes).is_err());
+        assert!(Request::from_frame_bytes(&bytes).is_err());
     }
 
     #[test]
@@ -805,9 +773,7 @@ mod tests {
         ];
 
         for raw in fixtures {
-            let mut data = raw.to_vec();
-            let mut cursor = ParseCursor::new(&mut data);
-            let parsed = Request::from_frame(&mut cursor).unwrap();
+            let parsed = Request::from_frame_bytes(raw).unwrap();
             let reserialized = parsed.as_frame_bytes().unwrap();
             assert_eq!(reserialized, raw, "wire bytes changed");
         }
@@ -835,10 +801,8 @@ mod tests {
 
     #[test]
     fn version_one_request_is_parsed() {
-        let mut raw = include_bytes!("../testdata/rfc10049-request.104172a3").to_vec();
-
-        let mut cursor = ParseCursor::new(&mut raw);
-        let request = Request::from_frame(&mut cursor).unwrap();
+        let raw = include_bytes!("../testdata/rfc10049-request.104172a3");
+        let request = Request::from_frame_bytes(raw).unwrap();
 
         assert_eq!(request.ver().versions(), &[ProtocolVersion::RFC]);
         assert_eq!(request.ver(), &default_offered_versions());
@@ -877,10 +841,8 @@ mod tests {
     #[test]
     fn request_from_wire_selects_correct_impl() {
         let raw = include_bytes!("../testdata/rfc-request.SRV.417aa962");
-        let mut data = raw.to_vec();
-        let mut cursor = ParseCursor::new(&mut data);
 
-        match Request::from_frame(&mut cursor) {
+        match Request::from_frame_bytes(raw) {
             Ok(Srv(req)) => {
                 assert_eq!(
                     req.nonc().as_ref()[..8],

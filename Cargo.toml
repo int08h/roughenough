@@ -2,32 +2,30 @@
 authors = ["stuart@int08h.com"]
 edition = "2024"
 license = "Apache-2.0 OR MIT"
-version = "2.2.0"
+version = "2.3.0"
 homepage = "https://github.com/int08h/roughenough"
-rust-version = "1.88"
+repository = "https://github.com/int08h/roughenough"
+rust-version = "1.94.1"
 
 [workspace.dependencies]
 # Internal workspace crates
-roughenough-client = { path = "crates/roughenough-client", version = "2.2.0" }
-roughenough-common = { path = "crates/roughenough-common", version = "2.2.0" }
-roughenough-integration-test = { path = "crates/roughenough-integration", version = "2.2.0" }
-roughenough-keys = { path = "crates/roughenough-keys", version = "2.2.0" }
-roughenough-merkle = { path = "crates/roughenough-merkle", version = "2.2.0" }
-roughenough-protocol = { path = "crates/roughenough-protocol", version = "2.2.0" }
-roughenough-server = { path = "crates/roughenough-server", version = "2.2.0" }
-roughenough-reporting-server = { path = "crates/roughenough-reporting-server", version = "2.2.0" }
+roughenough-client = { path = "crates/roughenough-client", version = "2.3.0" }
+roughenough-common = { path = "crates/roughenough-common", version = "2.3.0" }
+roughenough-keys = { path = "crates/roughenough-keys", version = "2.3.0" }
+roughenough-merkle = { path = "crates/roughenough-merkle", version = "2.3.0" }
+roughenough-protocol = { path = "crates/roughenough-protocol", version = "2.3.0" }
+roughenough-server = { path = "crates/roughenough-server", version = "2.3.0" }
 
 # External dependencies
 aws-config = { version = "1.12", default-features = false, features = ["default-https-client", "rt-tokio", "credentials-process"] }
 aws-lc-rs = { version = "1.18", default-features = false, features = ["aws-lc-sys", "alloc"] }
 # Keep in lockstep with the aws-lc-sys version aws-lc-rs requires: aws-lc-sys
 # version-mangles its symbols and links key, so skew does not fail the build,
-# it silently links two copies of AWS-LC (CI checks cargo tree --duplicates).
+# it silently links two copies of AWS-LC (cargo-deny bans check in deny.toml).
 aws-lc-sys = { version = "0.45", default-features = false }
 aws-sdk-kms = { version = "1.123", default-features = false, features = ["default-https-client", "rt-tokio"] }
 aws-sdk-secretsmanager = { version = "1.120", default-features = false, features = ["default-https-client", "rt-tokio"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }
-async-trait = "0.1"
 jiff = "0.2"
 clap = { version = "4.6", default-features = false, features = ["std", "color", "help", "usage", "error-context"] }
 crc32c = "0.6"

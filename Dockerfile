@@ -3,7 +3,6 @@ FROM rust:1.94-slim-trixie AS builder
 
 RUN apt-get update && apt-get install -y \
     pkg-config \
-    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -22,11 +21,12 @@ COPY crates/roughenough-reporting-server/Cargo.toml crates/roughenough-reporting
 
 # Stub every declared lib, bin, and bench target so cargo can resolve the
 # workspace and build dependencies without the real sources
-RUN for crate in roughenough-client roughenough-common roughenough-integration \
-    roughenough-keys roughenough-merkle roughenough-protocol roughenough-server \
+RUN for crate in roughenough-client roughenough-common roughenough-keys \
+    roughenough-merkle roughenough-protocol roughenough-server \
     roughenough-reporting-server; do \
     mkdir -p crates/$crate/src && touch crates/$crate/src/lib.rs; \
     done \
+    && mkdir -p crates/roughenough-integration/src \
     && echo 'fn main() {}' > crates/roughenough-client/src/main.rs \
     && echo 'fn main() {}' > crates/roughenough-server/src/main.rs \
     && echo 'fn main() {}' > crates/roughenough-reporting-server/src/main.rs \
@@ -42,14 +42,14 @@ RUN for crate in roughenough-client roughenough-common roughenough-integration \
 
 # Build dependencies only (cached unless a manifest or Cargo.lock changes).
 # This must fail loudly if the stub setup is ever incomplete.
-RUN cargo build --profile release-lto --bin roughenough_server --all-features
+RUN cargo build --profile release-lto -p roughenough-server --features release
 
 # Copy actual source and build. Touch the sources so cargo sees them as newer
 # than the stub-built artifacts (COPY preserves context mtimes, which may
 # predate the stub build and would otherwise skip recompilation).
 COPY crates crates
 RUN find crates -name '*.rs' -exec touch {} + \
-    && cargo build --profile release-lto --bin roughenough_server --all-features
+    && cargo build --profile release-lto -p roughenough-server --features release
 
 # Runtime stage - minimal distroless (no shell), runs as uid/gid 65532
 FROM gcr.io/distroless/cc-debian13:nonroot

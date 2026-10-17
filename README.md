@@ -20,7 +20,7 @@ verifiable time synchronization.
 
 ### System Requirements
 
-- MSRV 1.88, Rust 2024 edition 
+- MSRV 1.94.1 (set by the AWS SDK crates), Rust 2024 edition
 - Linux, MacOS, or other Unix-like operating system
 - Optional: cloud provider credentials for backend key storage
 
@@ -32,11 +32,11 @@ Build all components:
 cargo build --release
 ```
 
-Build with all optional features:
+Build the server and client with every optional feature a release ships:
 
 ```bash
-# Enable all optional features
-cargo build --release --all-features 
+cargo build --release -p roughenough-server --features release
+cargo build --release -p roughenough-client --features reporting
 ```
 
 ### Running the Server
@@ -48,20 +48,36 @@ you can use `--insecure-zero-seed` to run with an all-zero seed.
 On Unix-like systems the seed file needs to be a regular file (no symlinks) with
 `0400` or `0600` file permissions.
 
-The seed file can contain one of (usually obtained from `roughenough-keys`): 
-* exactly 32 bytes of binary random data
-* a base64 or hex encoded value (`seed://` )
+The seed file holds text in one of these forms:
+* a hex or base64 encoded 32-byte seed, optionally prefixed with `seed://`
 * an AWS or GCP KMS envelope (`aws-kms://` or `gcp-kms://`)
 * an AWS or GCP Secret Manager reference (`aws-secret://` or `gcp-secret://`)
-  
-Use the `roughenough-keys` tool to generate a seed and encrypt/wrap it with
-a secret manager or KMS.
+
+The `roughenough_keys` tool creates the protected forms: `generate` creates a new
+random seed and protects it, `protect` protects the seed in an existing seed file,
+and `recover` prints the plain seed that a seed file refers to. Build the tool and
+the server with the `longterm-aws` or `longterm-gcp` feature; see
+[doc/PROTECTION.md](doc/PROTECTION.md).
+
+```bash
+# Generate a new mode-0600 plain seed file
+(umask 077 && openssl rand -hex 32 > seed.txt)
+
+# Encrypt it with AWS KMS; the output is a seed file the server loads
+roughenough_keys protect -i seed.txt --resource aws-kms://arn:aws:kms:... -o roughenough.seed
+
+# Or generate a new seed and store it in GCP Secret Manager
+roughenough_keys generate --resource gcp-secret://projects/P/secrets/S -o roughenough.seed
+
+# Print the plain seed that a seed file refers to
+roughenough_keys recover -i roughenough.seed
+```
 
 ```bash
 # Debug build, testing-only zero seed
 cargo run --bin roughenough_server -- --insecure-zero-seed
 
-# Generate a new mode-0600 raw seed file
+# Generate a new mode-0600 plain seed file
 (umask 077 && openssl rand -hex 32 > roughenough.seed)
 
 # Release build with optimizations and a real seed file
@@ -98,7 +114,7 @@ cargo run --bin roughenough_client -- roughtime.int08h.com 5319 --zulu   # ISO 8
 Offer draft version 0x8000000c as well as version 1 (see [Protocol Versions](#protocol-versions)):
 
 ```bash
-cargo run --bin roughenough_client -- roughtime.example.com 2002 -P both
+cargo run --bin roughenough_client -- roughtime.example.com 5319 -P both
 ```
 
 Query multiple servers from an RFC compliant JSON list:
@@ -106,6 +122,9 @@ Query multiple servers from an RFC compliant JSON list:
 ```bash
 cargo run --bin roughenough_client -- -l servers.json
 ```
+
+With `-s`, list mode sets the system clock from the last measurement only when
+no causality violation is found; otherwise it exits with status 1.
 
 ### Protocol Versions
 
@@ -117,42 +136,22 @@ The client offers version 1 by default. `-P both` offers version 1 and draft
 version 0x8000000c, and `-P 19` offers only the draft version. Draft responses
 are verified with the draft context strings (`"RoughTime v1 ..."`).
 
-### Running Tests
-
-```bash
-# Run all tests
-cargo test
-
-# Run tests for specific crate
-cargo test -p roughenough-protocol
-
-# Run integration tests
-target/debug/roughenough_integration_test
-```
-
-## Project Structure
-
-Roughtime is structured as a Cargo workspace with multiple crates:
-
-- **protocol** - Core wire format handling, request/response types, data structures
-- **merkle** - Merkle tree implementation with Roughtime-specific tweaks
-- **server** - High-performance UDP server with async I/O and batching
-- **client** - Command-line client for querying Roughtime servers
-- **common** - Shared cryptography and encoding utilities
-- **keys** - Key material handling with multiple secure storage backends
-- **reporting-server** - Web server for collecting malfeasance reports
-- **integration** - End-to-end integration tests
-- **fuzz** - Fuzzing harness
-
 ## Optional Features
+
+### Server Features
+
+The server forwards the keys backends as `online-pkcs11`, `online-ssh-agent`,
+`longterm-aws`, and `longterm-gcp`; `release` enables all of them.
 
 ### Client Features
 
 - **reporting** - Enables clients to report malfeasance to a remote server
   ```bash
   cargo build -p roughenough-client --features reporting
-  cargo run --bin roughenough_client -- hostname.com 5319 --report
+  cargo run -p roughenough-client --features reporting --bin roughenough_client -- -l servers.json --report
   ```
+- **test-utils** - Test-only: exposes shared fixtures (`roughenough_client::test_utils`)
+  for other crates' tests; pulls in `roughenough-server`. Never enable it in builds you ship
 
 ### Keys Crate Features
 
@@ -166,14 +165,13 @@ See [doc/PROTECTION.md](doc/PROTECTION.md) for detailed information on seed prot
 
 #### Long-term Protection (Seed Storage)
 
-- `longterm-aws-kms` AWS Key Management Service for seed encryption
-- `longterm-gcp-kms` Google Cloud KMS for seed encryption
-- `longterm-aws-secret-manager` AWS Secrets Manager for seed storage
-- `longterm-gcp-secret-manager` Google Cloud Secret Manager for seed storage
+- `longterm-aws` AWS KMS envelope encryption and AWS Secrets Manager
+- `longterm-gcp` GCP Cloud KMS envelope encryption and GCP Secret Manager
 
 ## Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines, the project layout, and
+development commands.
 
 Thank you to all past and present contributors:
 

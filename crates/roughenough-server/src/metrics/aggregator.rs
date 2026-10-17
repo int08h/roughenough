@@ -3,9 +3,9 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
-use roughenough_protocol::util::ClockSource;
+use roughenough_common::clocksource::ClockSource;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
 
@@ -126,7 +126,7 @@ impl MetricsAggregator {
 
     /// Report aggregated metrics
     fn report_metrics(&mut self, elapsed_secs: f64) {
-        let now = SystemTime::now();
+        let now = self.clock.epoch_seconds() as i64;
 
         let aggregated = self.take_interval_report(elapsed_secs);
 
@@ -141,12 +141,14 @@ impl MetricsAggregator {
             aggregated.network.num_oversized_dropped,
         );
         info!(
-            "Requests: total={} ok={} bad={} runt={} oversized={}",
+            "Requests: total={} ok={} bad={} runt={} oversized={} srv_mismatch={} no_common_version={}",
             aggregated.total_requests,
             aggregated.requests.num_ok_requests,
             aggregated.requests.num_bad_requests,
             aggregated.requests.num_runt_requests,
-            aggregated.requests.num_oversized_requests
+            aggregated.requests.num_oversized_requests,
+            aggregated.requests.num_srv_mismatch,
+            aggregated.requests.num_no_common_version,
         );
         info!(
             "Responses: total={} bytes={:.1}MB, batch sizes={}",

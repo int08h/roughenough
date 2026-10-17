@@ -5,7 +5,7 @@ use Error::UnorderedVersion;
 use crate::cursor::ParseCursor;
 use crate::error::Error;
 use crate::protocol_ver::ProtocolVersion;
-use crate::wire::{FromWire, FromWireN, ToWire};
+use crate::wire::{FromWire, ToWire};
 
 /// An ordered list of supported protocol versions. Used by clients in VER, and servers in VERS:
 ///
@@ -84,10 +84,6 @@ impl VersionList {
     pub fn versions(&self) -> &[ProtocolVersion] {
         &self.versions[..self.num_versions]
     }
-
-    pub fn is_supported(&self, version: ProtocolVersion) -> bool {
-        self.versions().contains(&version)
-    }
 }
 
 impl ToWire for VersionList {
@@ -104,12 +100,6 @@ impl ToWire for VersionList {
 }
 
 impl FromWire for VersionList {
-    fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
-        VersionList::from_wire_n(cursor, cursor.remaining())
-    }
-}
-
-impl FromWireN for VersionList {
     fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error> {
         let mut remaining = n;
         let mut vers = VersionList::default();
@@ -180,14 +170,14 @@ mod tests {
     fn new() {
         let versions = VersionList::new(&[ProtocolVersion::DRAFT]);
         assert_eq!(versions.versions(), &[ProtocolVersion::DRAFT]);
-        assert!(versions.is_supported(ProtocolVersion::DRAFT));
+        assert!(versions.versions().contains(&ProtocolVersion::DRAFT));
     }
 
     #[test]
     fn zero_versions() {
         let versions = VersionList::new(&[]);
         assert!(versions.versions().is_empty());
-        assert!(!versions.is_supported(ProtocolVersion::DRAFT));
+        assert!(!versions.versions().contains(&ProtocolVersion::DRAFT));
     }
 
     #[test]
@@ -208,15 +198,15 @@ mod tests {
 
         versions.push_back(ProtocolVersion::RFC);
         assert_eq!(versions.versions(), &[ProtocolVersion::RFC]);
-        assert!(versions.is_supported(ProtocolVersion::RFC));
-        assert!(!versions.is_supported(ProtocolVersion::DRAFT));
+        assert!(versions.versions().contains(&ProtocolVersion::RFC));
+        assert!(!versions.versions().contains(&ProtocolVersion::DRAFT));
 
         versions.push_back(ProtocolVersion::DRAFT);
         assert_eq!(
             versions.versions(),
             &[ProtocolVersion::RFC, ProtocolVersion::DRAFT]
         );
-        assert!(versions.is_supported(ProtocolVersion::DRAFT));
+        assert!(versions.versions().contains(&ProtocolVersion::DRAFT));
         assert_eq!(versions.wire_size(), 2 * size_of::<ProtocolVersion>());
     }
 

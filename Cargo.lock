@@ -2860,17 +2860,17 @@ dependencies = [
 
 [[package]]
 name = "roughenough-client"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "aws-lc-rs",
  "clap",
  "data-encoding",
  "jiff",
  "libc",
+ "roughenough-client",
  "roughenough-common",
  "roughenough-merkle",
  "roughenough-protocol",
- "roughenough-reporting-server",
  "roughenough-server",
  "serde",
  "serde_json",
@@ -2882,31 +2882,28 @@ dependencies = [
 
 [[package]]
 name = "roughenough-common"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "aws-lc-rs",
  "data-encoding",
  "roughenough-protocol",
+ "zeroize",
 ]
 
 [[package]]
 name = "roughenough-integration-test"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
- "aws-lc-rs",
  "clap",
- "data-encoding",
- "roughenough-client",
- "roughenough-merkle",
+ "roughenough-common",
  "roughenough-protocol",
- "roughenough-server",
  "tracing",
  "tracing-subscriber",
 ]
 
 [[package]]
 name = "roughenough-keys"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "aws-config",
  "aws-lc-rs",
@@ -2919,6 +2916,7 @@ dependencies = [
  "data-encoding",
  "google-cloud-kms-v1",
  "google-cloud-secretmanager-v1",
+ "libc",
  "linux-keyutils",
  "roughenough-common",
  "roughenough-protocol",
@@ -2935,17 +2933,16 @@ dependencies = [
 
 [[package]]
 name = "roughenough-merkle"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "aws-lc-rs",
- "data-encoding",
  "divan",
  "roughenough-protocol",
 ]
 
 [[package]]
 name = "roughenough-protocol"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "divan",
  "pastey",
@@ -2955,10 +2952,8 @@ dependencies = [
 
 [[package]]
 name = "roughenough-reporting-server"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
- "async-trait",
- "aws-lc-rs",
  "axum",
  "clap",
  "data-encoding",
@@ -2966,8 +2961,6 @@ dependencies = [
  "reqwest",
  "roughenough-client",
  "roughenough-common",
- "roughenough-keys",
- "roughenough-merkle",
  "roughenough-protocol",
  "roughenough-server",
  "serde",
@@ -2980,9 +2973,8 @@ dependencies = [
 
 [[package]]
 name = "roughenough-server"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
- "aws-lc-rs",
  "clap",
  "divan",
  "libc",
@@ -2999,7 +2991,6 @@ dependencies = [
  "time-format",
  "tracing",
  "tracing-subscriber",
- "zeroize",
 ]
 
 [[package]]
@@ -3053,9 +3044,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.45"
+version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
+checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "aws-lc-rs",
  "log",
@@ -4372,20 +4363,6 @@ name = "zeroize"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
-dependencies = [
- "zeroize_derive",
-]
-
-[[package]]
-name = "zeroize_derive"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c50655cbb0fe3fc43170059e702f1ce5e19b84cec58dc87b037a09935c2f328"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
 
 [[package]]
 name = "zerotrie"

@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 
-use roughenough_keys::online::onlinekey::OnlineKey;
+use roughenough_common::clocksource::ClockSource;
+use roughenough_keys::online::OnlineKey;
 use roughenough_merkle::{MerklePath, MerkleTree};
 use roughenough_protocol::cursor::ParseCursor;
 use roughenough_protocol::request::Request;
@@ -21,7 +22,7 @@ const MAX_FRAMED_RESPONSE_SIZE: usize = 700;
 const _: () = assert!(RESPONSE_BUF_SIZE >= MAX_FRAMED_RESPONSE_SIZE);
 
 #[derive(Debug)]
-pub struct PendingRequest {
+struct PendingRequest {
     nonce: Nonce,
     src_addr: SocketAddr,
     negotiated_version: ProtocolVersion,
@@ -54,9 +55,7 @@ impl ResponseHandler {
     pub fn new(batch_size: u8, key_source: KeySource) -> Self {
         let batch_size = batch_size as usize;
         let online_key = key_source.make_online_key();
-        let mut merkle_tree = MerkleTree::new();
-
-        merkle_tree.reserve(batch_size);
+        let merkle_tree = MerkleTree::with_capacity(batch_size);
 
         Self {
             batch_size,
@@ -99,8 +98,8 @@ impl ResponseHandler {
         self.version_templates.clear();
     }
 
-    /// Process all responses. `callback` receives each response as a borrowed slice that's
-    /// valid only during the callback.
+    /// Process all responses, then clear the batch. `callback` receives each response as a
+    /// borrowed slice that's valid only during the callback.
     pub fn process_responses<F>(&mut self, mut callback: F)
     where
         F: FnMut(SocketAddr, &[u8]),
@@ -143,6 +142,9 @@ impl ResponseHandler {
                 &self.response_buf[..frame_size],
             );
         }
+
+        self.merkle_tree.clear();
+        self.requests.clear();
     }
 
     /// Return the index of a template carrying this batch's SREP and SIG for
@@ -187,21 +189,22 @@ impl ResponseHandler {
         (dele.mint(), dele.maxt())
     }
 
+    pub fn batch_size(&self) -> usize {
+        self.batch_size
+    }
+
+    pub fn clock(&self) -> &ClockSource {
+        self.key_source.clock()
+    }
+
     pub fn long_term_public_key(&self) -> PublicKey {
         self.key_source.public_key()
     }
 
-    pub fn clear(&mut self) {
-        self.merkle_tree.clear();
-        self.requests.clear();
-    }
-
-    #[allow(dead_code)] // used in worker metrics collection
     pub fn metrics(&self) -> ResponseMetrics {
         self.response_metrics
     }
 
-    #[allow(dead_code)] // used in worker metrics collection
     pub fn reset_metrics(&mut self) {
         self.response_metrics.reset_metrics();
     }
@@ -219,18 +222,29 @@ impl ResponseHandler {
 
 #[cfg(test)]
 mod tests {
-    use roughenough_protocol::cursor::ParseCursor;
     use roughenough_protocol::request::Request;
     use roughenough_protocol::response::Response;
     use roughenough_protocol::tags::Nonce;
-    use roughenough_protocol::wire::{FromWire, ToWire};
+    use roughenough_protocol::wire::FromFrame;
 
     use super::*;
     use crate::test_utils::new_response_handler;
 
-    fn create_test_request(nonce_value: u8) -> Request {
-        let nonce = Nonce::from([nonce_value; 32]);
-        Request::new(&nonce)
+    /// Adds a version-1 request, hashing its framed bytes as the server does
+    fn add(responder: &mut ResponseHandler, nonce: u8, addr: SocketAddr) {
+        let nonce = Nonce::from([nonce; 32]);
+        let request = Request::new(&nonce);
+        let request_bytes = request.as_frame_bytes().unwrap();
+        responder.add_request(&request_bytes, request, ProtocolVersion::RFC, addr);
+    }
+
+    fn drain(responder: &mut ResponseHandler) -> Vec<(SocketAddr, Response)> {
+        let mut responses = Vec::new();
+        responder.process_responses(|addr, bytes| {
+            let response = Response::from_frame_bytes(bytes).unwrap();
+            responses.push((addr, response));
+        });
+        responses
     }
 
     #[test]
@@ -243,23 +257,16 @@ mod tests {
     }
 
     #[test]
-    fn clear_state() {
+    fn process_responses_leaves_handler_empty() {
         let mut responder = new_response_handler();
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
 
-        // Add a request
-        let request = create_test_request(42);
-        responder.add_request(
-            &request.as_bytes().unwrap(),
-            request,
-            ProtocolVersion::RFC,
-            addr,
-        );
+        add(&mut responder, 42, addr);
 
         assert_eq!(responder.num_pending(), 1);
         assert!(!responder.merkle_tree().is_empty());
 
-        responder.clear();
+        responder.process_responses(|_, _| {});
 
         assert_eq!(responder.num_pending(), 0);
         assert!(responder.merkle_tree().is_empty());
@@ -273,26 +280,14 @@ mod tests {
 
         // Add requests up to batch size
         for i in 0..64 {
-            let request = create_test_request(i as u8);
-            responder.add_request(
-                &request.as_bytes().unwrap(),
-                request,
-                ProtocolVersion::RFC,
-                addr,
-            );
+            add(&mut responder, i, addr);
         }
 
         assert_eq!(responder.num_pending(), 64);
 
         // This should trigger the batch size limit debug assertion in add_request
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let request = create_test_request(100);
-            responder.add_request(
-                &request.as_bytes().unwrap(),
-                request,
-                ProtocolVersion::RFC,
-                addr,
-            );
+            add(&mut responder, 100, addr);
         }));
 
         assert!(result.is_err(), "Should panic when batch size is exceeded");
@@ -303,29 +298,13 @@ mod tests {
         let mut responder = new_response_handler();
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
 
-        let request = create_test_request(42);
-        let expected_nonce = *request.nonc();
-        responder.add_request(
-            &request.as_bytes().unwrap(),
-            request,
-            ProtocolVersion::RFC,
-            addr,
-        );
+        add(&mut responder, 42, addr);
 
-        let mut responses = Vec::new();
-        responder.process_responses(|addr, bytes| {
-            responses.push((addr, bytes.to_vec()));
-        });
-
+        let responses = drain(&mut responder);
         assert_eq!(responses.len(), 1);
-        let (response_addr, response_bytes) = &responses[0];
+        let (response_addr, response) = &responses[0];
         assert_eq!(*response_addr, addr);
-        assert!(response_bytes.starts_with(b"ROUGHTIM"));
-
-        let mut response_data = response_bytes[12..].to_vec();
-        let mut cursor = ParseCursor::new(&mut response_data);
-        let resp = Response::from_wire(&mut cursor).unwrap();
-        assert_eq!(resp.nonc(), &expected_nonce);
+        assert_eq!(response.nonc(), &Nonce::from([42; 32]));
     }
 
     #[test]
@@ -334,40 +313,44 @@ mod tests {
 
         let num_requests = 5;
         let mut expected_addrs = Vec::new();
-        let mut expected_nonces = Vec::new();
 
-        // Add multiple requests
         for i in 0..num_requests {
             let addr: SocketAddr = format!("127.0.0.1:{}", 8080 + i).parse().unwrap();
-            let request = create_test_request(i as u8);
-
             expected_addrs.push(addr);
-            expected_nonces.push(*request.nonc());
-            responder.add_request(
-                &request.as_bytes().unwrap(),
-                request,
-                ProtocolVersion::RFC,
-                addr,
-            );
+            add(&mut responder, i as u8, addr);
         }
 
-        let mut responses = Vec::new();
-        responder.process_responses(|addr, bytes| {
-            responses.push((addr, bytes.to_vec()));
-        });
-
+        let responses = drain(&mut responder);
         assert_eq!(responses.len(), num_requests);
 
-        for (idx, (response_addr, response_bytes)) in responses.iter().enumerate() {
+        for (idx, (response_addr, response)) in responses.iter().enumerate() {
             assert_eq!(*response_addr, expected_addrs[idx]);
-            assert!(response_bytes.starts_with(b"ROUGHTIM"));
+            assert_eq!(response.nonc(), &Nonce::from([idx as u8; 32]));
+            assert_eq!(response.indx(), idx as u32);
+        }
+    }
 
-            // Parse and verify the response
-            let mut response_data = response_bytes[12..].to_vec();
-            let mut cursor = ParseCursor::new(&mut response_data);
-            let resp = Response::from_wire(&mut cursor).unwrap();
-            assert_eq!(resp.nonc(), &expected_nonces[idx]);
-            assert_eq!(resp.indx(), idx as u32);
+    #[test]
+    fn response_vers_contains_negotiated_ver() {
+        // RFC 5.2.5: VERS MUST contain VER. Our client rejects a response that breaks this.
+        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+
+        for version in ProtocolVersion::ADVERTISED {
+            let mut responder = new_response_handler();
+            let request = Request::new_with_versions(&Nonce::from([7; 32]), &[version]);
+            let request_bytes = request.as_frame_bytes().unwrap();
+            responder.add_request(&request_bytes, request, version, addr);
+
+            let responses = drain(&mut responder);
+            assert_eq!(responses.len(), 1);
+
+            let srep = responses[0].1.srep();
+            assert_eq!(*srep.ver(), version);
+            assert!(
+                srep.vers().versions().contains(srep.ver()),
+                "VERS {:?} omits VER {version:?}",
+                srep.vers()
+            );
         }
     }
 
@@ -376,29 +359,11 @@ mod tests {
         let mut responder = new_response_handler();
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
 
-        let run_batch = |responder: &mut ResponseHandler,
-                         requests: &[(u8, ProtocolVersion)]|
-         -> Vec<Response> {
-            for (nonce_byte, version) in requests {
-                let request = create_test_request(*nonce_byte);
-                responder.add_request(&request.as_bytes().unwrap(), request, *version, addr);
-            }
-            let mut responses = Vec::new();
-            responder.process_responses(|_, bytes| {
-                let mut data = bytes.to_vec();
-                let mut cursor = ParseCursor::new(&mut data);
-                use roughenough_protocol::wire::FromFrame;
-                responses.push(Response::from_frame(&mut cursor).unwrap());
-            });
-            responder.clear();
-            responses
-        };
-
-        let batch1 = run_batch(&mut responder, &[(1, ProtocolVersion::RFC)]);
-        let batch2 = run_batch(
-            &mut responder,
-            &[(2, ProtocolVersion::RFC), (3, ProtocolVersion::RFC)],
-        );
+        add(&mut responder, 1, addr);
+        let batch1: Vec<Response> = drain(&mut responder).into_iter().map(|(_, r)| r).collect();
+        add(&mut responder, 2, addr);
+        add(&mut responder, 3, addr);
+        let batch2: Vec<Response> = drain(&mut responder).into_iter().map(|(_, r)| r).collect();
 
         assert_eq!(batch1.len(), 1);
         assert_eq!(batch2.len(), 2);
@@ -430,28 +395,11 @@ mod tests {
         let mut responder = new_response_handler();
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
 
-        let one_response = |responder: &mut ResponseHandler, nonce_byte: u8| -> Response {
-            let request = create_test_request(nonce_byte);
-            responder.add_request(
-                &request.as_bytes().unwrap(),
-                request,
-                ProtocolVersion::RFC,
-                addr,
-            );
-            let mut responses = Vec::new();
-            responder.process_responses(|_, bytes| {
-                let mut data = bytes.to_vec();
-                let mut cursor = ParseCursor::new(&mut data);
-                use roughenough_protocol::wire::FromFrame;
-                responses.push(Response::from_frame(&mut cursor).unwrap());
-            });
-            responder.clear();
-            responses.pop().unwrap()
-        };
-
-        let before = one_response(&mut responder, 1);
+        add(&mut responder, 1, addr);
+        let (_, before) = drain(&mut responder).pop().unwrap();
         responder.replace_online_key();
-        let after = one_response(&mut responder, 2);
+        add(&mut responder, 2, addr);
+        let (_, after) = drain(&mut responder).pop().unwrap();
 
         assert_ne!(
             before.cert().dele().pubk(),

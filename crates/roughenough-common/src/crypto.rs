@@ -1,6 +1,7 @@
 //! Cryptographic utilities shared across the project
 
 use aws_lc_rs::digest::{SHA512, digest};
+use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
 use roughenough_protocol::tags::{Nonce, PublicKey, SrvCommitment};
 
 /// Calculate the chained nonce from a prior response and random value.
@@ -13,7 +14,7 @@ pub fn calculate_chained_nonce(prior_response_frame: &[u8], rand: &[u8]) -> Nonc
     chain_value.extend_from_slice(rand);
 
     let digest = digest(&SHA512, &chain_value);
-    Nonce::from(&digest.as_ref()[..32])
+    Nonce::try_from(&digest.as_ref()[..32]).expect("SHA-512 digest is 64 bytes")
 }
 
 /// Generate cryptographically secure random bytes
@@ -21,27 +22,6 @@ pub fn random_bytes<const N: usize>() -> [u8; N] {
     let mut val = [0u8; N];
     aws_lc_rs::rand::fill(&mut val).expect("should be infallible");
     val
-}
-
-/// Shuffle a slice in place (Fisher-Yates) using cryptographically secure randomness
-pub fn secure_shuffle<T>(slice: &mut [T]) {
-    for i in (1..slice.len()).rev() {
-        let j = random_index(i + 1);
-        slice.swap(i, j);
-    }
-}
-
-/// Uniform random index in `[0, bound)`; rejection sampling avoids modulo bias
-fn random_index(bound: usize) -> usize {
-    debug_assert!(bound > 0 && bound <= u32::MAX as usize);
-    let bound = bound as u32;
-    let zone = u32::MAX - (u32::MAX % bound);
-    loop {
-        let r = u32::from_le_bytes(random_bytes::<4>());
-        if r < zone {
-            return (r % bound) as usize;
-        }
-    }
 }
 
 /// RFC 5.1.4: The value of the SRV tag is H(0xff || public_key) where public_key is
@@ -53,6 +33,22 @@ pub fn make_srv_commitment(pub_key: &PublicKey) -> SrvCommitment {
 
     let digest = digest(&SHA512, &data);
     SrvCommitment::try_from(&digest.as_ref()[0..32]).expect("should be infallible")
+}
+
+/// Verify an Ed25519 `signature` over `context || message`. Roughtime signs SREP and DELE
+/// with a version-specific context prefix (RFC 5.2).
+pub fn verify_with_context(
+    public_key: &[u8],
+    context: &[u8],
+    message: &[u8],
+    signature: &[u8],
+) -> bool {
+    let mut signed = Vec::with_capacity(context.len() + message.len());
+    signed.extend_from_slice(context);
+    signed.extend_from_slice(message);
+    UnparsedPublicKey::new(&ED25519, public_key)
+        .verify(&signed, signature)
+        .is_ok()
 }
 
 #[cfg(test)]
@@ -97,5 +93,37 @@ mod tests {
         // Should be deterministic
         assert_eq!(commitment1, commitment2);
         assert_eq!(commitment1.as_ref().len(), 32);
+    }
+
+    #[test]
+    fn verify_with_context_rejects_wrong_context() {
+        use aws_lc_rs::signature::{Ed25519KeyPair, KeyPair};
+
+        let key_pair = Ed25519KeyPair::generate().unwrap();
+        let public_key = key_pair.public_key().as_ref();
+        let message = b"message";
+
+        let mut signed = b"context-a".to_vec();
+        signed.extend_from_slice(message);
+        let signature = key_pair.sign(&signed);
+
+        assert!(verify_with_context(
+            public_key,
+            b"context-a",
+            message,
+            signature.as_ref()
+        ));
+        assert!(!verify_with_context(
+            public_key,
+            b"context-b",
+            message,
+            signature.as_ref()
+        ));
+        assert!(!verify_with_context(
+            public_key,
+            b"",
+            message,
+            signature.as_ref()
+        ));
     }
 }

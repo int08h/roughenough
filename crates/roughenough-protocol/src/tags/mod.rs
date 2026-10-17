@@ -1,6 +1,6 @@
 pub mod cert;
 pub mod dele;
-pub mod fixed_tag;
+mod fixed_tag;
 pub mod mtype;
 pub mod nonce;
 pub mod path;

@@ -4,7 +4,7 @@ use crate::cursor::ParseCursor;
 use crate::error::Error;
 use crate::error::Error::{BufferTooSmall, InvalidPathLength};
 use crate::util::as_hex;
-use crate::wire::{FromWire, FromWireN, ToWire};
+use crate::wire::{FromWire, ToWire};
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct MerklePath {
@@ -113,19 +113,13 @@ impl ToWire for MerklePath {
 }
 
 impl FromWire for MerklePath {
-    fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
-        MerklePath::from_wire_n(cursor, cursor.remaining())
-    }
-}
-
-impl FromWireN for MerklePath {
     fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error> {
         if n == 0 {
             return Ok(Self::default());
         }
 
         if n > Self::capacity() {
-            return Err(BufferTooSmall(n, Self::capacity()));
+            return Err(InvalidPathLength(n as u32));
         }
 
         if !n.is_multiple_of(Self::ELEMENT_SIZE) {

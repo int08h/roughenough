@@ -1,5 +1,3 @@
-use crate::error::Error;
-use crate::error::Error::BufferTooSmall;
 use crate::tags::fixed_tag::fixed_tag;
 
 const SIZE: usize = 32;
@@ -17,29 +15,12 @@ impl SrvCommitment {
     pub const HASH_PREFIX_SRV: &'static [u8] = &[0xff];
 }
 
-impl TryFrom<&[u8]> for SrvCommitment {
-    type Error = Error;
-
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        if value.len() != SIZE {
-            return Err(BufferTooSmall(SIZE, value.len()));
-        }
-        let buf: [u8; SIZE] = value.try_into().unwrap();
-        Ok(SrvCommitment::from(buf))
-    }
-}
-
-impl AsRef<[u8]> for SrvCommitment {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_slice()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::cursor::ParseCursor;
-    use crate::wire::{FromWire, FromWireN, ToWire};
+    use crate::error::Error;
+    use crate::wire::{FromWire, ToWire};
 
     #[test]
     fn round_trip() {
@@ -65,8 +46,14 @@ mod tests {
 
     #[test]
     fn try_from_wrong_length_is_rejected() {
-        assert!(SrvCommitment::try_from([0u8; 31].as_slice()).is_err());
-        assert!(SrvCommitment::try_from([0u8; 33].as_slice()).is_err());
+        assert!(matches!(
+            SrvCommitment::try_from([0u8; 31].as_slice()),
+            Err(Error::WrongTagSize(SIZE, 31))
+        ));
+        assert!(matches!(
+            SrvCommitment::try_from([0u8; 33].as_slice()),
+            Err(Error::WrongTagSize(SIZE, 33))
+        ));
         assert!(SrvCommitment::try_from([0u8; 32].as_slice()).is_ok());
     }
 }

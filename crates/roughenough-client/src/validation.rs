@@ -1,14 +1,12 @@
 //! Validate Responses from Roughtime servers.
 //!
 //! * Use [`ResponseValidator::validate`] to validate an individual [`Response`], or
-//! * [`ResponseValidator::validate_causality`]
+//! * [`CausalityViolation::find`]
 //!   to inspect the results of a [`MeasurementSequence`](crate::sequence::MeasurementSequence).
 
-use aws_lc_rs::signature;
-use aws_lc_rs::signature::UnparsedPublicKey;
 use data_encoding::HEXLOWER;
+use roughenough_common::crypto::verify_with_context;
 use roughenough_merkle::root_from_paths;
-use roughenough_protocol::cursor::ParseCursor;
 use roughenough_protocol::header::find_value_range;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::response::Response;
@@ -35,6 +33,36 @@ pub enum ValidationError {
 
     #[error("Response version {0:?} was not offered in the request")]
     UnofferedVersion(ProtocolVersion),
+
+    #[error("Response VERS {vers:?} does not contain its VER {ver:?} (RFC 5.2.5)")]
+    VerNotInVers {
+        ver: ProtocolVersion,
+        vers: Vec<ProtocolVersion>,
+    },
+}
+
+/// `(MIDP - RADI, MIDP + RADI)`, saturating: both values are wire-derived.
+pub(crate) fn interval(midp: u64, radi: u32) -> (u64, u64) {
+    (
+        midp.saturating_sub(radi as u64),
+        midp.saturating_add(radi as u64),
+    )
+}
+
+/// Index pairs `(i, j)`, `i < j`, where the earliest time of `i` is after the latest time of
+/// `j`. `bounds` holds each measurement's [`interval`], in the order performed.
+pub(crate) fn violating_pairs(bounds: &[(u64, u64)]) -> Vec<(usize, usize)> {
+    let mut pairs = Vec::new();
+
+    for (i, &(lower_i, _)) in bounds.iter().enumerate() {
+        for (j, &(_, upper_j)) in bounds.iter().enumerate().skip(i + 1) {
+            if lower_i > upper_j {
+                pairs.push((i, j));
+            }
+        }
+    }
+
+    pairs
 }
 
 /// An instance of causality constraints being violated. For the pair of measurements
@@ -50,28 +78,36 @@ pub struct CausalityViolation {
     chain: Vec<Measurement>,
     index_i: usize,
     index_j: usize,
-    lower_bound_i: u64,
-    upper_bound_j: u64,
 }
 
 impl CausalityViolation {
-    // MIDP and RADI are wire-derived, so the bounds saturate and the
-    // constructor must not assert on them
+    /// Find every pair of `measurements` that violates causality. For each pair `(i, j)`,
+    /// where `i` was received before `j`, checks that `MIDP_i - RADI_i <= MIDP_j + RADI_j`.
+    /// Returns an empty list if all pairs are consistent.
+    pub fn find(measurements: &[Measurement]) -> Vec<CausalityViolation> {
+        let bounds: Vec<(u64, u64)> = measurements
+            .iter()
+            .map(|m| (m.lower_bound(), m.upper_bound()))
+            .collect();
+
+        violating_pairs(&bounds)
+            .into_iter()
+            .map(|(i, j)| Self::new(measurements, i, j))
+            .collect()
+    }
+
+    /// The violating pair `(index_i, index_j)` of `measurements`, with `index_i < index_j`.
     pub fn new(measurements: &[Measurement], index_i: usize, index_j: usize) -> Self {
-        let chain = measurements[..=index_i.max(index_j)].to_vec();
-        let lower_bound_i = chain[index_i].lower_bound();
-        let upper_bound_j = chain[index_j].upper_bound();
+        debug_assert!(index_i < index_j);
 
         Self {
-            chain,
+            chain: measurements[..=index_j].to_vec(),
             index_i,
             index_j,
-            lower_bound_i,
-            upper_bound_j,
         }
     }
 
-    /// Measurements 0 through `max(i, j)` inclusive, in the order performed
+    /// Measurements 0 through `j` inclusive, in the order performed
     pub fn chain(&self) -> &[Measurement] {
         &self.chain
     }
@@ -98,58 +134,50 @@ impl CausalityViolation {
 
     /// `MIDP_i - RADI_i` (saturating)
     pub fn lower_bound_i(&self) -> u64 {
-        self.lower_bound_i
+        self.measurement_i().lower_bound()
     }
 
     /// `MIDP_j + RADI_j` (saturating)
     pub fn upper_bound_j(&self) -> u64 {
-        self.upper_bound_j
+        self.measurement_j().upper_bound()
     }
 }
 
 /// Validate the [`Response`]s from roughtime servers.
 ///
-/// The [`validate`](Self::validate) method validates individual responses. While the [`validate_causality`](Self::validate_causality)
-/// method inspects the results of a [`MeasurementSequence`](crate::sequence::MeasurementSequence).
+/// See [`CausalityViolation::find`] to inspect the results of a
+/// [`MeasurementSequence`](crate::sequence::MeasurementSequence).
 #[derive(Debug, Default)]
 pub struct ResponseValidator {
-    pub_key: Option<UnparsedPublicKey<[u8; 32]>>,
+    pub_key: Option<PublicKey>,
 }
 
 impl ResponseValidator {
-    pub fn new() -> Self {
-        Self::default()
+    /// With `pub_key` (the server's long-term key) the DELE signature is verified as well;
+    /// without it, the response is only self-consistent.
+    pub fn new(pub_key: Option<PublicKey>) -> Self {
+        Self { pub_key }
     }
 
-    pub fn new_with_key(pub_key: PublicKey) -> Self {
-        let key_bytes: [u8; 32] = pub_key
-            .as_ref()
-            .try_into()
-            .expect("expected a valid 32-byte public key");
-
-        let key = UnparsedPublicKey::new(&signature::ED25519, key_bytes);
-
-        Self { pub_key: Some(key) }
-    }
-
-    /// Validate a response. Validity of a response does not prove that the timestamp's value in
-    /// the response is correct, but merely that the server represents it signed the timestamp
-    /// and computed its signature during the time interval (MIDP-RADI, MIDP+RADI).
+    /// Parse and validate a response. Validity of a response does not prove that the
+    /// timestamp's value in the response is correct, but merely that the server represents it
+    /// signed the timestamp and computed its signature during the time interval
+    /// (MIDP-RADI, MIDP+RADI).
     ///
-    /// `response_bytes` is the response packet exactly as received (including the
-    /// "ROUGHTIM" framing): signatures are verified over the received bytes, which
-    /// a re-serialization of `response` would not reproduce if the server included
-    /// tags unknown to this implementation.
+    /// `request_bytes` is the framed request as sent, and `response_bytes` the response packet
+    /// exactly as received (including the "ROUGHTIM" framing).
     pub fn validate(
         &self,
-        request: &[u8],
+        request_bytes: &[u8],
         response_bytes: &[u8],
-        response: &Response,
-    ) -> Result<u64, ValidationError> {
+    ) -> Result<Response, ValidationError> {
+        let request = Request::from_frame_bytes(request_bytes)?;
+        let response = Response::from_frame_bytes(response_bytes)?;
+
         // RFC 7: a response with a version number not in the request is
         // invalid. Checked first because the version selects the signature
         // context strings.
-        Self::check_version(request, response)?;
+        check_version(&request, &response)?;
 
         // RFC section 5.4. Validity of Response:
         //   "A client MUST check the following properties when it receives a
@@ -157,186 +185,149 @@ impl ResponseValidator {
         //   client through other means."
 
         // The signature in CERT was made with the long-term key of the server.
-        if self.pub_key.is_some() {
-            self.check_dele_signature(response_bytes, response)?;
+        if let Some(pub_key) = &self.pub_key {
+            check_dele_signature(pub_key, response_bytes, &response)?;
         }
 
         // The MIDP timestamp lies in the interval specified by the MINT and MAXT timestamps.
-        self.check_midpoint(response)?;
+        check_midpoint(&response)?;
 
         // The INDX and PATH values prove a hash value derived from the request packet was included
         // in the Merkle tree ROOT
-        self.check_merkle_proof(request, response)?;
+        check_merkle_proof(request_bytes, &response)?;
 
         // The signature of SREP in SIG validates with the public key in DELE.
-        self.check_srep_signature(response_bytes, response)?;
+        check_srep_signature(response_bytes, &response)?;
 
-        let midpoint = response.srep().midp();
-        Ok(midpoint)
+        Ok(response)
     }
+}
 
-    /// Slice the value of nested `path` tags out of the received response packet.
-    fn received_value<'a>(
-        response_bytes: &'a [u8],
-        path: &[Tag],
-    ) -> Result<&'a [u8], ValidationError> {
-        if response_bytes.len() < FRAME_OVERHEAD {
-            return Err(ValidationError::BadSignature(format!(
-                "response packet too short: {} bytes",
-                response_bytes.len()
-            )));
-        }
+/// Slice the value of nested `path` tags out of a received response packet that has already
+/// parsed, so it is at least `FRAME_OVERHEAD` long.
+fn received_value<'a>(response_bytes: &'a [u8], path: &[Tag]) -> Result<&'a [u8], ValidationError> {
+    let msg = &response_bytes[FRAME_OVERHEAD..];
+    let range = find_value_range(msg, path)?;
+    Ok(&msg[range])
+}
 
-        let msg = &response_bytes[FRAME_OVERHEAD..];
-        let range = find_value_range(msg, path)?;
-        Ok(&msg[range])
-    }
-
-    fn check_version(request: &[u8], response: &Response) -> Result<(), ValidationError> {
-        let mut request_buf = request.to_vec();
-        let mut cursor = ParseCursor::new(&mut request_buf);
-        let request = Request::from_frame(&mut cursor)?;
-
-        let version = *response.srep().ver();
-        if request.ver().versions().contains(&version) {
-            Ok(())
-        } else {
-            Err(ValidationError::UnofferedVersion(version))
-        }
-    }
-
-    fn check_dele_signature(
-        &self,
-        response_bytes: &[u8],
-        response: &Response,
-    ) -> Result<(), ValidationError> {
-        let dele_bytes = Self::received_value(response_bytes, &[Tag::CERT, Tag::DELE])?;
-        let prefix = response.srep().ver().dele_prefix();
-
-        let mut to_verify = Vec::with_capacity(prefix.len() + dele_bytes.len());
-        to_verify.extend_from_slice(prefix);
-        to_verify.extend_from_slice(dele_bytes);
-
-        let signature = response.cert().sig();
-
-        match self.pub_key.unwrap().verify(&to_verify, signature.as_ref()) {
-            Ok(_) => Ok(()),
-            Err(_) => Err(ValidationError::BadSignature(
-                "signature on DELE is invalid".to_string(),
-            )),
-        }
-    }
-
-    fn check_srep_signature(
-        &self,
-        response_bytes: &[u8],
-        response: &Response,
-    ) -> Result<(), ValidationError> {
-        let srep_bytes = Self::received_value(response_bytes, &[Tag::SREP])?;
-        let prefix = response.srep().ver().srep_prefix();
-
-        let mut to_verify = Vec::with_capacity(prefix.len() + srep_bytes.len());
-        to_verify.extend_from_slice(prefix);
-        to_verify.extend_from_slice(srep_bytes);
-
-        let dele = response.cert().dele();
-        let pubk = UnparsedPublicKey::new(&signature::ED25519, dele.pubk().as_ref());
-
-        match pubk.verify(&to_verify, response.sig().as_ref()) {
-            Ok(_) => Ok(()),
-            Err(_) => {
-                let msg = format!(
-                    "signature {:?} by {:?} on SREP is invalid",
-                    response.sig(),
-                    dele.pubk()
-                );
-                Err(ValidationError::BadSignature(msg))
-            }
-        }
-    }
-
-    fn check_merkle_proof(
-        &self,
-        request: &[u8],
-        response: &Response,
-    ) -> Result<(), ValidationError> {
-        let merkle_path = response.path();
-        let index = response.indx() as usize;
-
-        let Some(computed_root) = root_from_paths(index, request, merkle_path) else {
-            let msg = format!(
-                "INDX {index} has nonzero bits beyond the PATH length {}",
-                merkle_path.depth()
-            );
-            return Err(ValidationError::FailedProof(msg));
-        };
-        let response_root = response.srep().root().as_ref();
-
-        if computed_root != *response_root {
-            let msg = format!(
-                "Nonce is not present in the response's merkle tree: computed {} != ROOT {}",
-                HEXLOWER.encode(&computed_root),
-                HEXLOWER.encode(response_root)
-            );
-            return Err(ValidationError::FailedProof(msg));
-        }
-
+fn check_version(request: &Request, response: &Response) -> Result<(), ValidationError> {
+    let version = *response.srep().ver();
+    if request.ver().versions().contains(&version) {
         Ok(())
+    } else {
+        Err(ValidationError::UnofferedVersion(version))
     }
+}
 
-    fn check_midpoint(&self, response: &Response) -> Result<(), ValidationError> {
-        let midpoint = response.srep().midp();
-        let mint = response.cert().dele().mint();
-        let maxt = response.cert().dele().maxt();
+/// RFC 5.2.5 obliges the server, not the client; the client enforces it on its own queries
+/// only. Not part of [`ResponseValidator::validate`], so stored reports that contain such a
+/// response still validate.
+pub fn check_vers_contains_ver(response: &Response) -> Result<(), ValidationError> {
+    let ver = *response.srep().ver();
+    let vers = response.srep().vers().versions();
 
-        if midpoint < mint {
-            let msg = format!("midpoint ({midpoint}) is *before* delegation span ({mint}, {maxt})");
-            return Err(ValidationError::InvalidMidpoint(msg));
-        }
-        if midpoint > maxt {
-            let msg = format!("midpoint ({midpoint}) is *after* delegation span ({mint}, {maxt})");
-            return Err(ValidationError::InvalidMidpoint(msg));
-        }
-
+    if vers.contains(&ver) {
         Ok(())
+    } else {
+        Err(ValidationError::VerNotInVers {
+            ver,
+            vers: vers.to_vec(),
+        })
+    }
+}
+
+fn check_dele_signature(
+    pub_key: &PublicKey,
+    response_bytes: &[u8],
+    response: &Response,
+) -> Result<(), ValidationError> {
+    let dele_bytes = received_value(response_bytes, &[Tag::CERT, Tag::DELE])?;
+    let prefix = response.srep().ver().dele_prefix();
+    let signature = response.cert().sig();
+
+    if verify_with_context(pub_key.as_ref(), prefix, dele_bytes, signature.as_ref()) {
+        Ok(())
+    } else {
+        Err(ValidationError::BadSignature(
+            "signature on DELE is invalid".to_string(),
+        ))
+    }
+}
+
+fn check_srep_signature(response_bytes: &[u8], response: &Response) -> Result<(), ValidationError> {
+    let srep_bytes = received_value(response_bytes, &[Tag::SREP])?;
+    let prefix = response.srep().ver().srep_prefix();
+    let pubk = response.cert().dele().pubk();
+
+    if verify_with_context(pubk.as_ref(), prefix, srep_bytes, response.sig().as_ref()) {
+        Ok(())
+    } else {
+        let msg = format!(
+            "signature {:?} by {:?} on SREP is invalid",
+            response.sig(),
+            pubk
+        );
+        Err(ValidationError::BadSignature(msg))
+    }
+}
+
+fn check_merkle_proof(request_bytes: &[u8], response: &Response) -> Result<(), ValidationError> {
+    let merkle_path = response.path();
+    let index = response.indx() as usize;
+
+    let Some(computed_root) = root_from_paths(index, request_bytes, merkle_path) else {
+        let msg = format!(
+            "INDX {index} has nonzero bits beyond the PATH length {}",
+            merkle_path.depth()
+        );
+        return Err(ValidationError::FailedProof(msg));
+    };
+    let response_root = response.srep().root().as_array();
+
+    if computed_root != *response_root {
+        let msg = format!(
+            "Nonce is not present in the response's merkle tree: computed {} != ROOT {}",
+            HEXLOWER.encode(&computed_root),
+            HEXLOWER.encode(response_root)
+        );
+        return Err(ValidationError::FailedProof(msg));
     }
 
-    /// Validate causality constraints across a set of measurements. For each pair of responses
-    /// `(i, j)` where `i` was received before `j`, checks that
-    /// `MIDP_i - RADI_i <= MIDP_j + RADI_j`. Returns a list of violations if any are found,
-    /// otherwise returns an empty list.
-    pub fn validate_causality(measurements: &[Measurement]) -> Vec<CausalityViolation> {
-        if measurements.len() < 2 {
-            return Vec::new();
-        }
+    Ok(())
+}
 
-        let mut violations = Vec::new();
+fn check_midpoint(response: &Response) -> Result<(), ValidationError> {
+    let midpoint = response.srep().midp();
+    let mint = response.cert().dele().mint();
+    let maxt = response.cert().dele().maxt();
 
-        for i in 0..measurements.len() {
-            for j in (i + 1)..measurements.len() {
-                let lower_bound_i = measurements[i].lower_bound();
-                let upper_bound_j = measurements[j].upper_bound();
-
-                if lower_bound_i > upper_bound_j {
-                    violations.push(CausalityViolation::new(measurements, i, j));
-                }
-            }
-        }
-
-        violations
+    if midpoint < mint {
+        let msg = format!("midpoint ({midpoint}) is *before* delegation span ({mint}, {maxt})");
+        return Err(ValidationError::InvalidMidpoint(msg));
     }
+    if midpoint > maxt {
+        let msg = format!("midpoint ({midpoint}) is *after* delegation span ({mint}, {maxt})");
+        return Err(ValidationError::InvalidMidpoint(msg));
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use ValidationError::{BadSignature, InvalidMidpoint};
     use data_encoding::BASE64;
-    use roughenough_protocol::cursor::ParseCursor;
+    use roughenough_common::crypto::verify_with_context;
     use roughenough_protocol::response::Response;
     use roughenough_protocol::tags::{ProtocolVersion, PublicKey};
     use roughenough_protocol::wire::FromFrame;
 
-    use crate::validation::{ResponseValidator, ValidationError};
+    use crate::transport::testing::signed_response;
+    use crate::validation::{
+        ResponseValidator, ValidationError, check_dele_signature, check_merkle_proof,
+        check_midpoint, check_srep_signature, check_vers_contains_ver, received_value,
+    };
 
     const RFC10049_REQUEST: &[u8] =
         include_bytes!("../../roughenough-protocol/testdata/rfc10049-request.104172a3");
@@ -350,50 +341,65 @@ mod tests {
         include_bytes!("../../roughenough-protocol/testdata/rfc-response.071039e5");
     const DRAFT_PUB_KEY: &[u8] = b"AW5uAoTSTDfG5NfY1bTh08GUnOqlRb+HVhbJ3ODJvsE=";
 
-    fn parse_response(response_bytes: &[u8]) -> Response {
-        let mut parse_buf = response_bytes.to_vec();
-        let mut cursor = ParseCursor::new(&mut parse_buf);
-        Response::from_frame(&mut cursor).unwrap()
+    fn pub_key(pub_key_b64: &[u8]) -> PublicKey {
+        let pub_key = BASE64.decode(pub_key_b64).unwrap();
+        PublicKey::try_from(pub_key.as_slice()).unwrap()
     }
 
     fn validator_for(pub_key_b64: &[u8]) -> ResponseValidator {
-        let pub_key = BASE64.decode(pub_key_b64).unwrap();
-        ResponseValidator::new_with_key(PublicKey::from(pub_key.as_slice()))
+        ResponseValidator::new(Some(pub_key(pub_key_b64)))
+    }
+
+    fn test_request_bytes() -> Vec<u8> {
+        use roughenough_protocol::ToFrame;
+        use roughenough_protocol::request::Request;
+        use roughenough_protocol::tags::Nonce;
+
+        Request::new(&Nonce::from([0x42u8; 32]))
+            .as_frame_bytes()
+            .unwrap()
     }
 
     #[test]
     fn version_one_fixture_validates() {
-        let response = parse_response(RFC10049_RESPONSE);
-        assert_eq!(*response.srep().ver(), ProtocolVersion::RFC);
-
-        let midpoint = validator_for(RFC10049_PUB_KEY)
-            .validate(RFC10049_REQUEST, RFC10049_RESPONSE, &response)
+        let response = validator_for(RFC10049_PUB_KEY)
+            .validate(RFC10049_REQUEST, RFC10049_RESPONSE)
             .unwrap();
-        assert_eq!(midpoint, 1_791_158_400);
+        assert_eq!(*response.srep().ver(), ProtocolVersion::RFC);
+        assert_eq!(response.srep().midp(), 1_791_158_400);
     }
 
     #[test]
     fn draft_fixture_validates() {
-        let response = parse_response(DRAFT_RESPONSE);
-        assert_eq!(*response.srep().ver(), ProtocolVersion::DRAFT);
-
-        validator_for(DRAFT_PUB_KEY)
-            .validate(DRAFT_REQUEST, DRAFT_RESPONSE, &response)
+        let response = validator_for(DRAFT_PUB_KEY)
+            .validate(DRAFT_REQUEST, DRAFT_RESPONSE)
             .unwrap();
+        assert_eq!(*response.srep().ver(), ProtocolVersion::DRAFT);
+    }
+
+    #[test]
+    fn validate_returns_the_parsed_response() {
+        let validated = validator_for(RFC10049_PUB_KEY)
+            .validate(RFC10049_REQUEST, RFC10049_RESPONSE)
+            .unwrap();
+        let parsed = Response::from_frame_bytes(RFC10049_RESPONSE).unwrap();
+
+        assert_eq!(validated.srep().midp(), parsed.srep().midp());
+        assert_eq!(validated.srep().root(), parsed.srep().root());
+    }
+
+    #[test]
+    fn truncated_response_is_invalid_message() {
+        match validator_for(RFC10049_PUB_KEY).validate(RFC10049_REQUEST, &RFC10049_RESPONSE[..100])
+        {
+            Err(ValidationError::InvalidMessage(_)) => {}
+            other => panic!("expected InvalidMessage, got {other:?}"),
+        }
     }
 
     #[test]
     fn signatures_verify_only_with_their_version_context_strings() {
-        use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
         use roughenough_protocol::tag::Tag;
-
-        fn verifies(key: &[u8], prefix: &[u8], value: &[u8], sig: &[u8]) -> bool {
-            let mut msg = prefix.to_vec();
-            msg.extend_from_slice(value);
-            UnparsedPublicKey::new(&ED25519, key)
-                .verify(&msg, sig)
-                .is_ok()
-        }
 
         for (response_bytes, pub_key_b64, own, other) in [
             (
@@ -409,24 +415,38 @@ mod tests {
                 ProtocolVersion::RFC,
             ),
         ] {
-            let response = parse_response(response_bytes);
+            let response = Response::from_frame_bytes(response_bytes).unwrap();
             let long_term_key = BASE64.decode(pub_key_b64).unwrap();
-            let dele =
-                ResponseValidator::received_value(response_bytes, &[Tag::CERT, Tag::DELE]).unwrap();
-            let srep = ResponseValidator::received_value(response_bytes, &[Tag::SREP]).unwrap();
+            let dele = received_value(response_bytes, &[Tag::CERT, Tag::DELE]).unwrap();
+            let srep = received_value(response_bytes, &[Tag::SREP]).unwrap();
             let dele_sig = response.cert().sig().as_ref();
             let srep_sig = response.sig().as_ref();
             let online_key = response.cert().dele().pubk().as_ref();
 
-            assert!(verifies(&long_term_key, own.dele_prefix(), dele, dele_sig));
-            assert!(!verifies(
+            assert!(verify_with_context(
+                &long_term_key,
+                own.dele_prefix(),
+                dele,
+                dele_sig
+            ));
+            assert!(!verify_with_context(
                 &long_term_key,
                 other.dele_prefix(),
                 dele,
                 dele_sig
             ));
-            assert!(verifies(online_key, own.srep_prefix(), srep, srep_sig));
-            assert!(!verifies(online_key, other.srep_prefix(), srep, srep_sig));
+            assert!(verify_with_context(
+                online_key,
+                own.srep_prefix(),
+                srep,
+                srep_sig
+            ));
+            assert!(!verify_with_context(
+                online_key,
+                other.srep_prefix(),
+                srep,
+                srep_sig
+            ));
         }
     }
 
@@ -436,22 +456,21 @@ mod tests {
         use roughenough_protocol::request::Request;
 
         // RFC 7: "version numbers not in the request" make a response invalid
-        let response = parse_response(RFC10049_RESPONSE);
+        let response = Response::from_frame_bytes(RFC10049_RESPONSE).unwrap();
         let request = Request::new_with_versions(response.nonc(), &[ProtocolVersion::DRAFT]);
         let request_bytes = request.as_frame_bytes().unwrap();
 
-        match validator_for(RFC10049_PUB_KEY).validate(&request_bytes, RFC10049_RESPONSE, &response)
-        {
+        match validator_for(RFC10049_PUB_KEY).validate(&request_bytes, RFC10049_RESPONSE) {
             Err(ValidationError::UnofferedVersion(v)) => assert_eq!(v, ProtocolVersion::RFC),
             other => panic!("expected UnofferedVersion, got {other:?}"),
         }
 
         // A draft response to a client that offered only version 1
-        let response = parse_response(DRAFT_RESPONSE);
+        let response = Response::from_frame_bytes(DRAFT_RESPONSE).unwrap();
         let request = Request::new(response.nonc());
         let request_bytes = request.as_frame_bytes().unwrap();
 
-        match validator_for(DRAFT_PUB_KEY).validate(&request_bytes, DRAFT_RESPONSE, &response) {
+        match validator_for(DRAFT_PUB_KEY).validate(&request_bytes, DRAFT_RESPONSE) {
             Err(ValidationError::UnofferedVersion(v)) => assert_eq!(v, ProtocolVersion::DRAFT),
             other => panic!("expected UnofferedVersion, got {other:?}"),
         }
@@ -459,21 +478,10 @@ mod tests {
 
     #[test]
     fn dele_signature_is_validated() {
-        let pub_key = BASE64
-            .decode(b"AW5uAoTSTDfG5NfY1bTh08GUnOqlRb+HVhbJ3ODJvsE=")
-            .unwrap();
+        let response = Response::from_frame_bytes(DRAFT_RESPONSE).unwrap();
+        let long_term_key = pub_key(DRAFT_PUB_KEY);
 
-        let response_bytes =
-            include_bytes!("../../roughenough-protocol/testdata/rfc-response.071039e5").to_vec();
-
-        let mut parse_buf = response_bytes.clone();
-        let mut cursor = ParseCursor::new(&mut parse_buf);
-        let response = Response::from_frame(&mut cursor).unwrap();
-        let validator = ResponseValidator::new_with_key(PublicKey::from(pub_key.as_slice()));
-
-        validator
-            .check_dele_signature(&response_bytes, &response)
-            .unwrap();
+        check_dele_signature(&long_term_key, DRAFT_RESPONSE, &response).unwrap();
     }
 
     #[test]
@@ -484,11 +492,8 @@ mod tests {
         let mut ctx = TestContext::new(64);
         let (_request, response) = ctx.create_interaction_pair(1000);
         let response_bytes = response.as_frame_bytes().unwrap();
-        let validator = ResponseValidator::new();
 
-        validator
-            .check_srep_signature(&response_bytes, &response)
-            .unwrap();
+        check_srep_signature(&response_bytes, &response).unwrap();
     }
 
     #[test]
@@ -497,12 +502,7 @@ mod tests {
         use roughenough_protocol::tag::Tag;
         use roughenough_protocol::wire::FRAME_OVERHEAD;
 
-        let pub_key = BASE64
-            .decode(b"AW5uAoTSTDfG5NfY1bTh08GUnOqlRb+HVhbJ3ODJvsE=")
-            .unwrap();
-
-        let mut response_bytes =
-            include_bytes!("../../roughenough-protocol/testdata/rfc-response.071039e5").to_vec();
+        let mut response_bytes = DRAFT_RESPONSE.to_vec();
 
         // Corrupt the last byte of the DELE value (high byte of MAXT) in the
         // received bytes; the message still parses but the signature is broken
@@ -510,13 +510,10 @@ mod tests {
             find_value_range(&response_bytes[FRAME_OVERHEAD..], &[Tag::CERT, Tag::DELE]).unwrap();
         response_bytes[FRAME_OVERHEAD + dele_range.end - 1] ^= 0xff;
 
-        let mut parse_buf = response_bytes.clone();
-        let mut cursor = ParseCursor::new(&mut parse_buf);
-        let response = Response::from_frame(&mut cursor).unwrap();
+        let response = Response::from_frame_bytes(&response_bytes).unwrap();
+        let long_term_key = pub_key(DRAFT_PUB_KEY);
 
-        let validator = ResponseValidator::new_with_key(PublicKey::from(pub_key.as_slice()));
-
-        match validator.check_dele_signature(&response_bytes, &response) {
+        match check_dele_signature(&long_term_key, &response_bytes, &response) {
             Err(BadSignature(msg)) => assert!(msg.contains("DELE")), // ok, expected failure
             Err(e) => panic!("expected BadSignature, got {e:?}"),
             Ok(_) => panic!("expected validation to fail"),
@@ -539,9 +536,7 @@ mod tests {
         let srep_range = find_value_range(&response_bytes[FRAME_OVERHEAD..], &[Tag::SREP]).unwrap();
         response_bytes[FRAME_OVERHEAD + srep_range.end - 1] ^= 0xff;
 
-        let validator = ResponseValidator::new();
-
-        match validator.check_srep_signature(&response_bytes, &response) {
+        match check_srep_signature(&response_bytes, &response) {
             Err(BadSignature(msg)) => assert!(msg.contains("SREP")), // ok, expected failure
             Err(e) => panic!("expected BadSignature, got {e:?}"),
             Ok(_) => panic!("expected validation to fail"),
@@ -550,25 +545,15 @@ mod tests {
 
     #[test]
     fn midpoint_is_validated() {
-        let validator = ResponseValidator::new();
-
-        let mut msg_bytes =
-            include_bytes!("../../roughenough-protocol/testdata/rfc-response.071039e5").to_vec();
-        let mut cursor = ParseCursor::new(&mut msg_bytes);
-        let response1 = Response::from_frame(&mut cursor).unwrap();
+        let response1 = Response::from_frame_bytes(DRAFT_RESPONSE).unwrap();
 
         // Happy-path should pass
-        validator.check_midpoint(&response1).unwrap();
+        check_midpoint(&response1).unwrap();
     }
 
     #[test]
     fn midpoint_outside_of_dele_bounds_is_detected() {
-        let validator = ResponseValidator::new();
-
-        let mut msg_bytes =
-            include_bytes!("../../roughenough-protocol/testdata/rfc-response.071039e5").to_vec();
-        let mut cursor = ParseCursor::new(&mut msg_bytes);
-        let response = Response::from_frame(&mut cursor).unwrap();
+        let response = Response::from_frame_bytes(DRAFT_RESPONSE).unwrap();
 
         //
         // Change request so that the midpoint is *before* MINT
@@ -581,7 +566,7 @@ mod tests {
         cert1.set_dele(dele1);
         response1.set_cert(cert1);
 
-        match validator.check_midpoint(&response1) {
+        match check_midpoint(&response1) {
             Err(InvalidMidpoint(msg)) => assert!(msg.contains("before")),
             Err(e) => panic!("expected InvalidMidpoint, got {e:?}"),
             Ok(_) => panic!("expected validation to fail"),
@@ -598,7 +583,7 @@ mod tests {
         cert2.set_dele(dele2);
         response2.set_cert(cert2);
 
-        match validator.check_midpoint(&response2) {
+        match check_midpoint(&response2) {
             Err(InvalidMidpoint(msg)) => assert!(msg.contains("after")),
             Err(e) => panic!("expected InvalidMidpoint, got {e:?}"),
             Ok(_) => panic!("expected validation to fail"),
@@ -611,117 +596,73 @@ mod tests {
         use roughenough_protocol::request::RequestPlain;
         use roughenough_protocol::tags::Nonce;
 
-        let validator = ResponseValidator::new();
-
         let nonce = Nonce::from([0x42u8; 32]);
         let request = RequestPlain::new(&nonce);
         let request_bytes = request.as_bytes().unwrap();
 
-        let mut msg_bytes =
-            include_bytes!("../../roughenough-protocol/testdata/rfc-response.071039e5").to_vec();
-        let mut cursor = ParseCursor::new(&mut msg_bytes);
-        let response = Response::from_frame(&mut cursor).unwrap();
+        let response = Response::from_frame_bytes(DRAFT_RESPONSE).unwrap();
 
         // This should fail because the response was for a different nonce
-        match validator.check_merkle_proof(&request_bytes, &response) {
+        match check_merkle_proof(&request_bytes, &response) {
             Err(ValidationError::FailedProof(_)) => {} // ok, expected failure
             Err(e) => panic!("expected ValidationError::FailedProof, got {e:?}"),
             Ok(_) => panic!("expected validation to fail"),
         }
     }
 
-    /// Serialize a ToWire value to bytes
-    fn to_bytes<T: roughenough_protocol::ToWire>(value: &T) -> Vec<u8> {
-        let mut buf = vec![0u8; value.wire_size()];
-        let mut cursor = ParseCursor::new(&mut buf);
-        value.to_wire(&mut cursor).unwrap();
-        buf
-    }
-
-    use roughenough_protocol::util::test_utils::{build_msg, insert_tag};
-
     #[test]
     fn greased_response_with_valid_signatures_validates() {
         // RFC 7 / 9.2: a response may carry undefined tags (including inside
         // SREP and DELE) with signatures computed over the bytes as sent. The
         // client MUST ignore the undefined tags and the response validates.
-        use aws_lc_rs::signature::{Ed25519KeyPair, KeyPair};
-        use roughenough_merkle::MerkleTree;
-        use roughenough_protocol::ToFrame;
-        use roughenough_protocol::request::Request;
-        use roughenough_protocol::tags::{
-            Delegation, MerkleRoot, Nonce, ProtocolVersion, SignedResponse, SupportedVersions,
-        };
+        let request_bytes = test_request_bytes();
+        let (pub_key, response_bytes) = signed_response(
+            &request_bytes,
+            ProtocolVersion::RFC,
+            &[ProtocolVersion::RFC],
+            true,
+        );
+        let validator = ResponseValidator::new(Some(pub_key));
 
-        let longterm = Ed25519KeyPair::generate().unwrap();
-        let online = Ed25519KeyPair::generate().unwrap();
+        let response = validator.validate(&request_bytes, &response_bytes).unwrap();
+        assert_eq!(response.srep().midp(), 1000);
+    }
 
-        let nonce = Nonce::from([0x42u8; 32]);
-        let request = Request::new(&nonce);
-        let request_bytes = request.as_frame_bytes().unwrap();
+    #[test]
+    fn vers_without_ver_is_rejected() {
+        let request_bytes = test_request_bytes();
+        let (pub_key, response_bytes) = signed_response(
+            &request_bytes,
+            ProtocolVersion::RFC,
+            &[ProtocolVersion::DRAFT],
+            false,
+        );
 
-        // Single-request batch: ROOT is the leaf hash of the request packet
-        let mut tree = MerkleTree::new();
-        tree.push_leaf(&request_bytes);
-        let root = tree.compute_root();
+        // The reporting path validates with `validate` alone, so it still accepts the response
+        let validator = ResponseValidator::new(Some(pub_key));
+        let response = validator.validate(&request_bytes, &response_bytes).unwrap();
 
-        // DELE with an undefined tag spliced in, signed over those exact bytes
-        let mut dele = Delegation::default();
-        dele.set_pubk(PublicKey::from(online.public_key().as_ref()));
-        dele.set_mint(0);
-        dele.set_maxt(u64::MAX);
-        let dele_bytes = insert_tag(&to_bytes(&dele), *b"GREZ", &[0xcc; 4]);
+        match check_vers_contains_ver(&response) {
+            Err(ValidationError::VerNotInVers { ver, vers }) => {
+                assert_eq!(ver, ProtocolVersion::RFC);
+                assert_eq!(vers, vec![ProtocolVersion::DRAFT]);
+            }
+            other => panic!("expected VerNotInVers, got {other:?}"),
+        }
+    }
 
-        let mut to_sign = ProtocolVersion::RFC.dele_prefix().to_vec();
-        to_sign.extend_from_slice(&dele_bytes);
-        let dele_sig = longterm.sign(&to_sign);
+    #[test]
+    fn vers_with_ver_passes() {
+        let request_bytes = test_request_bytes();
+        let (_, response_bytes) = signed_response(
+            &request_bytes,
+            ProtocolVersion::RFC,
+            &[ProtocolVersion::RFC, ProtocolVersion::DRAFT],
+            false,
+        );
+        let response = Response::from_frame_bytes(&response_bytes).unwrap();
 
-        let cert_bytes = build_msg(&[
-            (*b"SIG\x00", dele_sig.as_ref().to_vec()),
-            (*b"DELE", dele_bytes),
-        ]);
-
-        // SREP with an undefined tag spliced in, signed over those exact bytes
-        let mut srep = SignedResponse::default();
-        srep.set_ver(ProtocolVersion::RFC);
-        srep.set_radi(5);
-        srep.set_midp(1000);
-        srep.set_vers(&SupportedVersions::new(&[ProtocolVersion::RFC]));
-        srep.set_root(&MerkleRoot::from(root));
-        let srep_bytes = insert_tag(&to_bytes(&srep), *b"GREZ", &[0xdd; 8]);
-
-        let mut to_sign = ProtocolVersion::RFC.srep_prefix().to_vec();
-        to_sign.extend_from_slice(&srep_bytes);
-        let srep_sig = online.sign(&to_sign);
-
-        // Top-level message with one more undefined tag
-        let msg = build_msg(&[
-            (*b"SIG\x00", srep_sig.as_ref().to_vec()),
-            (*b"NONC", nonce.as_ref().to_vec()),
-            (*b"TYPE", 1u32.to_le_bytes().to_vec()),
-            (*b"PATH", vec![]),
-            (*b"SREP", srep_bytes),
-            (*b"CERT", cert_bytes),
-            (*b"INDX", 0u32.to_le_bytes().to_vec()),
-            (*b"GREZ", vec![0xee; 4]),
-        ]);
-
-        let mut response_bytes = Vec::new();
-        response_bytes.extend_from_slice(b"ROUGHTIM");
-        response_bytes.extend_from_slice(&(msg.len() as u32).to_le_bytes());
-        response_bytes.extend_from_slice(&msg);
-
-        let mut parse_buf = response_bytes.clone();
-        let mut cursor = ParseCursor::new(&mut parse_buf);
-        let response = Response::from_frame(&mut cursor).unwrap();
-
-        let pub_key = PublicKey::from(longterm.public_key().as_ref());
-        let validator = ResponseValidator::new_with_key(pub_key);
-
-        let midpoint = validator
-            .validate(&request_bytes, &response_bytes, &response)
-            .unwrap();
-        assert_eq!(midpoint, 1000);
+        check_vers_contains_ver(&response).unwrap();
     }
 
     #[test]
@@ -733,17 +674,13 @@ mod tests {
         let (request, mut response) = ctx.create_interaction_pair(1000);
         let request_bytes = request.as_frame_bytes().unwrap();
 
-        let validator = ResponseValidator::new();
-
         // Sanity check: the unmodified proof is valid
-        validator
-            .check_merkle_proof(&request_bytes, &response)
-            .unwrap();
+        check_merkle_proof(&request_bytes, &response).unwrap();
 
         // RFC 5.3.1: any nonzero INDX bits beyond the PATH length must fail
         response.set_indx(response.indx() | (1 << response.path().depth()));
 
-        match validator.check_merkle_proof(&request_bytes, &response) {
+        match check_merkle_proof(&request_bytes, &response) {
             Err(ValidationError::FailedProof(_)) => {} // ok, expected failure
             Err(e) => panic!("expected ValidationError::FailedProof, got {e:?}"),
             Ok(_) => panic!("expected validation to fail"),
@@ -753,67 +690,17 @@ mod tests {
 
 #[cfg(test)]
 mod causality {
-    use roughenough_server::test_utils::TestContext;
-
     use super::*;
-
-    fn create_measurement(midpoint: u64) -> Measurement {
-        use roughenough_protocol::ToFrame;
-
-        let mut test_context = TestContext::new(64);
-        let (req, resp) = test_context.create_interaction_pair(midpoint);
-        let resp_bytes = resp.as_frame_bytes().unwrap();
-        let pubkey = PublicKey::from(test_context.key_source.public_key_bytes());
-
-        Measurement::builder()
-            .server("127.0.0.1:8000".parse().unwrap())
-            .request(req)
-            .response(resp)
-            .response_bytes(resp_bytes)
-            .hostname("testing1234".to_string())
-            .public_key(Some(pubkey))
-            .rand_value(None)
-            .build()
-            .unwrap()
-    }
-
-    /// Measurement carrying arbitrary (possibly hostile) MIDP and RADI values.
-    /// The srep is mutated after the exchange so extreme values never reach the
-    /// test server's clock.
-    fn create_hostile_measurement(midpoint: u64, radius: u32) -> Measurement {
-        use roughenough_protocol::ToFrame;
-
-        let mut test_context = TestContext::new(64);
-        let (req, mut resp) = test_context.create_interaction_pair(1000);
-
-        let mut srep = resp.srep().clone();
-        srep.set_midp(midpoint);
-        srep.set_radi(radius);
-        resp.set_srep(srep);
-
-        let resp_bytes = resp.as_frame_bytes().unwrap();
-        let pubkey = PublicKey::from(test_context.key_source.public_key_bytes());
-
-        Measurement::builder()
-            .server("127.0.0.1:8000".parse().unwrap())
-            .request(req)
-            .response(resp)
-            .response_bytes(resp_bytes)
-            .hostname("testing1234".to_string())
-            .public_key(Some(pubkey))
-            .rand_value(None)
-            .build()
-            .unwrap()
-    }
+    use crate::test_utils::{hostile_measurement, measurement};
 
     #[test]
     fn midpoint_smaller_than_radius_saturates_and_is_not_a_violation() {
         // MIDP < RADI must saturate to zero
-        let hostile = create_hostile_measurement(10, 100);
+        let hostile = hostile_measurement(10, 100);
         assert_eq!(hostile.lower_bound(), 0);
 
-        let normal = create_measurement(1000);
-        let violations = ResponseValidator::validate_causality(&[hostile, normal]);
+        let normal = measurement(1000);
+        let violations = CausalityViolation::find(&[hostile, normal]);
         assert!(
             violations.is_empty(),
             "saturated lower bound must not flag a violation against an honest server"
@@ -822,14 +709,14 @@ mod causality {
 
     #[test]
     fn midpoint_near_u64_max_saturates() {
-        let hostile = create_hostile_measurement(u64::MAX - 1, 100);
+        let hostile = hostile_measurement(u64::MAX - 1, 100);
         assert_eq!(hostile.upper_bound(), u64::MAX);
     }
 
     #[test]
     fn empty() {
         let measurements = vec![];
-        let result = ResponseValidator::validate_causality(&measurements);
+        let result = CausalityViolation::find(&measurements);
         assert!(
             result.is_empty(),
             "Empty measurements should return no violations"
@@ -838,8 +725,8 @@ mod causality {
 
     #[test]
     fn single() {
-        let measurements = vec![create_measurement(1000000)];
-        let result = ResponseValidator::validate_causality(&measurements);
+        let measurements = vec![measurement(1000000)];
+        let result = CausalityViolation::find(&measurements);
         assert!(
             result.is_empty(),
             "Single measurement should return no violations"
@@ -852,13 +739,9 @@ mod causality {
         // M0: [ 995, 1005]
         // M1: [1995, 2005]
         // M2: [2995, 3005]
-        let measurements = vec![
-            create_measurement(1000),
-            create_measurement(2000),
-            create_measurement(3000),
-        ];
+        let measurements = vec![measurement(1000), measurement(2000), measurement(3000)];
 
-        let result = ResponseValidator::validate_causality(&measurements);
+        let result = CausalityViolation::find(&measurements);
         assert!(
             result.is_empty(),
             "Valid causal sequence should return no violations"
@@ -871,9 +754,9 @@ mod causality {
         // M0: [1995, 2005]
         // M1: [995, 1005]
         // Violation: 1995 > 1005
-        let measurements = vec![create_measurement(2000), create_measurement(1000)];
+        let measurements = vec![measurement(2000), measurement(1000)];
 
-        let violations = ResponseValidator::validate_causality(&measurements);
+        let violations = CausalityViolation::find(&measurements);
         assert!(
             !violations.is_empty(),
             "Invalid sequence should return some violations"
@@ -894,13 +777,9 @@ mod causality {
         // M0: [2995, 3005]
         // M1: [ 995, 1005] - violates with M0
         // M2: [1000, 1010] - violates with M0
-        let measurements = vec![
-            create_measurement(3000),
-            create_measurement(1000),
-            create_measurement(1005),
-        ];
+        let measurements = vec![measurement(3000), measurement(1000), measurement(1005)];
 
-        let violations = ResponseValidator::validate_causality(&measurements);
+        let violations = CausalityViolation::find(&measurements);
         assert!(!violations.is_empty(), "Should have violations");
         assert_eq!(violations.len(), 2, "Should have exactly two violations");
 
@@ -921,9 +800,28 @@ mod causality {
         // M0: [995, 1005]
         // M1: [985, 995]
         // This is valid (995 <= 995)
-        let measurements = vec![create_measurement(1000), create_measurement(990)];
+        let measurements = vec![measurement(1000), measurement(990)];
 
-        let result = ResponseValidator::validate_causality(&measurements);
+        let result = CausalityViolation::find(&measurements);
         assert!(result.is_empty(), "Exact boundary should be valid");
+    }
+
+    #[test]
+    fn violating_pairs_boundary_is_not_a_violation() {
+        // lower_i == upper_j is causally consistent; only strictly greater
+        // demonstrates a violation
+        assert!(violating_pairs(&[interval(1000, 5), interval(990, 5)]).is_empty());
+        assert_eq!(
+            violating_pairs(&[interval(1001, 5), interval(990, 5)]),
+            vec![(0, 1)]
+        );
+    }
+
+    #[test]
+    fn violating_pairs_hostile_bounds_saturate() {
+        // MIDP < RADI saturates to zero instead of wrapping
+        assert!(violating_pairs(&[interval(10, 100), interval(1000, 5)]).is_empty());
+        // MIDP near u64::MAX saturates the upper bound
+        assert!(violating_pairs(&[interval(u64::MAX, 5), interval(u64::MAX - 1, 100)]).is_empty());
     }
 }

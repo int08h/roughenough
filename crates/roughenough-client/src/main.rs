@@ -1,35 +1,23 @@
 //! The main client CLI
 
+mod args;
+
 use std::net::ToSocketAddrs;
 use std::time::Duration;
 
 use clap::Parser;
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
-use roughenough_client::ClientError::{DnsLookupFailed, InvalidConfiguration};
-use roughenough_client::args::Args;
+use roughenough_client::client::try_decode_key;
 use roughenough_client::measurement::Measurement;
+#[cfg(feature = "reporting")]
 use roughenough_client::reporting::MalfeasanceReport;
 use roughenough_client::sequence::MeasurementSequence;
 use roughenough_client::server_list::ServerList;
-use roughenough_client::{CausalityViolation, Client, ResponseValidator, server_list};
-use roughenough_common::encoding::try_decode_key;
-use tracing::{debug, error, info};
+use roughenough_client::{CausalityViolation, Client, ClientError};
+use tracing::{Level, debug, error, info};
 
-#[derive(thiserror::Error, Debug)]
-enum CliError {
-    #[error("{0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("{0}")]
-    Client(#[from] roughenough_client::ClientError),
-
-    #[error("{0}")]
-    ServerList(#[from] server_list::Error),
-
-    #[error("{0}")]
-    Decode(#[from] data_encoding::DecodeError),
-}
+use crate::args::Args;
 
 fn main() {
     let args = Args::parse();
@@ -37,25 +25,34 @@ fn main() {
     enable_logging(&args);
     debug!("command line: {:?}", args);
 
-    let midpoint = match (&args.hostname, &args.server_list) {
-        // Simple case, query a single server
-        (Some(hostname), None) => query_single_server(&args, hostname),
-        // Measurement sequence of multiple servers
-        (None, Some(list_file)) => query_multiple_servers(&args, list_file),
-        _ => {
-            error!(
-                "Specify 'hostname' and 'port', or use '--server-list' to query multiple servers (see --help for details)"
-            );
-            std::process::exit(-1);
-        }
+    let midpoint = if let Some(list_file) = &args.server_list {
+        query_multiple_servers(&args, list_file)
+    } else {
+        let hostname = args
+            .hostname
+            .as_deref()
+            .expect("clap requires a hostname without --server-list");
+        Some(query_single_server(&args, hostname))
     };
 
     if args.set_clock {
-        set_system_clock(midpoint);
-    };
+        match clock_target(midpoint) {
+            Ok(midpoint) => set_system_clock(midpoint),
+            Err(msg) => {
+                error!("{msg}");
+                std::process::exit(1);
+            }
+        }
+    }
 }
 
-fn query_single_server(args: &Args, hostname: &String) -> u64 {
+/// The time to set the clock to. A sequence with causality violations is refused: the servers
+/// disagree about the time, and the client cannot tell which of them is wrong.
+fn clock_target(midpoint: Option<u64>) -> Result<u64, &'static str> {
+    midpoint.ok_or("Causality violations detected; not setting the system clock")
+}
+
+fn query_single_server(args: &Args, hostname: &str) -> u64 {
     let port = args.port.unwrap();
 
     if args.pub_key.is_none() {
@@ -63,13 +60,11 @@ fn query_single_server(args: &Args, hostname: &String) -> u64 {
         eprintln!("WARNING: no public key provided (-k); responses are NOT authenticated");
     }
 
-    let versions = args.protocol.offered();
-    let client =
-        Client::new_with_versions(hostname, port, args.pub_key.as_deref(), versions.as_deref())
-            .unwrap_or_else(|e| {
-                error!("Error creating client for '{hostname}:{port}': {e}");
-                std::process::exit(-1);
-            });
+    let client = build_client(args, hostname, port, hostname, args.pub_key.as_deref())
+        .unwrap_or_else(|e| {
+            error!("Error creating client for '{hostname}:{port}': {e}");
+            std::process::exit(-1);
+        });
 
     let mut midpoint: u64 = 0;
     for _ in 0..args.num_requests {
@@ -86,18 +81,25 @@ fn query_single_server(args: &Args, hostname: &String) -> u64 {
     midpoint
 }
 
-fn query_multiple_servers(args: &Args, list_file: &String) -> u64 {
+/// Returns the midpoint of the last measurement, or `None` if causality violations were found.
+fn query_multiple_servers(args: &Args, list_file: &str) -> Option<u64> {
     let server_list = ServerList::from_file(list_file).unwrap_or_else(|e| {
         error!("Loading server list from '{list_file}': {e}");
         std::process::exit(-1);
     });
+
+    #[cfg(feature = "reporting")]
+    if args.send_report && server_list.reporting_url().is_none() {
+        error!("--report requires a 'reports' URL in the server list");
+        std::process::exit(-1);
+    }
 
     let clients = clients_from_list(&server_list, args).unwrap_or_else(|e| {
         error!("Processing '{list_file}': {e}");
         std::process::exit(-1);
     });
 
-    let mut sequence = MeasurementSequence::new(clients);
+    let sequence = MeasurementSequence::new(clients);
     let measurements = sequence
         .run(args.num_measurement_rounds)
         .unwrap_or_else(|e| {
@@ -105,29 +107,30 @@ fn query_multiple_servers(args: &Args, list_file: &String) -> u64 {
             std::process::exit(-1);
         });
 
-    let violations = ResponseValidator::validate_causality(&measurements);
+    let violations = CausalityViolation::find(&measurements);
 
-    if !violations.is_empty() {
+    if violations.is_empty() {
+        return Some(measurements.last().unwrap().midpoint());
+    }
+
+    for violation in &violations {
+        display_violation(args, violation);
+    }
+
+    #[cfg(feature = "reporting")]
+    if args.send_report
+        && let Some(url) = server_list.reporting_url()
+    {
         for violation in &violations {
-            display_violation(args, violation);
-        }
-
-        if args.send_report
-            && let Some(report_url) = server_list.reporting_url()
-        {
-            info!("Sending malfeasance report to: {}", report_url);
-
-            for violation in &violations {
-                let report = MalfeasanceReport::from_violation(violation);
-                if let Err(e) = report.submit(report_url) {
-                    error!("Failed to send malfeasance report: {e}");
-                }
+            let report = MalfeasanceReport::from_violation(violation);
+            match report.submit(url) {
+                Ok(()) => info!("Sent malfeasance report to {url}"),
+                Err(e) => error!("Failed to send malfeasance report to {url}: {e}"),
             }
         }
     }
 
-    // Return midpoint from the last measurement
-    measurements.last().unwrap().midpoint()
+    None
 }
 
 fn set_system_clock(midpoint: u64) {
@@ -151,22 +154,53 @@ fn set_system_clock(midpoint: u64) {
 }
 
 fn enable_logging(args: &Args) {
-    let mut builder = tracing_subscriber::fmt().compact();
+    let level = match (args.quiet, args.verbose) {
+        (true, _) => Level::ERROR,
+        (false, 2..) => Level::TRACE,
+        (false, 1) => Level::DEBUG,
+        (false, 0) => Level::INFO,
+    };
 
-    if args.quiet {
-        builder = builder.with_max_level(tracing::Level::ERROR);
-    } else {
-        match args.verbose {
-            2.. => builder = builder.with_max_level(tracing::Level::TRACE),
-            1 => builder = builder.with_max_level(tracing::Level::DEBUG),
-            _ => builder = builder.with_max_level(tracing::Level::INFO),
-        }
-    }
-
-    builder.init();
+    tracing_subscriber::fmt()
+        .compact()
+        .with_max_level(level)
+        .init();
 }
 
-fn clients_from_list(server_list: &ServerList, args: &Args) -> Result<Vec<Client>, CliError> {
+fn build_client(
+    args: &Args,
+    host: &str,
+    port: u16,
+    display_name: &str,
+    encoded_key: Option<&str>,
+) -> Result<Client, ClientError> {
+    // Users write IPv6 literals bracketed ("[::1]"), as in URLs and host:port strings, but
+    // resolving a (host, port) pair needs the bare address
+    let host = host
+        .strip_prefix('[')
+        .and_then(|h| h.strip_suffix(']'))
+        .unwrap_or(host);
+    let addr = (host, port)
+        .to_socket_addrs()?
+        .next()
+        .ok_or_else(|| ClientError::DnsLookupFailed(format!("{host}:{port}")))?;
+    let mut builder = Client::builder(addr)
+        .hostname(display_name)
+        .timeout(Duration::from_secs(u64::from(args.timeout)));
+    if let Some(key) = encoded_key {
+        let public_key = try_decode_key(key)?;
+        builder = builder.public_key(public_key);
+    }
+    if let Some(versions) = args.protocol.offered() {
+        builder = builder.versions(versions);
+    }
+    builder.build()
+}
+
+fn clients_from_list(
+    server_list: &ServerList,
+    args: &Args,
+) -> Result<Vec<Client>, Box<dyn std::error::Error>> {
     let target_servers = server_list.choose_random(args.num_unique_servers)?;
 
     let chosen_ones = target_servers
@@ -181,7 +215,6 @@ fn clients_from_list(server_list: &ServerList, args: &Args) -> Result<Vec<Client
         chosen_ones
     );
 
-    let timeout = Duration::from_secs(args.timeout as u64);
     let mut clients = Vec::new();
 
     for server in &target_servers {
@@ -190,32 +223,18 @@ fn clients_from_list(server_list: &ServerList, args: &Args) -> Result<Vec<Client
             continue;
         };
 
-        let host = address.host();
-        let port = address.port();
-        let sock_addr = (host, port)
-            .to_socket_addrs()?
-            .next()
-            .ok_or_else(|| DnsLookupFailed(host.to_string()))?;
-
-        let encoded_key = server.public_key();
-        let public_key = try_decode_key(encoded_key)?;
-
-        let mut builder = Client::builder(sock_addr)
-            .hostname(server.name())
-            .timeout(timeout)
-            .public_key(public_key);
-
-        if let Some(versions) = args.protocol.offered() {
-            builder = builder.versions(&versions);
-        }
-
-        clients.push(builder.build());
+        let client = build_client(
+            args,
+            address.host(),
+            address.port(),
+            server.name(),
+            Some(server.public_key()),
+        )?;
+        clients.push(client);
     }
 
     if clients.is_empty() {
-        return Err(CliError::Client(InvalidConfiguration(
-            "no server has a UDP address".to_string(),
-        )));
+        return Err("no server in the list has a UDP address".into());
     }
 
     Ok(clients)
@@ -241,9 +260,8 @@ fn clients_from_list(server_list: &ServerList, args: &Args) -> Result<Vec<Client
 fn display_violation(args: &Args, violation: &CausalityViolation) {
     let m1 = violation.measurement_i();
     let m2 = violation.measurement_j();
-
-    let m1_lower = m1.lower_bound();
-    let m2_upper = m2.upper_bound();
+    let m1_lower = format_time(violation.lower_bound_i(), args);
+    let m2_upper = format_time(violation.upper_bound_j(), args);
 
     error!("=== Causality violation ===");
     error!("");
@@ -251,31 +269,21 @@ fn display_violation(args: &Args, violation: &CausalityViolation) {
     error!("  Server:   {}", m1.server());
     error!(
         "  Time:     {} +/- {}s",
-        format_seconds(m1.midpoint(), &args.time_format),
+        format_time(m1.midpoint(), args),
         m1.radius()
     );
-    error!(
-        "  Earliest: {}",
-        format_seconds(m1_lower, &args.time_format)
-    );
+    error!("  Earliest: {m1_lower}");
     error!("");
     error!("Measurement B (requested second from {}):", m2.hostname());
     error!("  Server:   {}", m2.server());
     error!(
         "  Time:     {} +/- {}s",
-        format_seconds(m2.midpoint(), &args.time_format),
+        format_time(m2.midpoint(), args),
         m2.radius()
     );
-    error!(
-        "  Latest:   {}",
-        format_seconds(m2_upper, &args.time_format)
-    );
+    error!("  Latest:   {m2_upper}");
     error!("");
-    error!(
-        "Problem: A earliest ({}) > B latest ({})",
-        format_seconds(m1_lower, "%H:%M:%S"),
-        format_seconds(m2_upper, "%H:%M:%S")
-    );
+    error!("Problem: A earliest ({m1_lower}) > B latest ({m2_upper})");
 
     if m1.server() == m2.server() {
         error!(
@@ -286,97 +294,124 @@ fn display_violation(args: &Args, violation: &CausalityViolation) {
 }
 
 /// Format an epoch-seconds value from a (possibly hostile) server.
-fn format_seconds(seconds: u64, time_format: &str) -> String {
-    let timestamp = i64::try_from(seconds)
-        .ok()
-        .and_then(|s| Timestamp::from_second(s).ok());
-
-    match timestamp {
-        Some(ts) => ts.strftime(time_format).to_string(),
-        None => format!("<unrepresentable time: {seconds} sec>"),
+fn format_time(seconds: u64, args: &Args) -> String {
+    if args.epoch {
+        return seconds.to_string();
     }
-}
 
-fn format_measurement(measurement: &Measurement, zulu: bool, epoch: bool, fmt: &str) -> String {
-    let midpoint = measurement.midpoint();
-    let radius = measurement.radius();
-
-    let Some(timestamp) = measurement.midpoint_datetime() else {
-        return format!("<unrepresentable midpoint: {midpoint} sec> (+/-{radius}s)");
+    let Some(ts) = i64::try_from(seconds)
+        .ok()
+        .and_then(|s| Timestamp::from_second(s).ok())
+    else {
+        return format!("<unrepresentable time: {seconds} sec>");
     };
 
-    match (zulu, epoch) {
-        (true, false) => format!("{} (+/-{}s)", timestamp.strftime(fmt), radius),
-        (false, false) => {
-            let local_time = timestamp.to_zoned(TimeZone::system());
-            format!("{} (+/-{}s)", local_time.strftime(fmt), radius)
-        }
-        (_, true) => format!("{}", timestamp.as_second()),
-    }
+    // A bare Timestamp has no time zone, so %Z would print literally; format a UTC Zoned instead
+    let tz = if args.zulu {
+        TimeZone::UTC
+    } else {
+        TimeZone::system()
+    };
+    ts.to_zoned(tz).strftime(&args.time_format).to_string()
 }
 
 fn display_measurement(args: &Args, measurement: &Measurement) {
-    let output = format_measurement(measurement, args.zulu, args.epoch, &args.time_format);
-    info!("{}", output);
+    let time = format_time(measurement.midpoint(), args);
+    if args.epoch {
+        info!("{time}");
+    } else {
+        info!("{time} (+/-{}s)", measurement.radius());
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use roughenough_protocol::ToFrame;
-    use roughenough_protocol::tags::PublicKey;
-    use roughenough_server::test_utils::TestContext;
-
     use super::*;
 
-    fn create_measurement(midpoint: u64) -> Measurement {
-        let mut ctx = TestContext::new(64);
-        let (req, resp) = ctx.create_interaction_pair(midpoint);
-        let resp_bytes = resp.as_frame_bytes().unwrap();
-        let pubkey = PublicKey::from(ctx.key_source.public_key_bytes());
-
-        Measurement::builder()
-            .server("127.0.0.1:8000".parse().unwrap())
-            .request(req)
-            .response(resp)
-            .response_bytes(resp_bytes)
-            .hostname("test".to_string())
-            .public_key(Some(pubkey))
-            .rand_value(None)
-            .build()
-            .unwrap()
-    }
-
     #[test]
-    fn unrepresentable_midpoint_falls_back_to_raw_value() {
-        let measurement = create_measurement(300_000_000_000);
-        let output = format_measurement(&measurement, true, false, "%Y-%m-%d %H:%M:%S %Z");
+    fn single_server_client_uses_timeout_flag() {
+        let silent = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let port = silent.local_addr().unwrap().port().to_string();
+        let args = Args::try_parse_from(["prog", "127.0.0.1", &port, "-t", "1"]).unwrap();
+
+        let hostname = args.hostname.as_deref().unwrap();
+        let client = build_client(
+            &args,
+            hostname,
+            args.port.unwrap(),
+            hostname,
+            args.pub_key.as_deref(),
+        )
+        .unwrap();
+
+        let start = std::time::Instant::now();
+        let result = client.query();
+        let elapsed = start.elapsed();
+
         assert!(
-            output.contains("<unrepresentable midpoint: 300000000000 sec>"),
-            "unexpected output: {output}"
+            matches!(result, Err(ClientError::ServerTimeout)),
+            "expected ServerTimeout, got {result:?}"
+        );
+        assert!(
+            elapsed >= Duration::from_millis(900) && elapsed < Duration::from_millis(1900),
+            "single-server wait was {elapsed:?}, expected about 1s"
         );
     }
 
     #[test]
-    fn sane_midpoint_formats_normally() {
-        let measurement = create_measurement(1_748_359_193);
-        let output = format_measurement(&measurement, true, false, "%Y-%m-%d");
-        assert!(
-            output.starts_with("2025-05-27"),
-            "unexpected output: {output}"
-        );
+    fn ipv6_host_resolves_with_or_without_brackets() {
+        let args = Args::try_parse_from(["prog", "::1", "5319"]).unwrap();
+        let expected: std::net::SocketAddr = "[::1]:5319".parse().unwrap();
+
+        for host in ["::1", "[::1]"] {
+            let client = build_client(&args, host, 5319, host, None)
+                .unwrap_or_else(|e| panic!("{host}: {e}"));
+            assert_eq!(client.server(), expected, "{host}");
+        }
+    }
+
+    fn parse(extra: &[&str]) -> Args {
+        let mut argv = vec!["prog", "host", "5319"];
+        argv.extend_from_slice(extra);
+        Args::try_parse_from(argv).unwrap()
     }
 
     #[test]
-    fn format_seconds_falls_back_on_unrepresentable_values() {
+    fn format_time_zulu_uses_utc_and_format() {
+        let args = parse(&["--zulu", "-f", "%Y-%m-%d %H:%M:%S %Z"]);
+        assert_eq!(format_time(1_748_359_193, &args), "2025-05-27 15:19:53 UTC");
+    }
+
+    #[test]
+    fn format_time_epoch_prints_raw_seconds() {
+        let args = parse(&["--epoch"]);
+        assert_eq!(format_time(1_748_359_193, &args), "1748359193");
+        // Raw seconds need no conversion, so even values jiff cannot represent print as is
+        assert_eq!(format_time(u64::MAX, &args), u64::MAX.to_string());
+    }
+
+    #[test]
+    fn format_time_falls_back_on_unrepresentable_value() {
+        let args = parse(&["--zulu"]);
         assert_eq!(
-            format_seconds(300_000_000_000, "%H:%M:%S"),
+            format_time(300_000_000_000, &args),
             "<unrepresentable time: 300000000000 sec>"
         );
+    }
+
+    #[test]
+    fn format_time_does_not_wrap_u64_max() {
         // u64 values beyond i64::MAX must not wrap into the valid range
+        let args = parse(&["--zulu"]);
         assert_eq!(
-            format_seconds(u64::MAX, "%H:%M:%S"),
+            format_time(u64::MAX, &args),
             format!("<unrepresentable time: {} sec>", u64::MAX)
         );
-        assert_eq!(format_seconds(0, "%Y-%m-%d"), "1970-01-01");
+    }
+
+    #[test]
+    fn clock_is_not_set_when_violations_found() {
+        assert!(clock_target(None).is_err());
+        assert_eq!(clock_target(Some(1_748_359_193)), Ok(1_748_359_193));
     }
 }

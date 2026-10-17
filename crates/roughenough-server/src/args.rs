@@ -1,9 +1,13 @@
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::Debug;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::time::Duration;
 
-use clap::{Parser, ValueEnum};
+use clap::error::ErrorKind;
+use clap::{CommandFactory, Parser};
+use roughenough_keys::seed::BackendKind;
+
+use crate::MAX_BATCH_SIZE;
 
 #[derive(Parser, Debug)]
 #[command(version, about = "Roughenough roughtime server")]
@@ -14,8 +18,8 @@ pub struct Args {
         long,
         value_name = "N",
         env = "ROUGHENOUGH_BATCH_SIZE",
-        default_value_t = 64,
-        value_parser = clap::value_parser!(u8).range(1..=64)
+        default_value_t = MAX_BATCH_SIZE as u8,
+        value_parser = clap::value_parser!(u8).range(1..=MAX_BATCH_SIZE as i64)
     )]
     pub batch_size: u8,
 
@@ -81,13 +85,12 @@ pub struct Args {
         long,
         value_name = "PATH",
         env = "ROUGHENOUGH_SEED_FILE",
-        required_unless_present = "insecure_zero_seed",
         conflicts_with = "insecure_zero_seed"
     )]
     pub seed_file: Option<PathBuf>,
 
     /// For testing only; never use in production.
-    #[clap(long, conflicts_with = "seed_file", default_value_t = false)]
+    #[clap(long, default_value_t = false)]
     pub insecure_zero_seed: bool,
 
     /// How to store the server's long-term identity while it's running
@@ -96,46 +99,17 @@ pub struct Args {
         long,
         value_name = "TYPE",
         env = "ROUGHENOUGH_SEED_BACKEND",
-        default_value_t = SeedBackendArg::Memory
+        default_value_t = BackendKind::Memory
     )]
-    pub seed_backend: SeedBackendArg,
+    pub seed_backend: BackendKind,
 
-    /// Directory path where metrics JSON files will be written
-    #[clap(
-        long,
-        value_name = "PATH",
-        env = "ROUGHENOUGH_METRICS_OUTPUT",
-        help = "Directory where JSON metrics files will be written (e.g., /var/log/roughenough)"
-    )]
-    pub metrics_output: Option<String>,
+    /// Directory where JSON metrics files will be written (e.g., /var/log/roughenough)
+    #[clap(long, value_name = "PATH", env = "ROUGHENOUGH_METRICS_OUTPUT")]
+    pub metrics_output: Option<PathBuf>,
 
-    #[clap(
-        short = 'v',
-        long,
-        conflicts_with = "quiet",
-        action = clap::ArgAction::Count,
-        help = "Output details about requests and responses; specify multiple times for more detail"
-    )]
+    /// Output details about requests and responses; specify multiple times for more detail
+    #[clap(short = 'v', long, action = clap::ArgAction::Count)]
     pub verbose: u8,
-}
-
-#[derive(ValueEnum, Debug, Clone, Copy)]
-pub enum SeedBackendArg {
-    #[value(name = "memory")]
-    Memory,
-    #[value(name = "krs")]
-    Krs,
-    #[value(name = "ssh-agent")]
-    SshAgent,
-    #[value(name = "pkcs11")]
-    Pkcs11,
-}
-
-impl Display for SeedBackendArg {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let value = self.to_possible_value().unwrap();
-        f.write_str(value.get_name())
-    }
 }
 
 impl Args {
@@ -146,6 +120,26 @@ impl Args {
     /// How long the short-term response signing key is valid
     pub fn rotation_interval(&self) -> Duration {
         Duration::from_secs(self.rotation_interval as u64 * 60 * 60)
+    }
+
+    /// A pkcs11 token holds the long-term key itself, so it takes no seed; every other backend
+    /// needs one. clap cannot express "required unless --seed-backend is pkcs11" declaratively.
+    pub fn validate_seed_source(&self) -> Result<(), clap::Error> {
+        let has_seed = self.seed_file.is_some() || self.insecure_zero_seed;
+        match (self.seed_backend.takes_seed(), has_seed) {
+            (true, false) => Err(Args::command().error(
+                ErrorKind::MissingRequiredArgument,
+                "a seed is required: pass --seed-file <PATH> (or --insecure-zero-seed for testing)",
+            )),
+            (false, true) => Err(Args::command().error(
+                ErrorKind::ArgumentConflict,
+                format!(
+                    "--seed-file and --insecure-zero-seed are not used with --seed-backend {}; the token holds the long-term key",
+                    self.seed_backend
+                ),
+            )),
+            _ => Ok(()),
+        }
     }
 }
 
@@ -236,6 +230,61 @@ mod tests {
     fn seed_file_and_insecure_seed_are_mutually_exclusive() {
         assert!(
             Args::try_parse_from(["prog", "--seed-file", "/tmp/seed", "--insecure-zero-seed",])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn quiet_and_verbose_conflict() {
+        assert!(Args::try_parse_from(["prog", "--insecure-zero-seed", "-q", "-v"]).is_err());
+    }
+
+    #[test]
+    fn seed_source_is_required_unless_pkcs11() {
+        let args = Args::try_parse_from(["prog"]).unwrap();
+        let err = args.validate_seed_source().unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
+        assert!(err.to_string().contains("--seed-file"), "{err}");
+
+        let args = Args::try_parse_from(["prog", "--seed-backend", "pkcs11"]).unwrap();
+        assert!(args.validate_seed_source().is_ok());
+
+        for seed_source in [
+            &["--insecure-zero-seed"][..],
+            &["--seed-file", "/tmp/seed"][..],
+        ] {
+            let mut argv = vec!["prog", "--seed-backend", "pkcs11"];
+            argv.extend(seed_source);
+            let args = Args::try_parse_from(&argv).unwrap();
+            assert_eq!(args.seed_backend, BackendKind::Pkcs11);
+            assert_eq!(
+                args.validate_seed_source().unwrap_err().kind(),
+                ErrorKind::ArgumentConflict,
+                "{seed_source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn seed_backend_names_and_alias_parse() {
+        let args = Args::try_parse_from(["prog", "--insecure-zero-seed"]).unwrap();
+        assert_eq!(args.seed_backend, BackendKind::Memory);
+
+        for (name, kind) in [
+            ("memory", BackendKind::Memory),
+            ("krs", BackendKind::Krs),
+            ("ssh-agent", BackendKind::SshAgent),
+            ("sshagent", BackendKind::SshAgent),
+            ("pkcs11", BackendKind::Pkcs11),
+        ] {
+            let args =
+                Args::try_parse_from(["prog", "--insecure-zero-seed", "--seed-backend", name])
+                    .unwrap();
+            assert_eq!(args.seed_backend, kind, "{name}");
+        }
+
+        assert!(
+            Args::try_parse_from(["prog", "--insecure-zero-seed", "--seed-backend", "tpm"])
                 .is_err()
         );
     }

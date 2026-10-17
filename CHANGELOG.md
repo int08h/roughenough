@@ -2,6 +2,222 @@
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-10-17
+
+### Breaking
+
+- Server library: `NetworkHandler::send_response` and `NetworkHandler`'s
+  `Debug` impl were removed; use `queue_response` + `flush_responses`
+- Server library: `RequestHandler` was replaced by `RequestValidator`
+  (`validate` returns the parsed request and version);
+  `ResponseHandler::process_responses` now clears the batch itself and
+  `ResponseHandler::clear` was removed
+- Server library: `Worker::new(worker_id, responder, metrics_channel,
+  metrics_interval)` takes its batch size and clock from the responder;
+  `Worker::set_test_panic_flag` was removed
+- Server library: `KeySource::public_key_bytes` removed (use
+  `public_key()`)
+- Server library: `TestContext.batch_size` removed
+- Server library: `ResponseMetrics::MAX_BATCH_SIZE` moved to
+  `roughenough_server::MAX_BATCH_SIZE`
+- Server library: `Args::metrics_output` is a `PathBuf`
+- Server library: `MetricsSnapshot::new` takes an epoch timestamp and
+  `write_to_file` returns `()`
+- Server library: `PendingRequest` is private
+- Merkle: `MerkleTree::reserve` was replaced by `MerkleTree::with_capacity`
+- Keys: cargo features `longterm-aws-kms` and
+  `longterm-aws-secret-manager` are replaced by `longterm-aws`;
+  `longterm-gcp-kms` and `longterm-gcp-secret-manager` are replaced by
+  `longterm-gcp`. The implicit `tokio` feature is gone
+- Protocol: `Nonce` and `PublicKey` no longer implement the panicking
+  `From<&[u8]>`; use `TryFrom<&[u8]>`, which returns
+  `Error::WrongTagSize`
+- Protocol: `SrvCommitment::try_from` reports `Error::WrongTagSize` (was
+  `BufferTooSmall`)
+- Protocol: removed `tags::fixed_tag::FixedTag`, `From<&Vec<u8>> for
+  Nonce`, and `From<Nonce> for [u8; 32]`
+- Protocol: `MerkleRoot` implements `AsRef<[u8]>` instead of
+  `AsRef<[u8; 32]>`; use `MerkleRoot::as_array()` for the array
+- Protocol: removed unused API: `Tag`'s `Ord`/`PartialOrd`,
+  `Tag::is_nested`, `Tag::HASH_PREFIX_SRV` (use
+  `SrvCommitment::HASH_PREFIX_SRV`), `Tag::from_wire`, `TryFrom<u32> for
+  Tag`, `From<Tag> for u32`, `Error::InvalidTag`, `Error::IoError`,
+  `Response::MINIMUM_SIZE` (use `wire::MINIMUM_FRAME_SIZE`),
+  `VersionList::is_supported`, `MessageType::Invalid`, `FromStr for
+  ProtocolVersion`, and the `ParseCursor` methods `has_remaining`,
+  `capacity`, `get_u32`, `try_get_u32`, `try_put_slice`, `reset`, and
+  `try_put_u64_le`
+- Protocol: an over-long PATH reports `Error::InvalidPathLength` (was
+  `BufferTooSmall`)
+- Protocol: `FromWireN` is merged into `FromWire`, which now requires
+  `from_wire_n(cursor, n)` and provides `from_wire(cursor)`. `from_wire`
+  on a fixed-size tag now requires exactly that many remaining bytes
+- Protocol, Common: `ClockSource` moved from `roughenough_protocol::util`
+  to `roughenough_common::clocksource`; the test-only `now`, `advance`,
+  and `decrease` methods were removed
+- Client API: `ResponseValidator::validate` takes `(request_bytes,
+  response_bytes)` and returns the parsed `Response`, so the checked
+  fields always come from the signed bytes
+- Client API: `ResponseValidator::new` takes `Option<PublicKey>`;
+  `new_with_key` is removed
+- Client API: `ResponseValidator::validate_causality` is now
+  `CausalityViolation::find`
+- Client API: malformed responses surface as
+  `ClientError::ValidationFailed(InvalidMessage)` instead of
+  `ClientError::BadResponse`
+- Client API: `ReportingError` has new variants for report verification
+  failures
+- Client API: `Measurement::builder` and `MeasurementBuilder` are removed;
+  `Measurement`s come only from `Client`
+- Client API: `ReportingError::SerializationError` is removed
+- Client: `MalfeasanceReport::submit` and the `--report` flag exist only
+  with the `reporting` feature
+- Client: `--report` fails before any query when the server list has no
+  `reports` URL
+- Reporting server: `validate_report` and its `validation` module are
+  removed; use `MalfeasanceReport::verify()`
+- Client API: `ClientTransport::send`/`recv` no longer take or return a
+  `SocketAddr`
+- Client API: `UdpTransport::new` returns `io::Result`, and
+  `ClientBuilder::build` returns `Result<Client, ClientError>`
+- Client: the UDP socket is connected, so datagrams from other sources
+  are ignored, and a closed port fails fast with "Connection refused"
+  instead of waiting for the timeout
+- Client API: `server_list` types are deserialize-only; `ServerList::new`,
+  `add_server`, `to_json`, `Server::new`, and `Address::new` are removed
+- Client API: removed the unused server-list accessors `Server::addresses`,
+  `first_address`, `version`, and `public_key_type`, and
+  `Address::protocol`; `ServerList::validate` and `Server::validate` are
+  private, and `Address::validate` is removed
+- Client API: `ServerList::choose_random` returns `Vec<&Server>`
+- Client API: an invalid server-list address is reported as
+  `server_list::Error::InvalidJson`
+- Client: a hostname/port and `-l` are mutually exclusive at parse time;
+  giving both or neither exits 2 (was 255)
+- Client: `-k` and `-n` are rejected with `-l`
+- Client: `--report` requires `-l`
+- Client: `-s` does not set the clock when causality violations are
+  found; it exits 1 instead
+- Client: causality violation output follows `--zulu`, `--epoch`, and `-f`
+- Client API: the `roughenough_client::args` module is removed
+- Client: a response whose VERS does not contain its VER is rejected
+  with the new `ValidationError::VerNotInVers` (RFC 5.2.5).
+  `ResponseValidator::validate` does not perform this check; call
+  `check_vers_contains_ver` to apply it elsewhere
+- Keys: `Seed::new(&[u8])` and `Seed::len()` are removed; use
+  `Seed::try_from(&[u8])` or `Seed::from_bytes(&[u8; 32])`.
+  `Seed::expose()` returns `&[u8; 32]`. `MemoryBackend::from_value` takes
+  `&[u8; 32]`. Common: `encoding::try_decode` returns
+  `Zeroizing<Vec<u8>>` and accepts mixed-case hex
+- Keys: `storage::try_load_seed` and `storage::try_store_seed` are
+  synchronous; `storage::try_load_seed_sync` and the `runtime` module are
+  removed; `Protection::from_prefix` is replaced by `Protection::split`
+- Server library: the hidden `seed_file` module moved to
+  `roughenough_keys::seed_file`. Keys: `StorageError` has a new
+  `SeedFile` variant for seed-file I/O and validation errors
+- Keys: `SeedBackend` now has only `sign` and `public_key`; backends take
+  the seed at construction (`MemoryBackend::new(seed)`,
+  `LinuxKrsBackend::new(seed)`, `SshAgentBackend::new(seed)`,
+  `Pkcs11Backend::from_env()`)
+- Keys: `try_choose_backend(&str)` is replaced by
+  `seed::open(BackendKind, Option<Seed>)`
+- Keys: `BackendError::Ssh` is removed; `BackendNotAvailable` carries a
+  `BackendKind`, and the new `SeedMismatch` reports a seed given to a
+  backend that takes none, or missing for one that needs it
+- Keys: the `PKCS11_*_ENV` constants exist only with the `online-pkcs11`
+  feature
+- Server: `--seed-backend` values are unchanged, and `sshagent` is
+  accepted as an alias for `ssh-agent`. Server library: `SeedBackendArg`
+  is removed; `Args::seed_backend` is a
+  `roughenough_keys::seed::BackendKind`
+- Keys: `OnlineKey::new` and `OnlineKey::sign` are no longer public;
+  create online keys with `LongTermIdentity::make_online_key`. The
+  `online::linuxkrs::krs_backend` module path is removed
+- Keys CLI: `roughenough_keys` subcommands are now `generate`,
+  `protect`, and `recover` (replacing `generate`, `seal`, `store`,
+  `open`, and `get`). `--key`/`--secret` become `--resource`. Output
+  defaults to the one-line seed-file form (`--json` for pretty JSON).
+  Inputs are seed files (hex or base64 text, optionally `seed://`); raw
+  32-byte binary input is no longer accepted. Failures exit non-zero,
+  and log output goes to stderr
+- Keys: backends are exported only from `roughenough_keys::seed`
+  (`online::memory`, `online::linuxkrs`, `online::sshagent`, and
+  `online::pkcs11` are removed). `OnlineKey` is exported only as
+  `roughenough_keys::online::OnlineKey`, and `LongTermIdentity` only as
+  `roughenough_keys::longterm::LongTermIdentity`
+- Common: `encoding::hexdump`, `encoding::try_decode_key`, and
+  `crypto::secure_shuffle` are removed (moved into roughenough-client;
+  `try_decode_key` is now `roughenough_client::client::try_decode_key`)
+
+### Security
+
+- Keys, Common: decode buffers for seed values are zeroized, including
+  failed decoding attempts
+- Keys: the KMS data-encryption key is zeroized after use
+
+### Fixed
+
+- Keys: `roughenough_keys open` exits non-zero instead of printing a
+  random seed when no enabled KMS backend matches the envelope key id or
+  `--key` lacks a scheme prefix
+- Server: `--seed-backend pkcs11` works; it no longer requires
+  `--seed-file` (and rejects it), since the token holds the long-term
+  key. Keys: the PKCS#11 backend reads the public key once at startup
+  and reports token errors instead of panicking
+- Server: worker metrics are no longer lost when the metrics channel is
+  full, and `total_requests` (JSON and log) now includes requests dropped
+  for an SRV mismatch or no common version
+- Merkle: `compute_root` no longer appends padding to the stored leaves,
+  so adding leaves after computing a root yields the correct tree
+- Client: `--timeout` is honored when querying a single server (it was
+  fixed at 2 seconds)
+- Client: `--timeout 0` is rejected instead of panicking
+- Client: a late or duplicated response to an earlier request is skipped
+  instead of failing the query (affects `-n N`)
+- Client: a response whose VERS lists no supported version is rejected
+  with `NoSupportedVersions` (RFC 5.2.5)
+- Client: `--zulu` prints the time zone as UTC instead of a literal `%Z`
+- Docs: README no longer claims seed files may hold raw binary
+
+### Added
+
+- Server: new features `online-ssh-agent`, `longterm-aws`, `longterm-gcp`,
+  and `release`
+- Protocol: `FromFrame::from_frame_bytes` parses a framed Request or
+  Response from a shared byte slice
+- Client: `test-utils` feature exposing shared test fixtures
+  (`roughenough_client::test_utils`) for other crates' tests
+- Protocol: all fixed-size tags gain `as_array()`
+- Common: `crypto::verify_with_context` verifies an Ed25519 signature over
+  a context prefix and message
+- Client: `MalfeasanceReport::verify()` validates a received report
+- Client: `-s` works with `-l` without `-k`, since the server list
+  supplies the public keys
+- Keys: `storage::decode_seed` decodes a hex or base64 seed value;
+  `Seed::LEN` and `seed::InvalidSeedLength` are new
+- Keys: `storage::parse_envelope` decodes a prefixed seed envelope, and
+  `storage::load_envelope` recovers the seed an envelope refers to
+- Keys: `storage::load_seed_file` reads and validates a seed file, then
+  loads the seed it describes
+- Keys: `logging::sdk_targets` builds the log filter that gives cloud
+  SDK and HTTP crates their own level
+
+### Changed
+
+- Server: metrics timestamps follow `--fixed-offset`
+- Server: release binaries and the Docker image are built with
+  `--features release` instead of `--all-features`, so they no longer
+  include test hooks
+- Build: all crates declare `rust-version = "1.94.1"` (MSRV), the minimum
+  the AWS SDK crates require
+- Docs: the versioning policy reserves MAJOR for Roughtime wire
+  incompatibility; library API and CLI breaks ship in MINOR releases
+
+### Removed
+
+- Integration: the load generator (`roughenough_load_test`) no longer
+  accepts `--public-key`, which it never used
+
 ## [2.2.0] - 2026-10-11
 
 ### Breaking
@@ -221,13 +437,11 @@ Roughtime is now published as RFC 10049. This release follows the RFC.
 This project aspirationally follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) and tries to 
 adhere to it as closely/practically as possible:
 
-- **MAJOR** version increments indicate incompatible API changes
-- **MINOR** version increments add functionality in a backward compatible manner
-- **PATCH** version increments make backward compatible bug fixes
-
-Given a version number MAJOR.MINOR.PATCH:
-- Breaking changes to public APIs or protocol implementation increment MAJOR
-- New features that maintain backward compatibility increment MINOR
-- Bug fixes and internal improvements increment PATCH
+- **MAJOR** increments when a release breaks Roughtime wire compatibility with deployed
+  clients or servers (for example, dropping support for a protocol version).
+- **MINOR** increments for new features and for breaking changes to the Rust library APIs
+  or the command-line interfaces. Every such break is listed under `### Breaking` in that
+  release's notes.
+- **PATCH** increments for backward-compatible bug fixes and internal improvements.
 
 

@@ -1,0 +1,5 @@
+# MSRV policy: take dependency updates even when they need a newer Rust, then
+# raise rust-version deliberately. Resolver 3's default ("fallback") would instead hold
+# the cloud SDKs at old releases without saying so. CI's MSRV drift step catches the bump.
+[resolver]
+incompatible-rust-versions = "allow"

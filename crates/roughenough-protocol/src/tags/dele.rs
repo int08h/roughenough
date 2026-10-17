@@ -7,7 +7,7 @@ use crate::error::Error::{MissingTag, WrongTagSize};
 use crate::header::{Header3, RawHeader};
 use crate::tag::Tag;
 use crate::tags::PublicKey;
-use crate::wire::{FromWire, FromWireN, ToWire};
+use crate::wire::{FromWire, ToWire};
 
 #[repr(C)]
 #[derive(PartialEq, Eq, Clone)]
@@ -79,13 +79,6 @@ impl Default for Delegation {
 }
 
 impl FromWire for Delegation {
-    fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
-        let msg_len = cursor.remaining();
-        Self::from_wire_n(cursor, msg_len)
-    }
-}
-
-impl FromWireN for Delegation {
     fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error> {
         const RAW_PUBK: u32 = Tag::PUBK as u32;
         const RAW_MINT: u32 = Tag::MINT as u32;
@@ -101,12 +94,7 @@ impl FromWireN for Delegation {
             let value_start = cursor.position();
 
             match raw_tag {
-                RAW_PUBK => {
-                    if value_len != size_of::<PublicKey>() {
-                        return Err(WrongTagSize(size_of::<PublicKey>(), value_len));
-                    }
-                    public_key = Some(PublicKey::from_wire(cursor)?);
-                }
+                RAW_PUBK => public_key = Some(PublicKey::from_wire_n(cursor, value_len)?),
                 RAW_MINT => {
                     if value_len != size_of::<u64>() {
                         return Err(WrongTagSize(size_of::<u64>(), value_len));

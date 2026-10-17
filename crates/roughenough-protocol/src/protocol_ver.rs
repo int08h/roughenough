@@ -1,11 +1,10 @@
 use std::fmt;
 use std::fmt::Debug;
 use std::mem::size_of;
-use std::str::FromStr;
 
 use crate::cursor::ParseCursor;
 use crate::error::Error;
-use crate::error::Error::InvalidVersion;
+use crate::error::Error::{InvalidVersion, WrongTagSize};
 use crate::wire::{FromWire, ToWire};
 
 /// A `ProtocolVersion` is a u32 version number identifying a specific Roughtime
@@ -112,21 +111,12 @@ impl ToWire for ProtocolVersion {
 }
 
 impl FromWire for ProtocolVersion {
-    fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
+    fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error> {
+        if n != size_of::<Self>() {
+            return Err(WrongTagSize(size_of::<Self>(), n));
+        }
         let value = cursor.try_get_u32_le()?;
         Self::from_u32(value).ok_or(InvalidVersion(value))
-    }
-}
-
-impl FromStr for ProtocolVersion {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_ascii_lowercase().as_str() {
-            "1" | "ietf-roughtime" => Ok(Self::RFC),
-            "19" => Ok(Self::DRAFT),
-            _ => Err(InvalidVersion(u32::MAX)),
-        }
     }
 }
 
@@ -273,26 +263,5 @@ mod tests {
             format!("{:?}", ProtocolVersion(0x8000000b)),
             "Unknown(0x8000000b)"
         );
-    }
-
-    #[test]
-    fn from_str_accepts_version_one() {
-        assert_eq!(
-            "1".parse::<ProtocolVersion>().unwrap(),
-            ProtocolVersion::RFC
-        );
-        assert_eq!(
-            "ietf-roughtime".parse::<ProtocolVersion>().unwrap(),
-            ProtocolVersion::RFC
-        );
-    }
-
-    #[test]
-    fn from_str_accepts_draft_name() {
-        assert_eq!(
-            "19".parse::<ProtocolVersion>().unwrap(),
-            ProtocolVersion::DRAFT
-        );
-        assert!("google-roughtime".parse::<ProtocolVersion>().is_err());
     }
 }

@@ -1,11 +1,13 @@
 [package]
 name = "roughenough-server"
 description = "High-performance Roughtime UDP server with request batching"
-license = "Apache-2.0 OR MIT"
+license.workspace = true
 edition.workspace = true
 version.workspace = true
-repository = "https://github.com/int08h/roughenough"
-homepage = "https://github.com/int08h/roughenough"
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+rust-version.workspace = true
 readme = "../../README.md"
 keywords = ["roughtime", "server", "time-sync", "udp", "async"]
 categories = ["network-programming", "date-and-time"]
@@ -16,16 +18,25 @@ path = "src/main.rs"
 
 [features]
 test-utils = []
-# Makes the pkcs11 seed backend available at runtime; without it, selecting
-# pkcs11 fails with a "recompile with the feature" error
+# Each forwards a roughenough-keys backend so a server-only build can select
+# it; without one, selecting that backend or seed scheme fails at runtime with
+# a "recompile with the feature" error
 online-pkcs11 = ["roughenough-keys/online-pkcs11"]
+online-ssh-agent = ["roughenough-keys/online-ssh-agent"]
+longterm-aws = ["roughenough-keys/longterm-aws"]
+longterm-gcp = ["roughenough-keys/longterm-gcp"]
+# Everything a shipped server binary supports; never includes test-utils.
+# Add any new roughenough-keys backend here too.
+release = ["online-pkcs11", "online-ssh-agent", "longterm-aws", "longterm-gcp"]
+
+[package.metadata.dist]
+features = ["release"]
 
 [dependencies]
 roughenough-common = { workspace = true }
 roughenough-keys = { workspace = true }
 roughenough-merkle = { workspace = true }
 roughenough-protocol = { workspace = true }
-aws-lc-rs = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 mio = { workspace = true, features = ["net", "os-poll"] }
 serde = { workspace = true, features = ["derive"] }
@@ -35,7 +46,6 @@ socket2 = { workspace = true, features = ["all"] }
 time-format = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-zeroize = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 # sendmmsg for batched response sends (network.rs mmsg module)
@@ -44,7 +54,7 @@ libc = { workspace = true }
 [dev-dependencies]
 divan = { workspace = true }
 roughenough-protocol = { workspace = true, features = ["test-utils"] }
-# self-dependency: enables test-utils (worker panic injection, TestContext)
+# self-dependency: enables test-utils (TestContext and test helpers)
 # when building this crate's own tests/ targets
 roughenough-server = { path = ".", features = ["test-utils"] }
 

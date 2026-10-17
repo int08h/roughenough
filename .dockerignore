@@ -4,9 +4,6 @@ target/
 *.md
 doc/
 fuzz/
-tasks/
-foo
-coverage.sh
 Dockerfile
 .dockerignore
 .idea/

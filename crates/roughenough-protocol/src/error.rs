@@ -8,9 +8,6 @@ pub enum Error {
     #[error("buffer too small: {0} bytes needed, {1} bytes available")]
     BufferTooSmall(usize, usize),
 
-    #[error("invalid tag: {0:#08x}")]
-    InvalidTag(u32),
-
     #[error("invalid version: {0:#08x}")]
     InvalidVersion(u32),
 
@@ -44,15 +41,12 @@ pub enum Error {
     #[error("version value is less than prior version: index {0}, value {1:#08x}")]
     UnorderedVersion(u32, u32),
 
-    #[error("no supported versions (empty VERS tag)")]
+    #[error("VERS lists no version this implementation supports")]
     NoSupportedVersions,
 
-    #[error("PATH length not a multiple of 32-bytes: length {0}")]
+    #[error("invalid PATH length: {0} bytes (must be a multiple of 32, at most 1024)")]
     InvalidPathLength(u32),
 
     #[error("wrong tag size: expected {0} bytes, got {1} bytes")]
     WrongTagSize(usize, usize),
-
-    #[error("IO error: {0}")]
-    IoError(#[from] std::io::Error),
 }

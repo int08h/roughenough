@@ -17,8 +17,6 @@ install-path = "CARGO_HOME"
 install-updater = false
 # The archive format to use for non-windows builds (defaults .tar.xz)
 unix-archive = ".tar.gz"
-# Whether to pass --all-features to cargo build
-all-features = true
 # Whether to embed dependency information using cargo-auditable
 cargo-auditable = true
 

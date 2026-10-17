@@ -2,7 +2,6 @@
 //! request suite: start from a valid serialized response and mutate it.
 //! Every case must produce a clean `Err`, never a panic.
 
-use roughenough_protocol::cursor::ParseCursor;
 use roughenough_protocol::error::Error;
 use roughenough_protocol::response::Response;
 use roughenough_protocol::util::test_utils::{
@@ -18,14 +17,9 @@ fn valid_msg() -> Vec<u8> {
     VALID_RESPONSE[12..].to_vec()
 }
 
-fn parse_framed(mut framed: Vec<u8>) -> Result<Response, Error> {
-    let mut cursor = ParseCursor::new(&mut framed);
-    Response::from_frame(&mut cursor)
-}
-
 #[test]
 fn baseline_response_parses() {
-    let response = parse_framed(VALID_RESPONSE.to_vec()).unwrap();
+    let response = Response::from_frame_bytes(VALID_RESPONSE).unwrap();
     assert_eq!(response.indx(), 2);
 }
 
@@ -43,7 +37,7 @@ fn missing_mandatory_tag_is_rejected() {
             .collect();
         let framed = frame(&build_msg(&entries));
 
-        let result = parse_framed(framed);
+        let result = Response::from_frame_bytes(&framed);
         assert!(
             result.is_err(),
             "response without {} must be rejected",
@@ -63,7 +57,7 @@ fn missing_ver_inside_srep_is_rejected() {
     let new_srep = build_msg(&srep_entries);
     let framed = frame(&replace_value(&msg, *b"SREP", &new_srep));
 
-    let result = parse_framed(framed);
+    let result = Response::from_frame_bytes(&framed);
     assert!(
         matches!(result, Err(Error::MissingTag("VER"))),
         "{result:?}"
@@ -79,7 +73,7 @@ fn out_of_order_tags_are_rejected() {
     entries.swap(0, 1);
     let framed = frame(&build_msg(&entries));
 
-    let result = parse_framed(framed);
+    let result = Response::from_frame_bytes(&framed);
     assert!(
         matches!(result, Err(Error::UnorderedTag(_, _))),
         "{result:?}"
@@ -97,7 +91,7 @@ fn duplicate_tags_are_rejected() {
     entries.insert(pos, nonc);
     let framed = frame(&build_msg(&entries));
 
-    let result = parse_framed(framed);
+    let result = Response::from_frame_bytes(&framed);
     assert!(
         matches!(result, Err(Error::UnorderedTag(_, _))),
         "{result:?}"
@@ -117,7 +111,7 @@ fn truncated_values_are_rejected() {
             let truncated = &full[..full.len() - cut];
             let framed = frame(&replace_value(&msg, tag, truncated));
 
-            let result = parse_framed(framed);
+            let result = Response::from_frame_bytes(&framed);
             assert!(
                 result.is_err(),
                 "{} truncated by {cut} bytes must be rejected",
@@ -138,7 +132,7 @@ fn truncated_path_is_rejected() {
         let truncated = &full[..full.len() - cut];
         let framed = frame(&replace_value(&msg, *b"PATH", truncated));
 
-        let result = parse_framed(framed);
+        let result = Response::from_frame_bytes(&framed);
         assert!(
             result.is_err(),
             "PATH truncated by {cut} bytes must be rejected"
@@ -157,7 +151,7 @@ fn truncated_dele_inside_cert_is_rejected() {
         let new_cert = replace_value(&cert, *b"DELE", &dele[..dele.len() - cut]);
         let framed = frame(&replace_value(&msg, *b"CERT", &new_cert));
 
-        let result = parse_framed(framed);
+        let result = Response::from_frame_bytes(&framed);
         assert!(
             result.is_err(),
             "DELE truncated by {cut} bytes must be rejected"
@@ -172,7 +166,7 @@ fn path_not_multiple_of_32_is_rejected() {
         let msg = valid_msg();
         let framed = frame(&replace_value(&msg, *b"PATH", &vec![0x11u8; len]));
 
-        let result = parse_framed(framed);
+        let result = Response::from_frame_bytes(&framed);
         assert!(result.is_err(), "PATH of {len} bytes must be rejected");
     }
 }
@@ -183,8 +177,11 @@ fn path_over_32_elements_is_rejected() {
     let msg = valid_msg();
     let framed = frame(&replace_value(&msg, *b"PATH", &[0x22u8; 33 * 32]));
 
-    let result = parse_framed(framed);
-    assert!(result.is_err(), "PATH of 33 elements must be rejected");
+    let result = Response::from_frame_bytes(&framed);
+    assert!(
+        matches!(result, Err(Error::InvalidPathLength(1056))),
+        "PATH of 33 elements must be rejected: {result:?}"
+    );
 }
 
 #[test]
@@ -193,7 +190,7 @@ fn path_of_exactly_32_elements_parses() {
     let msg = valid_msg();
     let framed = frame(&replace_value(&msg, *b"PATH", &[0x33u8; 32 * 32]));
 
-    let response = parse_framed(framed).unwrap();
+    let response = Response::from_frame_bytes(&framed).unwrap();
     assert_eq!(response.path().as_ref().len(), 32 * 32);
 }
 
@@ -204,7 +201,7 @@ fn wrong_message_type_is_rejected() {
         let msg = valid_msg();
         let framed = frame(&replace_value(&msg, *b"TYPE", &bad_type.to_le_bytes()));
 
-        let result = parse_framed(framed);
+        let result = Response::from_frame_bytes(&framed);
         assert!(
             matches!(result, Err(Error::InvalidMessageType(t)) if t == bad_type),
             "TYPE {bad_type:#x} must be rejected: {result:?}"
@@ -218,7 +215,7 @@ fn declared_frame_length_longer_than_buffer_is_rejected() {
     let msg_len = (framed.len() - 12) as u32;
     framed[8..12].copy_from_slice(&(msg_len + 4).to_le_bytes());
 
-    let result = parse_framed(framed);
+    let result = Response::from_frame_bytes(&framed);
     assert!(
         matches!(result, Err(Error::BufferTooSmall(_, _))),
         "{result:?}"
@@ -233,7 +230,7 @@ fn declared_frame_length_shorter_than_message_is_rejected() {
     let msg_len = (framed.len() - 12) as u32;
     framed[8..12].copy_from_slice(&(msg_len - 4).to_le_bytes());
 
-    let result = parse_framed(framed);
+    let result = Response::from_frame_bytes(&framed);
     assert!(result.is_err(), "{result:?}");
 }
 
@@ -242,7 +239,7 @@ fn declared_frame_length_below_minimum_is_rejected() {
     let mut framed = VALID_RESPONSE.to_vec();
     framed[8..12].copy_from_slice(&8u32.to_le_bytes());
 
-    let result = parse_framed(framed);
+    let result = Response::from_frame_bytes(&framed);
     assert!(
         matches!(result, Err(Error::UnexpectedFraming(_))),
         "{result:?}"
@@ -256,7 +253,7 @@ fn trailing_bytes_after_frame_are_ignored() {
     let mut framed = VALID_RESPONSE.to_vec();
     framed.extend_from_slice(&[0xee; 64]);
 
-    let response = parse_framed(framed).unwrap();
+    let response = Response::from_frame_bytes(&framed).unwrap();
     assert_eq!(response.indx(), 2);
 }
 
@@ -265,7 +262,7 @@ fn bad_magic_is_rejected() {
     let mut framed = VALID_RESPONSE.to_vec();
     framed[0] ^= 0xff;
 
-    let result = parse_framed(framed);
+    let result = Response::from_frame_bytes(&framed);
     assert!(
         matches!(result, Err(Error::UnexpectedMagic(_))),
         "{result:?}"
@@ -277,7 +274,7 @@ fn wrong_indx_size_is_rejected() {
     let msg = valid_msg();
     let framed = frame(&replace_value(&msg, *b"INDX", &[0x01u8; 8]));
 
-    let result = parse_framed(framed);
+    let result = Response::from_frame_bytes(&framed);
     assert!(
         matches!(result, Err(Error::WrongTagSize(4, 8))),
         "{result:?}"
@@ -291,7 +288,7 @@ fn wrong_nonc_size_is_rejected() {
     let msg = valid_msg();
     let framed = frame(&replace_value(&msg, *b"NONC", &[0x42u8; 28]));
 
-    let result = parse_framed(framed);
+    let result = Response::from_frame_bytes(&framed);
     assert!(
         matches!(result, Err(Error::WrongTagSize(32, 28))),
         "{result:?}"

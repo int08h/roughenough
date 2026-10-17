@@ -3,14 +3,14 @@ use std::time::Duration;
 
 use divan::counter::BytesCount;
 use divan::{AllocProfiler, Bencher};
+use roughenough_common::clocksource::ClockSource;
 use roughenough_keys::seed::MemoryBackend;
 use roughenough_protocol::ToFrame;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::tags::Nonce;
-use roughenough_protocol::util::ClockSource;
 use roughenough_server::keysource::KeySource;
-use roughenough_server::requests::RequestHandler;
 use roughenough_server::responses::ResponseHandler;
+use roughenough_server::test_utils::RequestPipeline;
 
 #[global_allocator]
 static ALLOC: AllocProfiler = AllocProfiler::system();
@@ -26,12 +26,14 @@ fn create_wire_request(nonce_value: u8) -> Vec<u8> {
     request.as_frame_bytes().unwrap()
 }
 
-fn create_request_handler() -> RequestHandler {
+// System clock, as in the server: signing reads it once per batch, and
+// `RequestPipeline::new` would use a cheaper mock clock
+fn create_request_pipeline() -> RequestPipeline {
     let seed = Box::new(MemoryBackend::from_random());
     let ks = KeySource::new(seed, ClockSource::System, Duration::from_secs(60));
     let responder = ResponseHandler::new(64, ks);
 
-    RequestHandler::new(responder)
+    RequestPipeline::with_responder(responder)
 }
 
 mod network_send {
@@ -80,7 +82,7 @@ mod request_handler {
         args = [1, 2, 4, 8, 16, 32, 64],
     )]
     fn batch_processing(bencher: Bencher, batch_size: usize) {
-        let mut handler = create_request_handler();
+        let mut pipeline = create_request_pipeline();
 
         // Create a pool of request bytes and addresses that we'll reuse
         let mut request_pool: Vec<Vec<u8>> = (0..batch_size)
@@ -97,11 +99,11 @@ mod request_handler {
             .counter(BytesCount::new(total_bytes))
             .bench_local(move || {
                 for (request_bytes, addr) in request_pool.iter_mut().zip(addrs.iter()) {
-                    handler.collect_request(request_bytes, *addr);
+                    pipeline.collect(request_bytes, *addr);
                 }
 
                 let mut byte_count = 0;
-                handler.generate_responses(|_addr, bytes| {
+                pipeline.responder.process_responses(|_addr, bytes| {
                     byte_count += bytes.len();
                 });
 

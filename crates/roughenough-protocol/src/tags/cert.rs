@@ -2,11 +2,11 @@ use std::fmt::Debug;
 
 use crate::cursor::ParseCursor;
 use crate::error::Error;
-use crate::error::Error::{MissingTag, WrongTagSize};
+use crate::error::Error::MissingTag;
 use crate::header::{Header, Header2, RawHeader};
 use crate::tag::Tag;
 use crate::tags::{Delegation, Signature};
-use crate::wire::{FromWire, FromWireN, ToWire};
+use crate::wire::{FromWire, ToWire};
 
 #[repr(C)]
 #[derive(PartialEq, Eq, Clone)]
@@ -65,13 +65,6 @@ impl Certificate {
 }
 
 impl FromWire for Certificate {
-    fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
-        let msg_len = cursor.remaining();
-        Self::from_wire_n(cursor, msg_len)
-    }
-}
-
-impl FromWireN for Certificate {
     fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error> {
         const RAW_SIG: u32 = Tag::SIG as u32;
         const RAW_DELE: u32 = Tag::DELE as u32;
@@ -85,12 +78,7 @@ impl FromWireN for Certificate {
             let value_start = cursor.position();
 
             match raw_tag {
-                RAW_SIG => {
-                    if value_len != size_of::<Signature>() {
-                        return Err(WrongTagSize(size_of::<Signature>(), value_len));
-                    }
-                    signature = Some(Signature::from_wire(cursor)?);
-                }
+                RAW_SIG => signature = Some(Signature::from_wire_n(cursor, value_len)?),
                 RAW_DELE => delegation = Some(Delegation::from_wire_n(cursor, value_len)?),
                 // RFC 7: clients MUST properly ignore undefined tags
                 _ => {}
@@ -168,5 +156,19 @@ mod tests {
 
         assert_eq!(cert1, cert2);
         assert_eq!(cursor.remaining(), 0);
+    }
+
+    #[test]
+    fn wrong_sig_size_is_rejected() {
+        let mut bytes = Certificate::default().as_bytes().unwrap();
+        // offsets[0] is DELE's start (byte 4 of the message); shrink it below
+        // the 64 bytes SIG requires
+        bytes[4..8].copy_from_slice(&60u32.to_le_bytes());
+
+        let mut cursor = ParseCursor::new(&mut bytes);
+        assert!(matches!(
+            Certificate::from_wire(&mut cursor),
+            Err(Error::WrongTagSize(64, 60))
+        ));
     }
 }

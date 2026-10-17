@@ -1,25 +1,24 @@
 //! Representing lists of Roughtime servers
 
-use roughenough_common::crypto::secure_shuffle;
-use serde::{Deserialize, Serialize};
+use roughenough_common::crypto::random_bytes;
+use serde::Deserialize;
 
 /// Represents a Roughtime server list
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ServerList {
     /// List of Roughtime servers
     servers: Vec<Server>,
 
     /// Optional list of URLs where updated versions of the list may be acquired
-    #[serde(skip_serializing_if = "Option::is_none")]
     sources: Option<Vec<String>>,
 
     /// Optional URL where malfeasance reports can be sent
-    #[serde(rename = "reports", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "reports")]
     reporting_url: Option<String>,
 }
 
 /// Represents a single Roughtime server
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Server {
     /// Server name suitable for display to a user
     name: String,
@@ -42,7 +41,7 @@ pub struct Server {
 /// The `version` of a server list entry. RFC 8.3 specifies an integer. Lists
 /// written before RFC 10049 use strings such as "IETF-Roughtime"; those are
 /// accepted and kept as-is. Neither form is interpreted.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
 pub enum ServerVersion {
     Integer(u32),
@@ -50,17 +49,24 @@ pub enum ServerVersion {
 }
 
 /// Represents a network address for a Roughtime server
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Address {
     /// Transport protocol ("tcp" or "udp")
     protocol: Protocol,
 
-    /// Host and port in the format "host:port"
-    address: String,
+    /// Parsed from a "host:port" string
+    address: HostPort,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(try_from = "String")]
+struct HostPort {
+    host: String,
+    port: u16,
 }
 
 /// Transport protocol
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Protocol {
     Tcp,
@@ -90,23 +96,7 @@ pub enum Error {
 }
 
 impl ServerList {
-    /// Creates a new server list
-    pub fn new(
-        servers: Vec<Server>,
-        sources: Option<Vec<String>>,
-        reports: Option<String>,
-    ) -> Result<Self, Error> {
-        let server_list = Self {
-            servers,
-            sources,
-            reporting_url: reports,
-        };
-        server_list.validate()?;
-        Ok(server_list)
-    }
-
-    /// Validates the server list according to RFC requirements
-    pub fn validate(&self) -> Result<(), Error> {
+    fn validate(&self) -> Result<(), Error> {
         if self.servers.is_empty() {
             return Err(Error::EmptyField {
                 field: "server list".to_string(),
@@ -145,11 +135,6 @@ impl ServerList {
         Ok(server_list)
     }
 
-    /// Serializes the server list to JSON
-    pub fn to_json(&self) -> Result<String, Error> {
-        serde_json::to_string_pretty(self).map_err(Into::into)
-    }
-
     /// Loads a server list from a file
     pub fn from_file(file_name: &str) -> Result<Self, Error> {
         let json = std::fs::read_to_string(file_name)?;
@@ -157,7 +142,7 @@ impl ServerList {
     }
 
     /// Randomly selects n servers from the list
-    pub fn choose_random(&self, n: usize) -> Result<Vec<Server>, Error> {
+    pub fn choose_random(&self, n: usize) -> Result<Vec<&Server>, Error> {
         if n > self.servers.len() {
             return Err(Error::ConfigError(format!(
                 "requested {} servers but only {} available",
@@ -166,9 +151,10 @@ impl ServerList {
             )));
         }
 
-        let mut servers = self.servers.clone();
+        let mut servers: Vec<&Server> = self.servers.iter().collect();
         secure_shuffle(&mut servers);
-        Ok(servers[..n].to_vec())
+        servers.truncate(n);
+        Ok(servers)
     }
 
     pub fn servers(&self) -> &[Server] {
@@ -179,34 +165,10 @@ impl ServerList {
     pub fn reporting_url(&self) -> Option<&str> {
         self.reporting_url.as_deref()
     }
-
-    /// Adds a server to the list
-    pub fn add_server(&mut self, server: Server) {
-        self.servers.push(server);
-    }
 }
 
 impl Server {
-    pub fn new(
-        name: String,
-        version: ServerVersion,
-        public_key_type: String,
-        public_key: String,
-        addresses: Vec<Address>,
-    ) -> Result<Self, Error> {
-        let server = Self {
-            name,
-            version,
-            public_key_type,
-            public_key,
-            addresses,
-        };
-        server.validate()?;
-        Ok(server)
-    }
-
-    /// Validates the server entry
-    pub fn validate(&self) -> Result<(), Error> {
+    fn validate(&self) -> Result<(), Error> {
         if self.name.is_empty() {
             return Err(Error::EmptyField {
                 field: "name".to_string(),
@@ -237,19 +199,7 @@ impl Server {
             });
         }
 
-        for address in &self.addresses {
-            address.validate()?;
-        }
-
         Ok(())
-    }
-
-    pub fn addresses(&self) -> &[Address] {
-        &self.addresses
-    }
-
-    pub fn first_address(&self) -> &Address {
-        &self.addresses[0]
     }
 
     pub fn first_udp_address(&self) -> Option<&Address> {
@@ -260,59 +210,63 @@ impl Server {
         &self.name
     }
 
-    pub fn version(&self) -> &ServerVersion {
-        &self.version
-    }
-
-    pub fn public_key_type(&self) -> &str {
-        &self.public_key_type
-    }
-
     pub fn public_key(&self) -> &str {
         &self.public_key
     }
 }
 
 impl Address {
-    pub fn new(protocol: Protocol, address: String) -> Result<Self, Error> {
-        let addr = Self { protocol, address };
-        addr.validate()?;
-        Ok(addr)
-    }
-
-    pub fn validate(&self) -> Result<(), Error> {
-        // IP literals -- including bracketed IPv6 like "[2001:db8::1]:2003" --
-        // parse as socket addresses.
-        if self.address.parse::<std::net::SocketAddr>().is_ok() {
-            return Ok(());
-        }
-
-        match self.address.rsplit_once(':') {
-            Some((host, port)) if !host.is_empty() && port.parse::<u16>().is_ok() => Ok(()),
-            _ => Err(Error::InvalidAddress {
-                address: self.address.clone(),
-            }),
-        }
-    }
-
     pub fn host(&self) -> &str {
-        // Strip brackets from IPv6 literals
-        match self.address.rsplit_once(':') {
-            Some((host, _port)) => host.trim_start_matches('[').trim_end_matches(']'),
-            None => &self.address,
-        }
+        &self.address.host
     }
 
     pub fn port(&self) -> u16 {
-        self.address
-            .rsplit_once(':')
-            .and_then(|(_host, port)| port.parse().ok())
-            .expect("was validated at construction")
+        self.address.port
     }
+}
 
-    /// The transport protocol of this address
-    pub fn protocol(&self) -> &Protocol {
-        &self.protocol
+impl TryFrom<String> for HostPort {
+    type Error = Error;
+
+    // Splitting on the last ':' also accepts an unbracketed IPv6 literal followed by a port.
+    // Brackets are stripped rather than parsing a SocketAddr so an IPv6 zone ID ("%eth0")
+    // reaches the resolver intact.
+    fn try_from(address: String) -> Result<Self, Error> {
+        let parsed = address.rsplit_once(':').and_then(|(host, port)| {
+            let host = host
+                .strip_prefix('[')
+                .and_then(|h| h.strip_suffix(']'))
+                .unwrap_or(host);
+            match (host.is_empty(), port.parse()) {
+                (false, Ok(port)) => Some(HostPort {
+                    host: host.to_string(),
+                    port,
+                }),
+                _ => None,
+            }
+        });
+        parsed.ok_or(Error::InvalidAddress { address })
+    }
+}
+
+/// Shuffle a slice in place (Fisher-Yates) using cryptographically secure randomness
+fn secure_shuffle<T>(slice: &mut [T]) {
+    for i in (1..slice.len()).rev() {
+        let j = random_index(i + 1);
+        slice.swap(i, j);
+    }
+}
+
+/// Uniform random index in `[0, bound)`; rejection sampling avoids modulo bias
+fn random_index(bound: usize) -> usize {
+    debug_assert!(bound > 0 && bound <= u32::MAX as usize);
+    let bound = bound as u32;
+    let zone = u32::MAX - (u32::MAX % bound);
+    loop {
+        let r = u32::from_le_bytes(random_bytes::<4>());
+        if r < zone {
+            return (r % bound) as usize;
+        }
     }
 }
 
@@ -320,39 +274,77 @@ impl Address {
 mod tests {
     use super::*;
 
+    /// JSON for a one-server list whose `addresses` array holds `addresses`
+    fn list_with_addresses(addresses: &str) -> String {
+        format!(
+            r#"{{
+                "servers": [{{
+                    "name": "Server",
+                    "version": 1,
+                    "publicKeyType": "ed25519",
+                    "publicKey": "key==",
+                    "addresses": [{addresses}]
+                }}]
+            }}"#
+        )
+    }
+
+    fn udp(address: &str) -> String {
+        format!(r#"{{"protocol": "udp", "address": "{address}"}}"#)
+    }
+
+    fn parse_address(address: &str) -> Result<Address, Error> {
+        ServerList::from_json(&list_with_addresses(&udp(address)))
+            .map(|list| list.servers[0].addresses[0].clone())
+    }
+
+    fn assert_invalid_address(result: Result<impl std::fmt::Debug, Error>, address: &str) {
+        match result {
+            Err(Error::InvalidJson(e)) => {
+                let msg = e.to_string();
+                assert!(msg.contains("Invalid address"), "{msg}");
+                assert!(msg.contains(&format!("'{address}'")), "{msg}");
+            }
+            other => panic!("expected an invalid address error, got {other:?}"),
+        }
+    }
+
     #[test]
     fn test_server_list_creation() {
-        let address =
-            Address::new(Protocol::Udp, "roughtime.example.com:2002".to_string()).unwrap();
-        let server = Server::new(
-            "Example Server".to_string(),
-            ServerVersion::Integer(1),
-            "ed25519".to_string(),
-            "base64encodedkey==".to_string(),
-            vec![address],
-        )
-        .unwrap();
+        let json = r#"{
+            "servers": [
+                {
+                    "name": "Example Server",
+                    "version": 1,
+                    "publicKeyType": "ed25519",
+                    "publicKey": "base64encodedkey==",
+                    "addresses": [{"protocol": "udp", "address": "roughtime.example.com:5319"}]
+                },
+                {
+                    "name": "Other Server",
+                    "version": 1,
+                    "publicKeyType": "ed25519",
+                    "publicKey": "anotherkeyhere==",
+                    "addresses": [{"protocol": "tcp", "address": "other.example.com:5320"}]
+                }
+            ],
+            "reports": "https://example.com/reports"
+        }"#;
 
-        let mut server_list = ServerList::new(vec![server], None, None).unwrap();
-        assert_eq!(server_list.servers.len(), 1);
-
-        let address2 = Address::new(Protocol::Tcp, "other.example.com:2003".to_string()).unwrap();
-        let server2 = Server::new(
-            "Other Server".to_string(),
-            ServerVersion::Integer(1),
-            "ed25519".to_string(),
-            "anotherkeyhere==".to_string(),
-            vec![address2],
-        )
-        .unwrap();
-
-        server_list.add_server(server2);
-        assert_eq!(server_list.servers.len(), 2);
+        let server_list = ServerList::from_json(json).unwrap();
+        assert_eq!(server_list.servers().len(), 2);
+        assert_eq!(server_list.servers()[0].name(), "Example Server");
+        assert_eq!(server_list.servers()[0].public_key(), "base64encodedkey==");
+        assert_eq!(server_list.servers()[1].public_key_type, "ed25519");
+        assert_eq!(
+            server_list.reporting_url(),
+            Some("https://example.com/reports")
+        );
     }
 
     #[test]
     fn test_empty_server_list_fails() {
-        match ServerList::new(vec![], None, None) {
+        match ServerList::from_json(r#"{"servers": []}"#) {
             Err(Error::EmptyField { field }) => assert_eq!(field, "server list"),
             Err(e) => panic!("expected Error::EmptyField, got {e:?}"),
             Ok(_) => panic!("expected validation to fail"),
@@ -361,112 +353,75 @@ mod tests {
 
     #[test]
     fn test_address_parsing() {
-        let address = Address::new(Protocol::Udp, "example.com:2002".to_string()).unwrap();
+        let address = parse_address("example.com:5319").unwrap();
         assert_eq!(address.host(), "example.com");
-        assert_eq!(address.port(), 2002);
+        assert_eq!(address.port(), 5319);
     }
 
     #[test]
     fn test_invalid_addresses() {
-        // Missing port
-        match Address::new(Protocol::Udp, "invalid_address".to_string()) {
-            Err(Error::InvalidAddress { address }) => assert_eq!(address, "invalid_address"),
-            Err(e) => panic!("expected Error::InvalidAddress, got {e:?}"),
-            Ok(_) => panic!("expected validation to fail"),
-        }
-
-        // Invalid port
-        match Address::new(Protocol::Udp, "example.com:not_a_port".to_string()) {
-            Err(Error::InvalidAddress { address }) => assert_eq!(address, "example.com:not_a_port"),
-            Err(e) => panic!("expected Error::InvalidAddress, got {e:?}"),
-            Ok(_) => panic!("expected validation to fail"),
-        }
+        assert_invalid_address(parse_address("invalid_address"), "invalid_address");
+        assert_invalid_address(
+            parse_address("example.com:not_a_port"),
+            "example.com:not_a_port",
+        );
+        assert_invalid_address(parse_address("example.com:65536"), "example.com:65536");
+        assert_invalid_address(parse_address(":5319"), ":5319");
+        assert_invalid_address(parse_address("[]:5319"), "[]:5319");
     }
 
     #[test]
     fn test_ipv6_address_parses() {
         // A bracketed IPv6 literal must not poison the whole list
-        let json = r#"{
-            "servers": [{
-                "name": "V6 Server",
-                "version": 1,
-                "publicKeyType": "ed25519",
-                "publicKey": "key==",
-                "addresses": [{"protocol": "udp", "address": "[2001:db8::1]:2003"}]
-            }]
-        }"#;
-
-        let server_list = ServerList::from_json(json).unwrap();
-        let address = server_list.servers()[0].first_address();
+        let address = parse_address("[2001:db8::1]:5319").unwrap();
         assert_eq!(address.host(), "2001:db8::1");
-        assert_eq!(address.port(), 2003);
+        assert_eq!(address.port(), 5319);
+    }
+
+    #[test]
+    fn unbracketed_ipv6_splits_on_last_colon() {
+        let address = parse_address("2001:db8::1:5319").unwrap();
+        assert_eq!(address.host(), "2001:db8::1");
+        assert_eq!(address.port(), 5319);
+    }
+
+    #[test]
+    fn ipv6_zone_id_is_kept() {
+        let address = parse_address("[fe80::1%eth0]:5319").unwrap();
+        assert_eq!(address.host(), "fe80::1%eth0");
+        assert_eq!(address.port(), 5319);
     }
 
     #[test]
     fn test_ipv4_and_hostname_addresses_still_parse() {
-        let v4 = Address::new(Protocol::Udp, "192.0.2.7:2003".to_string()).unwrap();
+        let v4 = parse_address("192.0.2.7:5319").unwrap();
         assert_eq!(v4.host(), "192.0.2.7");
-        assert_eq!(v4.port(), 2003);
+        assert_eq!(v4.port(), 5319);
 
-        let hostname =
-            Address::new(Protocol::Udp, "roughtime.example.com:2002".to_string()).unwrap();
+        let hostname = parse_address("roughtime.example.com:5319").unwrap();
         assert_eq!(hostname.host(), "roughtime.example.com");
-        assert_eq!(hostname.port(), 2002);
+        assert_eq!(hostname.port(), 5319);
     }
 
     #[test]
     fn test_tcp_only_server_has_no_udp_address() {
-        let tcp = Address::new(Protocol::Tcp, "example.com:2003".to_string()).unwrap();
-        let server = Server::new(
-            "TCP Only".to_string(),
-            ServerVersion::Integer(1),
-            "ed25519".to_string(),
-            "key==".to_string(),
-            vec![tcp],
-        )
-        .unwrap();
+        let json = list_with_addresses(r#"{"protocol": "tcp", "address": "example.com:5319"}"#);
+        let server_list = ServerList::from_json(&json).unwrap();
 
-        assert!(server.first_udp_address().is_none());
+        assert!(server_list.servers()[0].first_udp_address().is_none());
     }
 
     #[test]
     fn test_mixed_addresses_select_udp() {
-        let tcp = Address::new(Protocol::Tcp, "example.com:2003".to_string()).unwrap();
-        let udp = Address::new(Protocol::Udp, "example.com:2004".to_string()).unwrap();
-        let server = Server::new(
-            "Mixed".to_string(),
-            ServerVersion::Integer(1),
-            "ed25519".to_string(),
-            "key==".to_string(),
-            vec![tcp, udp],
-        )
-        .unwrap();
+        let addresses = format!(
+            r#"{{"protocol": "tcp", "address": "example.com:5319"}}, {}"#,
+            udp("example.com:5320")
+        );
+        let server_list = ServerList::from_json(&list_with_addresses(&addresses)).unwrap();
 
-        let selected = server.first_udp_address().unwrap();
-        assert_eq!(*selected.protocol(), Protocol::Udp);
-        assert_eq!(selected.port(), 2004);
-    }
-
-    #[test]
-    fn test_json_serialization_roundtrip() {
-        let address =
-            Address::new(Protocol::Udp, "roughtime.example.com:2002".to_string()).unwrap();
-        let server = Server::new(
-            "Example Server".to_string(),
-            ServerVersion::Integer(1),
-            "ed25519".to_string(),
-            "base64encodedkey==".to_string(),
-            vec![address],
-        )
-        .unwrap();
-        let servers = vec![server];
-        let server_list = ServerList::new(servers, None, None).unwrap();
-
-        let json = server_list.to_json().unwrap();
-        let parsed: ServerList = ServerList::from_json(&json).unwrap();
-
-        assert_eq!(parsed.servers.len(), 1);
-        assert_eq!(parsed.servers[0].name, "Example Server");
+        let selected = server_list.servers()[0].first_udp_address().unwrap();
+        assert_eq!(selected.protocol, Protocol::Udp);
+        assert_eq!(selected.port(), 5320);
     }
 
     #[test]
@@ -485,24 +440,17 @@ mod tests {
                     "version": "IETF-Roughtime",
                     "publicKeyType": "ed25519",
                     "publicKey": "key==",
-                    "addresses": [{"protocol": "udp", "address": "example.com:2002"}]
+                    "addresses": [{"protocol": "udp", "address": "example.com:5320"}]
                 }
             ]
         }"#;
 
         let server_list = ServerList::from_json(json).unwrap();
+        assert_eq!(server_list.servers[0].version, ServerVersion::Integer(1));
         assert_eq!(
-            server_list.servers()[0].version(),
-            &ServerVersion::Integer(1)
+            server_list.servers[1].version,
+            ServerVersion::Legacy("IETF-Roughtime".to_string())
         );
-        assert_eq!(
-            server_list.servers()[1].version(),
-            &ServerVersion::Legacy("IETF-Roughtime".to_string())
-        );
-
-        // RFC 8.3: written lists carry an integer
-        let json = server_list.to_json().unwrap();
-        assert!(json.contains(r#""version": 1"#) || json.contains(r#""version":1"#));
     }
 
     #[test]
@@ -547,7 +495,7 @@ mod tests {
                 "version": 1,
                 "publicKeyType": "ed25519",
                 "publicKey": "key==",
-                "addresses": [{"protocol": "udp", "address": "example.com:2002"}]
+                "addresses": [{"protocol": "udp", "address": "example.com:5319"}]
             }]
         }"#;
         match ServerList::from_json(json) {
@@ -557,20 +505,10 @@ mod tests {
         }
 
         // Invalid address format
-        let json = r#"{
-            "servers": [{
-                "name": "Server",
-                "version": 1,
-                "publicKeyType": "ed25519",
-                "publicKey": "key==",
-                "addresses": [{"protocol": "udp", "address": "no_port"}]
-            }]
-        }"#;
-        match ServerList::from_json(json) {
-            Err(Error::InvalidAddress { address }) => assert_eq!(address, "no_port"),
-            Err(e) => panic!("expected Error::InvalidAddress, got {e:?}"),
-            Ok(_) => panic!("expected validation to fail"),
-        }
+        assert_invalid_address(
+            ServerList::from_json(&list_with_addresses(&udp("no_port"))),
+            "no_port",
+        );
 
         // Non-HTTPS source URL
         let json = r#"{
@@ -579,7 +517,7 @@ mod tests {
                 "version": 1,
                 "publicKeyType": "ed25519",
                 "publicKey": "key==",
-                "addresses": [{"protocol": "udp", "address": "example.com:2002"}]
+                "addresses": [{"protocol": "udp", "address": "example.com:5319"}]
             }],
             "sources": ["http://example.com"]
         }"#;
@@ -593,26 +531,23 @@ mod tests {
     #[test]
     fn test_server_validation() {
         // Empty name
-        match Server::new(
-            "".to_string(),
-            ServerVersion::Integer(1),
-            "ed25519".to_string(),
-            "key==".to_string(),
-            vec![Address::new(Protocol::Udp, "example.com:2002".to_string()).unwrap()],
-        ) {
+        let json = r#"{
+            "servers": [{
+                "name": "",
+                "version": 1,
+                "publicKeyType": "ed25519",
+                "publicKey": "key==",
+                "addresses": [{"protocol": "udp", "address": "example.com:5319"}]
+            }]
+        }"#;
+        match ServerList::from_json(json) {
             Err(Error::EmptyField { field }) => assert_eq!(field, "name"),
             Err(e) => panic!("expected Error::EmptyField, got {e:?}"),
             Ok(_) => panic!("expected validation to fail"),
         }
 
         // Empty addresses
-        match Server::new(
-            "Server".to_string(),
-            ServerVersion::Integer(1),
-            "ed25519".to_string(),
-            "key==".to_string(),
-            vec![],
-        ) {
+        match ServerList::from_json(&list_with_addresses("")) {
             Err(Error::EmptyField { field }) => assert!(field.contains("addresses")),
             Err(e) => panic!("expected Error::EmptyField, got {e:?}"),
             Ok(_) => panic!("expected validation to fail"),
@@ -621,33 +556,66 @@ mod tests {
 
     #[test]
     fn test_sources_validation() {
-        let address = Address::new(Protocol::Udp, "example.com:2002".to_string()).unwrap();
-        let server = Server::new(
-            "Server".to_string(),
-            ServerVersion::Integer(1),
-            "ed25519".to_string(),
-            "key==".to_string(),
-            vec![address],
-        )
-        .unwrap();
+        let with_source = |url: &str| {
+            format!(
+                r#"{{
+                    "servers": [{{
+                        "name": "Server",
+                        "version": 1,
+                        "publicKeyType": "ed25519",
+                        "publicKey": "key==",
+                        "addresses": [{{"protocol": "udp", "address": "example.com:5319"}}]
+                    }}],
+                    "sources": ["{url}"]
+                }}"#
+            )
+        };
 
-        // Valid HTTPS sources
-        let result = ServerList::new(
-            vec![server.clone()],
-            Some(vec!["https://example.com/list.json".to_string()]),
-            None,
+        let server_list =
+            ServerList::from_json(&with_source("https://example.com/list.json")).unwrap();
+        assert_eq!(
+            server_list.sources,
+            Some(vec!["https://example.com/list.json".to_string()])
         );
-        assert!(result.is_ok());
 
-        // Invalid HTTP source
-        match ServerList::new(
-            vec![server.clone()],
-            Some(vec!["http://example.com/list.json".to_string()]),
-            None,
-        ) {
+        match ServerList::from_json(&with_source("http://example.com/list.json")) {
             Err(Error::InvalidUrl { reason }) => assert!(reason.contains("HTTPS scheme")),
             Err(e) => panic!("expected Error::InvalidUrl, got {e:?}"),
             Ok(_) => panic!("expected validation to fail"),
+        }
+    }
+
+    #[test]
+    fn choose_random_returns_n_distinct_servers() {
+        let json = include_str!("../testdata/serverlist-cloudflare.json");
+        let server_list = ServerList::from_json(json).unwrap();
+
+        for n in 0..=server_list.servers().len() {
+            let chosen = server_list.choose_random(n).unwrap();
+            assert_eq!(chosen.len(), n);
+
+            let mut names: Vec<&str> = chosen.iter().map(|s| s.name()).collect();
+            names.sort_unstable();
+            names.dedup();
+            assert_eq!(names.len(), n, "duplicate server chosen");
+        }
+
+        assert!(matches!(
+            server_list.choose_random(server_list.servers().len() + 1),
+            Err(Error::ConfigError(_))
+        ));
+    }
+
+    #[test]
+    fn secure_shuffle_is_a_permutation() {
+        for len in [0, 1, 2, 3, 17, 100] {
+            let original: Vec<usize> = (0..len).collect();
+            for _ in 0..10 {
+                let mut shuffled = original.clone();
+                secure_shuffle(&mut shuffled);
+                shuffled.sort_unstable();
+                assert_eq!(shuffled, original);
+            }
         }
     }
 }

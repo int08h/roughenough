@@ -7,7 +7,7 @@ use crate::header::{Header, Header7, RawHeader};
 use crate::tag::Tag;
 use crate::tags::srep::SignedResponse;
 use crate::tags::{Certificate, MerklePath, MessageType, Nonce, Signature};
-use crate::wire::{FromFrame, FromWire, FromWireN, ToFrame, ToWire};
+use crate::wire::{FromFrame, FromWire, ToFrame, ToWire};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -23,10 +23,6 @@ pub struct Response {
 }
 
 impl Response {
-    /// All responses will be *at least* this many bytes, and could be longer as the PATH and SREP
-    /// values are variable-length.
-    pub const MINIMUM_SIZE: usize = 404;
-
     /// RFC 5.2: A response MUST contain the tags SIG, NONC, TYPE, PATH, SREP, CERT,
     /// and INDX.
     const TAGS: [Tag; 7] = [
@@ -136,7 +132,7 @@ impl Default for Response {
 }
 
 impl FromWire for Response {
-    fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
+    fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error> {
         const RAW_SIG: u32 = Tag::SIG as u32;
         const RAW_NONC: u32 = Tag::NONC as u32;
         const RAW_TYPE: u32 = Tag::TYPE as u32;
@@ -145,7 +141,7 @@ impl FromWire for Response {
         const RAW_CERT: u32 = Tag::CERT as u32;
         const RAW_INDX: u32 = Tag::INDX as u32;
 
-        let header = RawHeader::from_wire(cursor)?;
+        let header = RawHeader::from_wire_n(cursor, n)?;
 
         let mut signature: Option<Signature> = None;
         let mut nonce: Option<Nonce> = None;
@@ -249,10 +245,8 @@ mod tests {
 
     #[test]
     fn version_one_response_is_parsed() {
-        let mut raw = include_bytes!("../testdata/rfc10049-response.104172a3").to_vec();
-
-        let mut cursor = ParseCursor::new(&mut raw);
-        let response = Response::from_frame(&mut cursor).unwrap();
+        let raw = include_bytes!("../testdata/rfc10049-response.104172a3");
+        let response = Response::from_frame_bytes(raw).unwrap();
 
         assert_eq!(response.msg_type(), MessageType::Response);
         assert_eq!(response.indx(), 0);
@@ -309,10 +303,8 @@ mod tests {
 
     #[test]
     fn from_wire_on_known_bytes() {
-        let mut raw = include_bytes!("../testdata/rfc-response.path8.index2.4c16c619").to_vec();
-
-        let mut cursor = ParseCursor::new(&mut raw);
-        let response = Response::from_frame(&mut cursor).unwrap();
+        let raw = include_bytes!("../testdata/rfc-response.path8.index2.4c16c619");
+        let response = Response::from_frame_bytes(raw).unwrap();
 
         // Response {
         //     header: Header7 {

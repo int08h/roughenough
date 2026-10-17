@@ -1,25 +1,14 @@
-use roughenough_common::encoding::try_decode;
 use roughenough_protocol::util::as_hex;
 use tracing::debug;
-use zeroize::Zeroizing;
 
 use crate::seed::Seed;
-use crate::storage::StorageError;
+use crate::storage::{Protection, StorageError, decode_seed};
 
 // projects/630192955771/secrets/roughenough-seed-test-1/versions/1
 // https://cloud.google.com/docs/authentication/application-default-credentials
 pub struct GcpSecretManager {}
 
 impl GcpSecretManager {
-    const BACKEND: &'static str = "GCP Secret Manager";
-
-    fn error(detail: impl Into<String>) -> StorageError {
-        StorageError::CloudBackend {
-            backend: Self::BACKEND,
-            detail: detail.into(),
-        }
-    }
-
     pub async fn get_seed(resource: &str) -> Result<Seed, StorageError> {
         debug!(
             "Attempting to load seed from GCP Secret Manager '{}'",
@@ -30,18 +19,31 @@ impl GcpSecretManager {
             .with_tracing()
             .build()
             .await
-            .map_err(|e| Self::error(format!("failed to create client: {e}")))?;
+            .map_err(|e| {
+                StorageError::cloud(
+                    Protection::GcpSecretManager.name(),
+                    format!("failed to create client: {e}"),
+                )
+            })?;
 
         let result = client
             .access_secret_version()
             .set_name(resource)
             .send()
             .await
-            .map_err(|e| Self::error(format!("access_secret_version failed: {e}")))?;
+            .map_err(|e| {
+                StorageError::cloud(
+                    Protection::GcpSecretManager.name(),
+                    format!("access_secret_version failed: {e}"),
+                )
+            })?;
 
-        let payload = result
-            .payload
-            .ok_or_else(|| Self::error("secret value is missing"))?;
+        let payload = result.payload.ok_or_else(|| {
+            StorageError::cloud(
+                Protection::GcpSecretManager.name(),
+                "secret value is missing",
+            )
+        })?;
 
         debug!(
             "Read a {}-byte value from GCP Secret Manager",
@@ -61,7 +63,12 @@ impl GcpSecretManager {
             .with_tracing()
             .build()
             .await
-            .map_err(|e| Self::error(format!("failed to create client: {e}")))?;
+            .map_err(|e| {
+                StorageError::cloud(
+                    Protection::GcpSecretManager.name(),
+                    format!("failed to create client: {e}"),
+                )
+            })?;
 
         let seed_hex = as_hex(seed.expose());
         let mut payload = google_cloud_secretmanager_v1::model::SecretPayload::default();
@@ -76,7 +83,12 @@ impl GcpSecretManager {
             .set_payload(payload)
             .send()
             .await
-            .map_err(|e| Self::error(format!("add_secret_version failed: {e}")))?;
+            .map_err(|e| {
+                StorageError::cloud(
+                    Protection::GcpSecretManager.name(),
+                    format!("add_secret_version failed: {e}"),
+                )
+            })?;
 
         debug!("Successfully stored seed as version: {}", version.name);
         Ok(version.name)
@@ -95,17 +107,7 @@ fn decode_secret_payload(data: &[u8], data_crc32c: Option<i64>) -> Result<Seed, 
 
     let encoded_value = std::str::from_utf8(data)
         .map_err(|error| StorageError::InvalidSeed(format!("secret is not UTF-8: {error}")))?;
-    let value = Zeroizing::new(try_decode(encoded_value)?);
-    debug!("Decoded a {}-byte value", value.len());
-
-    if value.len() != 32 {
-        return Err(StorageError::InvalidSeed(format!(
-            "need 32 bytes, found: {}",
-            value.len()
-        )));
-    }
-
-    Ok(Seed::new(&value))
+    decode_seed(encoded_value)
 }
 
 /// projects/{project}/secrets/{secret}/versions/{version}

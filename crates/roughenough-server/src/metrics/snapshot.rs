@@ -1,9 +1,8 @@
 //! metrics output
 
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{self, Write};
 use std::path::Path;
-use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 use tracing::debug;
@@ -14,7 +13,8 @@ use crate::metrics::types::{NetworkMetrics, RequestMetrics, ResponseMetrics};
 /// Complete JSON metrics output structure
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MetricsSnapshot {
-    /// Timestamp when the metrics were generated
+    /// Unix time when the metrics were generated, from the server's clock so it
+    /// includes any `--fixed-offset` like the time the server serves
     pub timestamp: i64,
     /// Duration in seconds this metrics report covers
     pub duration_secs: f64,
@@ -39,12 +39,11 @@ pub struct AggregatedMetrics {
 impl MetricsSnapshot {
     /// Create a MetricsSnapshot with pre-calculated aggregated metrics
     pub fn new(
-        now: SystemTime,
+        timestamp: i64,
         duration_secs: f64,
         workers: Vec<WorkerMetrics>,
         totals: AggregatedMetrics,
     ) -> Self {
-        let timestamp = time_format::from_system_time(now).unwrap();
         Self {
             timestamp,
             duration_secs,
@@ -54,7 +53,7 @@ impl MetricsSnapshot {
     }
 
     /// Write metrics to a JSON file atomically
-    pub fn write_to_file(&self, metrics_path: &Path) -> Result<String, std::io::Error> {
+    pub fn write_to_file(&self, metrics_path: &Path) -> io::Result<()> {
         let filename =
             time_format::strftime_utc("roughenough-metrics-%Y%m%d-%H%M%S.json", self.timestamp)
                 .unwrap();
@@ -74,7 +73,7 @@ impl MetricsSnapshot {
             json_data.len(),
             file_path.display()
         );
-        Ok(filename)
+        Ok(())
     }
 }
 
@@ -95,10 +94,6 @@ pub fn calc_aggregated_metrics(
         total_responses += worker.response;
     }
 
-    let total_request_count = total_requests.num_ok_requests
-        + total_requests.num_bad_requests
-        + total_requests.num_runt_requests;
-
     let interval_responses = total_responses
         .num_responses
         .saturating_sub(prev_num_responses);
@@ -117,7 +112,7 @@ pub fn calc_aggregated_metrics(
         network: total_network,
         requests: total_requests,
         responses: total_responses,
-        total_requests: total_request_count,
+        total_requests: total_requests.total(),
     }
 }
 
@@ -155,10 +150,12 @@ pub fn validate_metrics_directory(path: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::time::SystemTime;
 
     use super::*;
+    use crate::MAX_BATCH_SIZE;
     use crate::metrics::aggregator::WorkerMetrics;
+
+    const NOW: i64 = 1_700_000_000;
 
     // Helper function to create test worker metrics
     fn create_test_worker_metrics(worker_id: usize, multiplier: u32) -> WorkerMetrics {
@@ -176,14 +173,13 @@ mod tests {
             response: ResponseMetrics {
                 num_responses: 48 * multiplier as usize,
                 num_bytes_sent: 512 * 1024 * multiplier as usize,
-                batch_sizes: [0; 64],
+                batch_sizes: [0; MAX_BATCH_SIZE],
             },
         }
     }
 
     #[test]
     fn snapshot_json_serialization() {
-        let now = SystemTime::now();
         let duration_secs = 60.0;
 
         // Create simpler test data
@@ -197,7 +193,7 @@ mod tests {
         let aggregated = calc_aggregated_metrics(duration_secs, &workers, 0, 0);
 
         // Create snapshot
-        let snapshot = MetricsSnapshot::new(now, duration_secs, workers.clone(), aggregated);
+        let snapshot = MetricsSnapshot::new(NOW, duration_secs, workers.clone(), aggregated);
 
         // Serialize to JSON
         let json_str = serde_json::to_string(&snapshot).expect("Failed to serialize");
@@ -236,12 +232,31 @@ mod tests {
     }
 
     #[test]
+    fn total_requests_counts_ignored_requests() {
+        let worker = WorkerMetrics {
+            worker_id: 0,
+            network: NetworkMetrics::default(),
+            request: RequestMetrics {
+                num_ok_requests: 1,
+                num_bad_requests: 1,
+                num_runt_requests: 1,
+                num_oversized_requests: 1,
+                num_srv_mismatch: 1,
+                num_no_common_version: 1,
+            },
+            response: ResponseMetrics::default(),
+        };
+
+        // an oversized request is also counted as ok or bad, so it adds nothing
+        let aggregated = calc_aggregated_metrics(60.0, &[worker], 0, 0);
+        assert_eq!(aggregated.total_requests, 5);
+    }
+
+    #[test]
     fn empty_workers_array() {
         // Test edge case: empty workers array
-        let now = SystemTime::now();
-
         let empty_aggregated = calc_aggregated_metrics(60.0, &[], 0, 0);
-        let empty_snapshot = MetricsSnapshot::new(now, 60.0, vec![], empty_aggregated);
+        let empty_snapshot = MetricsSnapshot::new(NOW, 60.0, vec![], empty_aggregated);
 
         let empty_json = serde_json::to_string(&empty_snapshot).expect("Failed to serialize empty");
         let empty_deserialized: MetricsSnapshot =

@@ -8,38 +8,12 @@ fixed_tag! {
     Nonce, SIZE, "NONC"
 }
 
-impl From<&[u8]> for Nonce {
-    fn from(bytes: &[u8]) -> Self {
-        let mut data = [0u8; SIZE];
-        data.copy_from_slice(bytes);
-        Nonce(data.into())
-    }
-}
-
-impl From<&Vec<u8>> for Nonce {
-    fn from(bytes: &Vec<u8>) -> Self {
-        Nonce::from(bytes.as_slice())
-    }
-}
-
-impl From<Nonce> for [u8; SIZE] {
-    fn from(nonce: Nonce) -> Self {
-        *nonce.0.as_bytes()
-    }
-}
-
-impl AsRef<[u8]> for Nonce {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_slice()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::cursor::ParseCursor;
     use crate::error::Error;
-    use crate::wire::{FromWire, FromWireN, ToWire};
+    use crate::wire::{FromWire, ToWire};
 
     #[test]
     fn round_trip() {
@@ -67,12 +41,28 @@ mod tests {
     fn short_buffer_is_rejected() {
         let mut bytes = vec![0u8; SIZE - 1];
         let mut cursor = ParseCursor::new(&mut bytes);
-        assert!(Nonce::from_wire(&mut cursor).is_err());
+        assert!(matches!(
+            Nonce::from_wire(&mut cursor),
+            Err(Error::WrongTagSize(SIZE, n)) if n == SIZE - 1
+        ));
     }
 
     #[test]
     fn debug_label() {
         let nonce = Nonce::from([0xabu8; SIZE]);
         assert!(format!("{nonce:?}").starts_with("NONC(abab"));
+    }
+
+    #[test]
+    fn try_from_slice_checks_length() {
+        assert!(matches!(
+            Nonce::try_from(&[0u8; 31][..]),
+            Err(Error::WrongTagSize(SIZE, 31))
+        ));
+        assert!(matches!(
+            Nonce::try_from(&[0u8; 33][..]),
+            Err(Error::WrongTagSize(SIZE, 33))
+        ));
+        assert!(Nonce::try_from(&[0u8; SIZE][..]).is_ok());
     }
 }

@@ -7,9 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod storage;
-pub mod validation;
 
-// Re-export types needed by tests and main
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -19,14 +17,13 @@ use axum::http::StatusCode;
 use roughenough_client::MalfeasanceReport;
 use serde::{Deserialize, Serialize};
 
-pub use crate::storage::{InMemoryStorage, ReportStorage, StorageError, StoredReport};
-pub use crate::validation::validate_report;
+pub use crate::storage::{InMemoryStorage, StorageError, StoredReport};
 
 pub const MAX_REPORT_BODY_BYTES: usize = 256 * 1024;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub storage: Arc<dyn ReportStorage>,
+    pub storage: Arc<InMemoryStorage>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -39,8 +36,9 @@ pub async fn handle_report(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(report): Json<MalfeasanceReport>,
 ) -> Result<(StatusCode, Json<CreationResponse>), (StatusCode, String)> {
-    // Validate
-    validate_report(&report).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    report
+        .verify()
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 
     // Store. A full store rejects the submission (503) instead of evicting,
     // so a report flood cannot displace stored evidence; per-source rate
@@ -48,12 +46,10 @@ pub async fn handle_report(
     let id = state
         .storage
         .store(report, addr.ip().to_string())
-        .await
         .map_err(|e| {
             let status = match e {
                 StorageError::Full => StatusCode::SERVICE_UNAVAILABLE,
                 StorageError::RateLimited => StatusCode::TOO_MANY_REQUESTS,
-                StorageError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
             };
             (status, e.to_string())
         })?;
@@ -68,8 +64,6 @@ pub async fn get_report(
     state
         .storage
         .get(&id)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .map(Json)
         .ok_or(StatusCode::NOT_FOUND)
 }

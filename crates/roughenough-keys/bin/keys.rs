@@ -1,18 +1,21 @@
 //! Key management operations
 
-use std::fs::{File, OpenOptions};
-use std::io::{Error, ErrorKind, Read, Write};
+use std::error::Error;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
 use clap::Parser;
-#[cfg(feature = "longterm-aws-kms")]
-use roughenough_keys::longterm::awskms;
+use roughenough_keys::logging;
 use roughenough_keys::longterm::envelope::SeedEnvelope;
-#[cfg(feature = "longterm-gcp-kms")]
-use roughenough_keys::longterm::gcpkms;
 use roughenough_keys::seed::Seed;
-use roughenough_keys::{runtime, storage};
-use roughenough_protocol::util::as_hex;
+use roughenough_keys::storage::{self, Protection, StorageError};
 use tracing::{debug, error};
+use zeroize::Zeroizing;
+
+const RESOURCE_HELP: &str = "Where to protect the seed: aws-kms://<key ARN>, gcp-kms://<key name>, \
+                             aws-secret://<secret ARN>, or gcp-secret://<secret name>";
 
 #[derive(clap::Parser, Debug)]
 #[command(version)]
@@ -23,390 +26,268 @@ struct Cli {
     #[clap(
         short = 'v',
         long,
+        global = true,
         action = clap::ArgAction::Count,
         help = "Output details; specify multiple times for more detail"
     )]
-    pub verbose: u8,
+    verbose: u8,
 }
 
 #[derive(clap::Subcommand, Debug)]
 enum Commands {
-    /// Generate a new random long-term identity seed
+    /// Generate a random long-term identity seed and protect it
     Generate {
+        #[clap(long, help = RESOURCE_HELP)]
+        resource: String,
         #[clap(
             short,
             long,
-            conflicts_with = "secret",
-            help = "Output file for generated long-term identity seed"
+            help = "Write the protected seed file to this new file instead of stdout"
         )]
-        output: Option<String>,
+        output: Option<PathBuf>,
         #[clap(
-            short,
             long,
-            conflicts_with = "secret",
-            help = "Key ID to envelope encrypt the seed with"
-        )]
-        key: Option<String>,
-        #[clap(
-            short,
-            long,
-            conflicts_with = "output",
-            help = "Secret ID to store generated seed in"
-        )]
-        secret: Option<String>,
-    },
-    /// Envelope encrypt a long-term identity seed
-    Seal {
-        #[clap(short, long, help = "File or data of long-term identity seed")]
-        input: String,
-        #[clap(short, long, help = "Output file for envelope encrypted seed")]
-        output: Option<String>,
-        #[clap(short, long, help = "Key ID to use for envelope encryption")]
-        key: String,
-    },
-    /// Decrypt an envelope encrypted long-term identity seed
-    Open {
-        #[clap(
-            short,
-            long,
-            help = "File or data of envelope encrypted long-term identity seed"
-        )]
-        input: String,
-        #[clap(
-            short,
-            long,
-            help = "Output file for decrypted long-term identity seed"
-        )]
-        output: Option<String>,
-        #[clap(
-            short,
-            long,
-            help = "Override the key ID in data blob and use this key ID for decryption"
-        )]
-        key: Option<String>,
-    },
-    /// Store a long-term identity seed in a Secret manager
-    Store {
-        #[clap(short, long, help = "File or data of long-term identity seed")]
-        input: String,
-        #[clap(short, long, help = "Output file for the storage envelope")]
-        output: Option<String>,
-        #[clap(short, long, help = "Secret ID to store seed in")]
-        secret: String,
-        #[clap(
-            short,
-            long,
-            default_value_t = false,
-            help = "Output pretty-printed JSON instead of the single-line seed-file form"
+            help = "Print pretty JSON instead of the one-line seed file form"
         )]
         json: bool,
     },
-    /// Retrieve a long-term identity seed from a Secret manager
-    Get {
+    /// Protect the long-term identity seed in an existing seed file
+    Protect {
         #[clap(
             short,
             long,
-            help = "File or data of previously store'ed long-term identity seed"
+            help = "Seed file to protect, in any form the server's --seed-file accepts"
         )]
-        input: String,
+        input: PathBuf,
+        #[clap(long, help = RESOURCE_HELP)]
+        resource: String,
         #[clap(
             short,
             long,
-            help = "Output file for decrypted long-term identity seed"
+            help = "Write the protected seed file to this new file instead of stdout"
         )]
-        output: Option<String>,
+        output: Option<PathBuf>,
+        #[clap(
+            long,
+            help = "Print pretty JSON instead of the one-line seed file form"
+        )]
+        json: bool,
+    },
+    /// Recover the plain long-term identity seed from a protected seed file or JSON envelope
+    Recover {
+        #[clap(short, long, help = "Protected seed file or JSON envelope")]
+        input: PathBuf,
+        #[clap(
+            short,
+            long,
+            help = "Decrypt with this key id instead of the envelope's; an id without a scheme \
+                    prefix keeps the envelope's scheme"
+        )]
+        key: Option<String>,
+        #[clap(
+            short,
+            long,
+            help = "Write the seed to this new file instead of stdout"
+        )]
+        output: Option<PathBuf>,
     },
 }
 
-type OutFile = Box<dyn Write>;
-type InFile = Box<dyn Read>;
+impl Commands {
+    fn output(&self) -> Option<&Path> {
+        match self {
+            Commands::Generate { output, .. }
+            | Commands::Protect { output, .. }
+            | Commands::Recover { output, .. } => output.as_deref(),
+        }
+    }
+}
 
-pub fn main() {
+fn main() -> ExitCode {
     let cli = Cli::parse();
-    enable_logging(&cli);
+    enable_logging(cli.verbose);
 
-    match cli.command {
-        Commands::Generate {
-            output,
-            key,
-            secret,
-        } => {
-            let output = outfile_from_arg(output).unwrap();
-            runtime::block_on(handle_generate(output, key, secret));
+    match run(cli.command) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            error!("{e}");
+            ExitCode::FAILURE
         }
+    }
+}
 
-        Commands::Seal { input, output, key } => {
-            let input = infile_from_arg(Some(input)).unwrap();
-            let output = outfile_from_arg(output).unwrap();
-            runtime::block_on(handle_seal(input, output, key));
-        }
+fn run(command: Commands) -> Result<(), Box<dyn Error>> {
+    // Created before any cloud call, so an existing file fails fast instead of after a
+    // secret manager has already stored a new seed
+    let output_path = command.output().map(Path::to_path_buf);
+    let mut output = outfile_from_arg(output_path.as_deref())
+        .map_err(|e| with_path(output_path.as_deref(), e))?;
 
-        Commands::Open { input, output, key } => {
-            let input = infile_from_arg(Some(input)).unwrap();
-            let output = outfile_from_arg(output).unwrap();
-            runtime::block_on(handle_open(input, output, key));
-        }
-
-        Commands::Store {
+    let result = match command {
+        Commands::Generate { resource, json, .. } => generate(&resource, json),
+        Commands::Protect {
             input,
-            output,
-            secret,
+            resource,
             json,
-        } => {
-            let input = infile_from_arg(Some(input)).unwrap();
-            let output = outfile_from_arg(output).unwrap();
-            runtime::block_on(handle_store(input, output, secret, json));
-        }
+            ..
+        } => protect(&input, &resource, json),
+        Commands::Recover { input, key, .. } => recover(&input, key.as_deref()),
+    }
+    .and_then(|text| {
+        output.write_all(text.as_bytes())?;
+        output.flush()?;
+        Ok(())
+    });
 
-        Commands::Get { input, output } => {
-            let input = infile_from_arg(Some(input)).unwrap();
-            let output = outfile_from_arg(output).unwrap();
-            runtime::block_on(handle_get(input, output));
+    // Leave no empty or partial file behind to trip up a retry
+    if result.is_err() {
+        drop(output);
+        if let Some(path) = &output_path {
+            let _ = std::fs::remove_file(path);
         }
     }
+
+    result
 }
 
-async fn handle_generate(mut output: OutFile, key: Option<String>, secret: Option<String>) {
-    if !(key.is_some() || secret.is_some()) {
-        error!("Either --key or --secret must be specified");
-        return;
-    }
-
-    let resource = key.or(secret).unwrap();
+fn generate(resource: &str, json: bool) -> Result<Zeroizing<String>, Box<dyn Error>> {
     let seed = Seed::new_random();
-
-    match storage::try_store_seed(&seed, &resource).await {
-        Ok(envelope) => {
-            let json = serde_json::to_string_pretty(&envelope).unwrap();
-            output.write_all(json.as_bytes()).unwrap();
-        }
-        Err(e) => {
-            error!("Failed to store seed: {:?}", e);
-        }
-    }
+    let envelope = storage::try_store_seed(&seed, resource)?;
+    format_envelope(&envelope, json)
 }
 
-/// Retrieve a long-term identity seed from a Secret manager
-async fn handle_get(mut input: InFile, mut output: OutFile) {
-    let mut value = String::new();
-    input.read_to_string(&mut value).unwrap();
-
-    match storage::try_load_seed(&value).await {
-        Ok(seed) => {
-            let encoded = as_hex(seed.expose());
-            output.write_all(encoded.as_bytes()).unwrap();
-            output.write_all(b"\n").unwrap();
-        }
-        Err(e) => {
-            error!("Failed to retrieve seed: {:?}", e);
-        }
-    }
+fn protect(input: &Path, resource: &str, json: bool) -> Result<Zeroizing<String>, Box<dyn Error>> {
+    let seed = storage::load_seed_file(input).map_err(|e| with_path(Some(input), e))?;
+    let envelope = storage::try_store_seed(&seed, resource)?;
+    format_envelope(&envelope, json)
 }
 
-/// Store a long-term identity seed in a Secret manager
-async fn handle_store(mut input: InFile, mut output: OutFile, secret: String, json: bool) {
-    let mut seed_bytes = Vec::new();
-    input.read_to_end(&mut seed_bytes).unwrap();
+fn recover(input: &Path, key: Option<&str>) -> Result<Zeroizing<String>, Box<dyn Error>> {
+    // Usually a non-secret envelope, but a seed:// file holds the seed itself
+    let contents = std::fs::read_to_string(input).map_err(|e| with_path(Some(input), e))?;
+    let contents = Zeroizing::new(contents);
+    let text = contents.trim();
 
-    if seed_bytes.len() != 32 {
-        error!(
-            "Invalid seed length: expected 32 bytes, got {}",
-            seed_bytes.len()
-        );
-        return;
-    }
-
-    let seed = Seed::new(&seed_bytes);
-
-    match storage::try_store_seed(&seed, &secret).await {
-        Ok(envelope) => {
-            // Default output is the single-line prefixed form that
-            // `try_load_seed` accepts this single-line form from a server seed file
-            let text = if json {
-                serde_json::to_string_pretty(&envelope).unwrap()
-            } else {
-                let method = match storage::Protection::from_prefix(&secret) {
-                    Some(method) => method,
-                    None => {
-                        error!("no protection method specified in '{}'", secret);
-                        return;
-                    }
-                };
-                match method.encode_envelope(&envelope) {
-                    Ok(encoded) => encoded,
-                    Err(e) => {
-                        error!("Failed to encode envelope: {e}");
-                        return;
-                    }
+    let seed = if text.starts_with('{') {
+        let envelope: SeedEnvelope = serde_json::from_str(text)?;
+        load_envelope(envelope, key)?
+    } else {
+        match Protection::split(text) {
+            None | Some((Protection::Plain, _)) => {
+                if key.is_some() {
+                    return Err("--key applies only to an envelope, not a plain seed".into());
                 }
-            };
-            output.write_all(text.as_bytes()).unwrap();
-            output.write_all(b"\n").unwrap();
+                storage::try_load_seed(text)?
+            }
+            Some((_, rest)) => {
+                let envelope = storage::parse_envelope(rest)?;
+                load_envelope(envelope, key)?
+            }
         }
-        Err(e) => {
-            error!("Failed to store seed: {e}");
-        }
-    }
+    };
+
+    // Sized up front so the encoder never reallocates and leaves a copy in freed memory
+    let prefix = Protection::Plain.prefix();
+    let mut line = Zeroizing::new(String::with_capacity(prefix.len() + 2 * Seed::LEN + 1));
+    line.push_str(prefix);
+    data_encoding::HEXLOWER.encode_append(seed.expose(), &mut line);
+    line.push('\n');
+    Ok(line)
 }
 
-/// Decrypt an envelope encrypted long-term identity seed
-async fn handle_open(mut input: InFile, mut output: OutFile, key: Option<String>) {
-    let mut buf = Vec::new();
-    input.read_to_end(&mut buf).unwrap();
-    let mut envelope: SeedEnvelope = serde_json::from_slice(&buf).unwrap();
-
-    if let Some(key_id) = key {
+fn load_envelope(mut envelope: SeedEnvelope, key: Option<&str>) -> Result<Seed, StorageError> {
+    if let Some(key) = key {
+        let key_id = override_key_id(&envelope.key_id, key);
         debug!(
-            "Overriding original key ID {} with {}",
-            envelope.key_id, key_id
+            "Overriding envelope key id {} with {key_id}",
+            envelope.key_id
         );
         envelope.key_id = key_id;
     }
+    storage::load_envelope(&envelope)
+}
 
-    // Below is ugly to deal with conditional compilation while keeping the
-    // compiler and clippy happy
-
-    #[allow(unused_mut)]
-    let mut seed: Seed = Seed::new_random();
-
-    #[cfg(feature = "longterm-gcp-kms")]
-    {
-        use crate::storage::Protection;
-        if envelope.key_id.starts_with(Protection::GcpKms.prefix()) {
-            seed = match gcpkms::GcpKms::decrypt_seed(&envelope).await {
-                Ok(seed) => seed,
-                Err(e) => {
-                    error!("Failed to decrypt seed: {e}");
-                    return;
-                }
-            }
-        }
+/// A bare key id, such as an ARN, is the natural thing to type; give it the envelope's scheme
+/// so it routes to the backend that made the envelope
+fn override_key_id(envelope_key_id: &str, key: &str) -> String {
+    if Protection::split(key).is_some() {
+        return key.to_string();
     }
-
-    #[cfg(feature = "longterm-aws-kms")]
-    {
-        use crate::storage::Protection;
-        if envelope.key_id.starts_with(Protection::AwsKms.prefix()) {
-            seed = match awskms::AwsKms::decrypt_seed(&envelope).await {
-                Ok(seed) => seed,
-                Err(e) => {
-                    error!("Failed to decrypt seed: {e}");
-                    return;
-                }
-            }
-        }
+    match Protection::split(envelope_key_id) {
+        Some((protection, _)) => format!("{}{key}", protection.prefix()),
+        None => key.to_string(),
     }
+}
 
-    if cfg!(not(any(
-        feature = "longterm-gcp-kms",
-        feature = "longterm-aws-kms"
-    ))) {
-        error!("no KMS types enabled: {}", envelope.key_id);
-        return;
+/// The default one-line form is what the server's `--seed-file` loads
+fn format_envelope(
+    envelope: &SeedEnvelope,
+    json: bool,
+) -> Result<Zeroizing<String>, Box<dyn Error>> {
+    let mut text = if json {
+        serde_json::to_string_pretty(envelope)?
+    } else {
+        let (protection, _) = Protection::split(&envelope.key_id).ok_or_else(|| {
+            format!(
+                "envelope key id '{}' has no known scheme prefix",
+                envelope.key_id
+            )
+        })?;
+        protection.encode_envelope(envelope)?
+    };
+    text.push('\n');
+    Ok(Zeroizing::new(text))
+}
+
+fn with_path(path: Option<&Path>, e: impl std::fmt::Display) -> String {
+    match path {
+        Some(path) => format!("{}: {e}", path.display()),
+        None => e.to_string(),
+    }
+}
+
+fn outfile_from_arg(path: Option<&Path>) -> std::io::Result<Box<dyn Write>> {
+    let Some(path) = path else {
+        return Ok(Box::new(std::io::stdout()));
     };
 
-    let encoded = as_hex(seed.expose());
-    output.write_all(encoded.as_bytes()).unwrap();
-    output.write_all(b"\n").unwrap();
-}
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
 
-/// Envelope encrypt a long-term identity seed
-async fn handle_seal(mut input: InFile, mut output: OutFile, key: String) {
-    let mut seed_bytes = Vec::new();
-    input.read_to_end(&mut seed_bytes).unwrap();
-
-    if seed_bytes.len() != 32 {
-        error!(
-            "Invalid seed length: expected 32 bytes, got {}",
-            seed_bytes.len()
-        );
-        return;
+        options.mode(0o600);
     }
 
-    let seed = Seed::new(&seed_bytes);
-
-    match storage::try_store_seed(&seed, &key).await {
-        Ok(envelope) => {
-            let json = serde_json::to_string_pretty(&envelope).unwrap();
-            output.write_all(json.as_bytes()).unwrap();
-        }
-        Err(e) => {
-            error!("Failed to encrypt seed: {:?}", e);
-        }
-    }
+    let file = options.open(path)?;
+    Ok(Box::new(file))
 }
 
-fn outfile_from_arg(path: Option<String>) -> std::io::Result<OutFile> {
-    match path {
-        Some(file_path) => {
-            let mut options = OpenOptions::new();
-            options.write(true).create_new(true);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::OpenOptionsExt;
-
-                options.mode(0o600);
-            }
-
-            let file = match options.open(&file_path) {
-                Ok(file) => file,
-                Err(e) => {
-                    error!("Failed to create output file '{}': {:?}", &file_path, e);
-                    return Err(e);
-                }
-            };
-            Ok(Box::new(file))
-        }
-        None => Ok(Box::new(std::io::stdout())),
-    }
-}
-
-// make non optional
-fn infile_from_arg(path: Option<String>) -> std::io::Result<InFile> {
-    match path {
-        Some(file_path) => {
-            let file = File::open(file_path)?;
-            Ok(Box::new(file))
-        }
-        None => Err(Error::new(
-            ErrorKind::InvalidInput,
-            "no input file specified",
-        )),
-    }
-}
-
-fn enable_logging(cli: &Cli) {
+fn enable_logging(verbose: u8) {
+    use tracing_subscriber::Layer;
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
-    use tracing_subscriber::{Layer, filter};
 
     // AWS, GCP, Rustls, Hyper, etc crates are quite verbose, "normal" level for them is WARN
-    let cloud_sdk_verbosity = match cli.verbose {
+    let cloud_sdk_verbosity = match verbose {
         0 => tracing::Level::WARN,
         1 => tracing::Level::INFO,
         2 => tracing::Level::DEBUG,
         3.. => tracing::Level::TRACE,
     };
 
-    let verbosity = match cli.verbose {
+    let verbosity = match verbose {
         0 => tracing::Level::INFO,
         1 => tracing::Level::DEBUG,
         2.. => tracing::Level::TRACE,
     };
 
-    let filters = filter::Targets::new()
-        .with_target("aws_config", cloud_sdk_verbosity)
-        .with_target("aws_sdk_kms", cloud_sdk_verbosity)
-        .with_target("aws_sdk_secretsmanager", cloud_sdk_verbosity)
-        .with_target("google_cloud_kms_v1", cloud_sdk_verbosity)
-        .with_target("google_cloud_secretmanager_v1", cloud_sdk_verbosity)
-        .with_target("hyper_util", cloud_sdk_verbosity)
-        .with_target("rustls", cloud_sdk_verbosity)
-        .with_default(verbosity); // for all other targets
-
+    // Stdout carries only seeds and seed files, so it can be redirected straight to a file
     let fmt_layer = tracing_subscriber::fmt::layer()
         .compact()
-        .with_filter(filters);
+        .with_writer(std::io::stderr)
+        .with_filter(logging::sdk_targets(cloud_sdk_verbosity, verbosity));
 
     tracing_subscriber::registry().with(fmt_layer).init();
 }
@@ -433,11 +314,49 @@ mod tests {
         ));
         let _ = std::fs::remove_file(&path);
 
-        let output = outfile_from_arg(Some(path.to_string_lossy().into_owned())).unwrap();
+        let output = outfile_from_arg(Some(&path)).unwrap();
         drop(output);
 
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o077, 0);
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn key_override_keeps_scheme_prefix() {
+        let envelope_key = "aws-kms://arn:aws:kms:us-east-1:1:key/old";
+
+        assert_eq!(
+            override_key_id(envelope_key, "arn:aws:kms:us-east-1:1:key/new"),
+            "aws-kms://arn:aws:kms:us-east-1:1:key/new"
+        );
+        assert_eq!(
+            override_key_id(
+                envelope_key,
+                "gcp-kms://projects/p/locations/l/keyRings/r/cryptoKeys/k"
+            ),
+            "gcp-kms://projects/p/locations/l/keyRings/r/cryptoKeys/k"
+        );
+        assert_eq!(override_key_id("vault://x", "bare"), "bare");
+    }
+
+    #[test]
+    fn default_output_is_a_seed_file_value() {
+        let envelope = SeedEnvelope {
+            key_id: "aws-kms://arn:aws:kms:us-east-1:1:key/x".to_string(),
+            seed_ct: vec![1, 2, 3],
+            dek_ct: vec![4, 5, 6],
+        };
+
+        let text = format_envelope(&envelope, false).unwrap();
+        let line = text.strip_suffix('\n').unwrap();
+        assert!(!line.contains('\n'));
+
+        let (protection, rest) = Protection::split(line).unwrap();
+        assert_eq!(protection, Protection::AwsKms);
+        let parsed = storage::parse_envelope(rest).unwrap();
+        assert_eq!(parsed.key_id, envelope.key_id);
+        assert_eq!(parsed.seed_ct, envelope.seed_ct);
+        assert_eq!(parsed.dek_ct, envelope.dek_ct);
     }
 }

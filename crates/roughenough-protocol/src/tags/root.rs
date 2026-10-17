@@ -7,12 +7,6 @@ fixed_tag! {
     MerkleRoot, SIZE, "ROOT"
 }
 
-impl AsRef<[u8; SIZE]> for MerkleRoot {
-    fn as_ref(&self) -> &[u8; SIZE] {
-        self.0.as_bytes()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -50,7 +44,7 @@ mod tests {
         );
 
         match result.unwrap_err() {
-            Error::BufferTooSmall(_, _) => {}
+            Error::WrongTagSize(SIZE, 0) => {}
             e => panic!("Unexpected error: {e:?}"),
         }
     }

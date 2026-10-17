@@ -34,7 +34,7 @@ sequenceDiagram
     box Server worker thread
         participant W as Worker::run
         participant N as NetworkHandler
-        participant RH as RequestHandler
+        participant RV as RequestValidator
         participant RS as ResponseHandler
         participant K as OnlineKey
         participant M as MerkleTree
@@ -50,14 +50,15 @@ sequenceDiagram
                 W->>N: collect_requests(sock)
                 N->>Sock: recv_from
                 Sock-->>N: datagram bytes
-                N->>RH: collect_request(bytes, src_addr)
-                Note over RH: size gate (>=1024)<br/>Request::from_frame parse<br/>SRV check (RFC 5.2)<br/>version negotiate (RFC 5.1.1)
-                RH->>RS: add_request(bytes, request, version, addr)
+                N->>W: callback(bytes, src_addr)
+                W->>RV: validate(bytes)
+                Note over RV: size gate (>=1024)<br/>Request::from_frame parse<br/>SRV check (RFC 5.2)<br/>version negotiate (RFC 5.1.1)
+                RV-->>W: Some((request, version))
+                W->>RS: add_request(bytes, request, version, addr)
                 RS->>M: push_leaf(request_bytes)
             end
 
-            W->>RH: generate_responses(callback)
-            RH->>RS: process_responses(callback)
+            W->>RS: process_responses(callback)
             RS->>M: compute_root()
             M-->>RS: root_hash (one per batch)
             loop per pending request (single loop)
@@ -65,10 +66,12 @@ sequenceDiagram
                 RS->>M: get_paths_to(index)
                 M-->>RS: Merkle path (siblings)
                 Note over RS: clone version template<br/>set PATH, NONC, INDX<br/>Response::to_frame
-                RS->>N: callback(addr, response_bytes)
-                N->>Sock: send_to(response, addr)
-                Sock-->>C: framed Response
+                RS->>N: callback -> queue_response(response_bytes, addr)
             end
+            RS->>M: clear() (batch done)
+            W->>N: flush_responses(sock)
+            N->>Sock: sendmmsg (Linux) or send_to per response
+            Sock-->>C: framed Response
         end
     end
 
@@ -77,7 +80,7 @@ sequenceDiagram
     C->>C: check_midpoint<br/>(MINT <= MIDP <= MAXT)
     C->>C: check_merkle_proof<br/>(root_from_paths(INDX, my_request, PATH) == ROOT)
     C->>C: check_srep_signature<br/>(DELE.PUBK signed SREP)
-    Note over C: returns authenticated MIDP<br/>paired with RADI -> Measurement
+    Note over C: returns the Response parsed from<br/>the signed bytes -> Measurement
 ```
 
 ## Trust chain verified by the client
@@ -94,7 +97,7 @@ long-term key --signs--> DELE (online key + [MINT,MAXT])
 |-------|----------|
 | Worker event loop | `crates/roughenough-server/src/worker.rs` (`Worker::run`) |
 | Datagram read | `crates/roughenough-server/src/network.rs` (`collect_requests`) |
-| Parse + validate + negotiate | `crates/roughenough-server/src/requests.rs` (`collect_request`) |
+| Parse + validate + negotiate | `crates/roughenough-server/src/requests.rs` (`RequestValidator::validate`) |
 | Frame/TLV decode | `crates/roughenough-protocol/src/{wire,request,header}.rs` |
 | Batch staging | `crates/roughenough-server/src/responses.rs` (`add_request`) |
 | Build responses | `crates/roughenough-server/src/responses.rs` (`process_responses`) |

@@ -4,16 +4,19 @@
 
 #![forbid(unsafe_code)]
 
-pub mod args;
 pub mod client;
 pub mod measurement;
 pub mod reporting;
 pub mod sequence;
 pub mod server_list;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;
 pub mod transport;
 pub mod validation;
 
 pub use reporting::{MalfeasanceReport, REPORT_MEDIA_TYPE, ReportEntry};
-pub use validation::*;
+pub use validation::{
+    CausalityViolation, ResponseValidator, ValidationError, check_vers_contains_ver,
+};
 
-pub use crate::client::*;
+pub use crate::client::{Client, ClientBuilder, ClientError, query};

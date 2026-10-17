@@ -22,16 +22,6 @@ impl<'a> ParseCursor<'a> {
         self.data.len().saturating_sub(self.position)
     }
 
-    #[inline]
-    pub fn has_remaining(&self) -> bool {
-        self.position < self.data.len()
-    }
-
-    #[inline]
-    pub fn capacity(&self) -> usize {
-        self.data.len()
-    }
-
     /// Get an u32 in little-endian format, advancing the cursor
     #[inline]
     pub fn get_u32_le(&mut self) -> u32 {
@@ -53,29 +43,6 @@ impl<'a> ParseCursor<'a> {
         }
 
         Ok(self.get_u32_le())
-    }
-
-    /// Get an u32 in big-endian format, advancing the cursor
-    #[inline]
-    pub fn get_u32(&mut self) -> u32 {
-        const SIZE: usize = size_of::<u32>();
-
-        let bytes = &self.data[self.position..self.position + SIZE];
-        let value = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-        self.position += SIZE;
-        value
-    }
-
-    /// Try to get an u32 in big-endian format, advancing the cursor
-    #[inline]
-    pub fn try_get_u32(&mut self) -> Result<u32, Error> {
-        const SIZE: usize = size_of::<u32>();
-
-        if self.remaining() < SIZE {
-            return Err(BufferTooSmall(SIZE, self.remaining()));
-        }
-
-        Ok(self.get_u32())
     }
 
     /// Get an u64 in little-endian format, advancing the cursor
@@ -190,19 +157,6 @@ impl<'a> ParseCursor<'a> {
         self.position += src.len();
     }
 
-    /// Transfer bytes from `src` into `self` advancing the cursor by the number of bytes written.
-    ///
-    /// Returns `BufferTooSmall` if `self` does not have enough remaining capacity to contain all
-    /// of `src`.
-    #[inline]
-    pub fn try_put_slice(&mut self, src: &[u8]) -> Result<(), Error> {
-        if self.remaining() < src.len() {
-            return Err(BufferTooSmall(src.len(), self.remaining()));
-        }
-        self.put_slice(src);
-        Ok(())
-    }
-
     /// Returns a slice of the remaining data without advancing the cursor
     #[inline]
     pub fn peek(&self) -> &[u8] {
@@ -244,17 +198,6 @@ impl<'a> ParseCursor<'a> {
         self.position += 8;
     }
 
-    /// Try to write a u64 in little-endian format, advancing the cursor
-    #[inline]
-    pub fn try_put_u64_le(&mut self, value: u64) -> Result<(), Error> {
-        const SIZE: usize = size_of::<u64>();
-        if self.remaining() < SIZE {
-            return Err(BufferTooSmall(SIZE, self.remaining()));
-        }
-        self.put_u64_le(value);
-        Ok(())
-    }
-
     /// Try to write a u64 in big-endian format, advancing the cursor
     #[inline]
     pub fn try_put_u64(&mut self, value: u64) -> Result<(), Error> {
@@ -288,12 +231,6 @@ impl<'a> ParseCursor<'a> {
         }
     }
 
-    /// Reset the cursor to the beginning
-    #[inline]
-    pub fn reset(&mut self) {
-        self.position = 0;
-    }
-
     /// Get the current position
     #[inline]
     pub fn position(&self) -> usize {
@@ -319,7 +256,7 @@ mod tests {
         assert_eq!(cursor.remaining(), 8);
         assert_eq!(cursor.try_get_u32_le().unwrap(), 0x04030201);
         assert_eq!(cursor.remaining(), 4);
-        assert_eq!(cursor.try_get_u32().unwrap(), 0x05060708);
+        assert_eq!(cursor.try_get_u32_le().unwrap(), 0x08070605);
         assert_eq!(cursor.remaining(), 0);
     }
 
@@ -368,14 +305,6 @@ mod tests {
     }
 
     #[test]
-    fn test_try_put_u64_le_bounds() {
-        let mut data = [0u8; 4];
-        let mut cursor = ParseCursor::new(&mut data);
-
-        assert!(cursor.try_put_u64_le(0x123456789ABCDEF0).is_err());
-    }
-
-    #[test]
     fn test_truncate_remaining() {
         let mut data = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
         let mut cursor = ParseCursor::new(&mut data);
@@ -400,14 +329,13 @@ mod tests {
     #[test]
     fn test_round_trip() {
         let mut data = [0u8; 16];
+        {
+            let mut cursor = ParseCursor::new(&mut data);
+            cursor.put_u32_le(0x12345678);
+            cursor.put_u64_le(0x9ABCDEF012345678);
+        }
+
         let mut cursor = ParseCursor::new(&mut data);
-
-        // Write data
-        cursor.put_u32_le(0x12345678);
-        cursor.put_u64_le(0x9ABCDEF012345678);
-
-        // Reset and read back
-        cursor.reset();
         assert_eq!(cursor.get_u32_le(), 0x12345678);
         assert_eq!(cursor.get_u64_le(), 0x9ABCDEF012345678);
     }

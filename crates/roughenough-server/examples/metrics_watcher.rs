@@ -98,6 +98,10 @@ fn display_metrics(filename: &str, metrics: &MetricsSnapshot) {
         metrics.totals.requests.num_oversized_requests
     );
     println!(
+        "  - SRV mismatch: {}",
+        metrics.totals.requests.num_srv_mismatch
+    );
+    println!(
         "  - No common version: {}",
         metrics.totals.requests.num_no_common_version
     );
@@ -138,9 +142,7 @@ fn display_metrics(filename: &str, metrics: &MetricsSnapshot) {
     if metrics.workers.len() > 1 {
         println!("  Per-Worker Summary:");
         for worker in &metrics.workers {
-            let worker_total = worker.request.num_ok_requests
-                + worker.request.num_bad_requests
-                + worker.request.num_runt_requests;
+            let worker_total = worker.request.total();
 
             if worker_total > 0 || worker.response.num_responses > 0 {
                 println!(

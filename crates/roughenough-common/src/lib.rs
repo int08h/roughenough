@@ -1,7 +1,8 @@
-//! This crate provides shared functionality used by multiple crates in the project,
-//! including cryptographic utilities, encoding/decoding helpers, and time formatting.
+//! Shared cryptographic and decoding helpers, and the clock source, used by multiple
+//! roughenough crates.
 
 #![forbid(unsafe_code)]
 
+pub mod clocksource;
 pub mod crypto;
 pub mod encoding;
