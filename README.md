@@ -107,6 +107,9 @@ Query multiple servers from an RFC compliant JSON list:
 cargo run --bin roughenough_client -- -l servers.json
 ```
 
+With `-s`, list mode sets the system clock from the last measurement only when
+no causality violation is found; otherwise it exits with status 1.
+
 ### Protocol Versions
 
 The server answers only Roughtime version 1 (RFC 10049) and ignores requests

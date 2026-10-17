@@ -73,6 +73,14 @@
 - Client API: `ServerList::choose_random` returns `Vec<&Server>`
 - Client API: an invalid server-list address is reported as
   `server_list::Error::InvalidJson`
+- Client: a hostname/port and `-l` are mutually exclusive at parse time;
+  giving both or neither exits 2 (was 255)
+- Client: `-k` and `-n` are rejected with `-l`
+- Client: `--report` requires `-l`
+- Client: `-s` does not set the clock when causality violations are
+  found; it exits 1 instead
+- Client: causality violation output follows `--zulu`, `--epoch`, and `-f`
+- Client API: the `roughenough_client::args` module is removed
 
 ### Fixed
 
@@ -95,6 +103,7 @@
   instead of failing the query (affects `-n N`)
 - Client: a response whose VERS lists no supported version is rejected
   with `NoSupportedVersions` (RFC 5.2.5)
+- Client: `--zulu` prints the time zone as UTC instead of a literal `%Z`
 
 ### Added
 
@@ -110,6 +119,8 @@
 - Common: `crypto::verify_with_context` verifies an Ed25519 signature over
   a context prefix and message
 - Client: `MalfeasanceReport::verify()` validates a received report
+- Client: `-s` works with `-l` without `-k`, since the server list
+  supplies the public keys
 
 ## [2.2.0] - 2026-10-11
 

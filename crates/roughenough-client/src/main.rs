@@ -1,12 +1,13 @@
 //! The main client CLI
 
+mod args;
+
 use std::net::ToSocketAddrs;
 use std::time::Duration;
 
 use clap::Parser;
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
-use roughenough_client::args::Args;
 use roughenough_client::measurement::Measurement;
 #[cfg(feature = "reporting")]
 use roughenough_client::reporting::MalfeasanceReport;
@@ -14,7 +15,9 @@ use roughenough_client::sequence::MeasurementSequence;
 use roughenough_client::server_list::ServerList;
 use roughenough_client::{CausalityViolation, Client, ClientError};
 use roughenough_common::encoding::try_decode_key;
-use tracing::{debug, error, info};
+use tracing::{Level, debug, error, info};
+
+use crate::args::Args;
 
 fn main() {
     let args = Args::parse();
@@ -22,25 +25,34 @@ fn main() {
     enable_logging(&args);
     debug!("command line: {:?}", args);
 
-    let midpoint = match (&args.hostname, &args.server_list) {
-        // Simple case, query a single server
-        (Some(hostname), None) => query_single_server(&args, hostname),
-        // Measurement sequence of multiple servers
-        (None, Some(list_file)) => query_multiple_servers(&args, list_file),
-        _ => {
-            error!(
-                "Specify 'hostname' and 'port', or use '--server-list' to query multiple servers (see --help for details)"
-            );
-            std::process::exit(-1);
-        }
+    let midpoint = if let Some(list_file) = &args.server_list {
+        query_multiple_servers(&args, list_file)
+    } else {
+        let hostname = args
+            .hostname
+            .as_deref()
+            .expect("clap requires a hostname without --server-list");
+        Some(query_single_server(&args, hostname))
     };
 
     if args.set_clock {
-        set_system_clock(midpoint);
-    };
+        match clock_target(midpoint) {
+            Ok(midpoint) => set_system_clock(midpoint),
+            Err(msg) => {
+                error!("{msg}");
+                std::process::exit(1);
+            }
+        }
+    }
 }
 
-fn query_single_server(args: &Args, hostname: &String) -> u64 {
+/// The time to set the clock to. A sequence with causality violations is refused: the servers
+/// disagree about the time, and the client cannot tell which of them is wrong.
+fn clock_target(midpoint: Option<u64>) -> Result<u64, &'static str> {
+    midpoint.ok_or("Causality violations detected; not setting the system clock")
+}
+
+fn query_single_server(args: &Args, hostname: &str) -> u64 {
     let port = args.port.unwrap();
 
     if args.pub_key.is_none() {
@@ -69,7 +81,8 @@ fn query_single_server(args: &Args, hostname: &String) -> u64 {
     midpoint
 }
 
-fn query_multiple_servers(args: &Args, list_file: &String) -> u64 {
+/// Returns the midpoint of the last measurement, or `None` if causality violations were found.
+fn query_multiple_servers(args: &Args, list_file: &str) -> Option<u64> {
     let server_list = ServerList::from_file(list_file).unwrap_or_else(|e| {
         error!("Loading server list from '{list_file}': {e}");
         std::process::exit(-1);
@@ -96,26 +109,28 @@ fn query_multiple_servers(args: &Args, list_file: &String) -> u64 {
 
     let violations = CausalityViolation::find(&measurements);
 
-    if !violations.is_empty() {
-        for violation in &violations {
-            display_violation(args, violation);
-        }
+    if violations.is_empty() {
+        return Some(measurements.last().unwrap().midpoint());
+    }
 
-        #[cfg(feature = "reporting")]
-        if args.send_report
-            && let Some(url) = server_list.reporting_url()
-        {
-            for violation in &violations {
-                match MalfeasanceReport::from_violation(violation).submit(url) {
-                    Ok(()) => info!("Sent malfeasance report to {url}"),
-                    Err(e) => error!("Failed to send malfeasance report to {url}: {e}"),
-                }
+    for violation in &violations {
+        display_violation(args, violation);
+    }
+
+    #[cfg(feature = "reporting")]
+    if args.send_report
+        && let Some(url) = server_list.reporting_url()
+    {
+        for violation in &violations {
+            let report = MalfeasanceReport::from_violation(violation);
+            match report.submit(url) {
+                Ok(()) => info!("Sent malfeasance report to {url}"),
+                Err(e) => error!("Failed to send malfeasance report to {url}: {e}"),
             }
         }
     }
 
-    // Return midpoint from the last measurement
-    measurements.last().unwrap().midpoint()
+    None
 }
 
 fn set_system_clock(midpoint: u64) {
@@ -139,19 +154,17 @@ fn set_system_clock(midpoint: u64) {
 }
 
 fn enable_logging(args: &Args) {
-    let mut builder = tracing_subscriber::fmt().compact();
+    let level = match (args.quiet, args.verbose) {
+        (true, _) => Level::ERROR,
+        (false, 2..) => Level::TRACE,
+        (false, 1) => Level::DEBUG,
+        (false, 0) => Level::INFO,
+    };
 
-    if args.quiet {
-        builder = builder.with_max_level(tracing::Level::ERROR);
-    } else {
-        match args.verbose {
-            2.. => builder = builder.with_max_level(tracing::Level::TRACE),
-            1 => builder = builder.with_max_level(tracing::Level::DEBUG),
-            _ => builder = builder.with_max_level(tracing::Level::INFO),
-        }
-    }
-
-    builder.init();
+    tracing_subscriber::fmt()
+        .compact()
+        .with_max_level(level)
+        .init();
 }
 
 fn build_client(
@@ -179,7 +192,7 @@ fn build_client(
         builder = builder.public_key(public_key);
     }
     if let Some(versions) = args.protocol.offered() {
-        builder = builder.versions(&versions);
+        builder = builder.versions(versions);
     }
     builder.build()
 }
@@ -247,9 +260,8 @@ fn clients_from_list(
 fn display_violation(args: &Args, violation: &CausalityViolation) {
     let m1 = violation.measurement_i();
     let m2 = violation.measurement_j();
-
-    let m1_lower = m1.lower_bound();
-    let m2_upper = m2.upper_bound();
+    let m1_lower = format_time(violation.lower_bound_i(), args);
+    let m2_upper = format_time(violation.upper_bound_j(), args);
 
     error!("=== Causality violation ===");
     error!("");
@@ -257,31 +269,21 @@ fn display_violation(args: &Args, violation: &CausalityViolation) {
     error!("  Server:   {}", m1.server());
     error!(
         "  Time:     {} +/- {}s",
-        format_seconds(m1.midpoint(), &args.time_format),
+        format_time(m1.midpoint(), args),
         m1.radius()
     );
-    error!(
-        "  Earliest: {}",
-        format_seconds(m1_lower, &args.time_format)
-    );
+    error!("  Earliest: {m1_lower}");
     error!("");
     error!("Measurement B (requested second from {}):", m2.hostname());
     error!("  Server:   {}", m2.server());
     error!(
         "  Time:     {} +/- {}s",
-        format_seconds(m2.midpoint(), &args.time_format),
+        format_time(m2.midpoint(), args),
         m2.radius()
     );
-    error!(
-        "  Latest:   {}",
-        format_seconds(m2_upper, &args.time_format)
-    );
+    error!("  Latest:   {m2_upper}");
     error!("");
-    error!(
-        "Problem: A earliest ({}) > B latest ({})",
-        format_seconds(m1_lower, "%H:%M:%S"),
-        format_seconds(m2_upper, "%H:%M:%S")
-    );
+    error!("Problem: A earliest ({m1_lower}) > B latest ({m2_upper})");
 
     if m1.server() == m2.server() {
         error!(
@@ -292,44 +294,38 @@ fn display_violation(args: &Args, violation: &CausalityViolation) {
 }
 
 /// Format an epoch-seconds value from a (possibly hostile) server.
-fn format_seconds(seconds: u64, time_format: &str) -> String {
-    let timestamp = i64::try_from(seconds)
-        .ok()
-        .and_then(|s| Timestamp::from_second(s).ok());
-
-    match timestamp {
-        Some(ts) => ts.strftime(time_format).to_string(),
-        None => format!("<unrepresentable time: {seconds} sec>"),
+fn format_time(seconds: u64, args: &Args) -> String {
+    if args.epoch {
+        return seconds.to_string();
     }
-}
 
-fn format_measurement(measurement: &Measurement, zulu: bool, epoch: bool, fmt: &str) -> String {
-    let midpoint = measurement.midpoint();
-    let radius = measurement.radius();
-
-    let Some(timestamp) = measurement.midpoint_datetime() else {
-        return format!("<unrepresentable midpoint: {midpoint} sec> (+/-{radius}s)");
+    let Some(ts) = i64::try_from(seconds)
+        .ok()
+        .and_then(|s| Timestamp::from_second(s).ok())
+    else {
+        return format!("<unrepresentable time: {seconds} sec>");
     };
 
-    match (zulu, epoch) {
-        (true, false) => format!("{} (+/-{}s)", timestamp.strftime(fmt), radius),
-        (false, false) => {
-            let local_time = timestamp.to_zoned(TimeZone::system());
-            format!("{} (+/-{}s)", local_time.strftime(fmt), radius)
-        }
-        (_, true) => format!("{}", timestamp.as_second()),
-    }
+    // A bare Timestamp has no time zone, so %Z would print literally; format a UTC Zoned instead
+    let tz = if args.zulu {
+        TimeZone::UTC
+    } else {
+        TimeZone::system()
+    };
+    ts.to_zoned(tz).strftime(&args.time_format).to_string()
 }
 
 fn display_measurement(args: &Args, measurement: &Measurement) {
-    let output = format_measurement(measurement, args.zulu, args.epoch, &args.time_format);
-    info!("{}", output);
+    let time = format_time(measurement.midpoint(), args);
+    if args.epoch {
+        info!("{time}");
+    } else {
+        info!("{time} (+/-{}s)", measurement.radius());
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use roughenough_client::test_utils::measurement;
-
     use super::*;
 
     #[test]
@@ -374,37 +370,48 @@ mod tests {
         }
     }
 
-    #[test]
-    fn unrepresentable_midpoint_falls_back_to_raw_value() {
-        let measurement = measurement(300_000_000_000);
-        let output = format_measurement(&measurement, true, false, "%Y-%m-%d %H:%M:%S %Z");
-        assert!(
-            output.contains("<unrepresentable midpoint: 300000000000 sec>"),
-            "unexpected output: {output}"
-        );
+    fn parse(extra: &[&str]) -> Args {
+        let mut argv = vec!["prog", "host", "2003"];
+        argv.extend_from_slice(extra);
+        Args::try_parse_from(argv).unwrap()
     }
 
     #[test]
-    fn sane_midpoint_formats_normally() {
-        let measurement = measurement(1_748_359_193);
-        let output = format_measurement(&measurement, true, false, "%Y-%m-%d");
-        assert!(
-            output.starts_with("2025-05-27"),
-            "unexpected output: {output}"
-        );
+    fn format_time_zulu_uses_utc_and_format() {
+        let args = parse(&["--zulu", "-f", "%Y-%m-%d %H:%M:%S %Z"]);
+        assert_eq!(format_time(1_748_359_193, &args), "2025-05-27 15:19:53 UTC");
     }
 
     #[test]
-    fn format_seconds_falls_back_on_unrepresentable_values() {
+    fn format_time_epoch_prints_raw_seconds() {
+        let args = parse(&["--epoch"]);
+        assert_eq!(format_time(1_748_359_193, &args), "1748359193");
+        // Raw seconds need no conversion, so even values jiff cannot represent print as is
+        assert_eq!(format_time(u64::MAX, &args), u64::MAX.to_string());
+    }
+
+    #[test]
+    fn format_time_falls_back_on_unrepresentable_value() {
+        let args = parse(&["--zulu"]);
         assert_eq!(
-            format_seconds(300_000_000_000, "%H:%M:%S"),
+            format_time(300_000_000_000, &args),
             "<unrepresentable time: 300000000000 sec>"
         );
+    }
+
+    #[test]
+    fn format_time_does_not_wrap_u64_max() {
         // u64 values beyond i64::MAX must not wrap into the valid range
+        let args = parse(&["--zulu"]);
         assert_eq!(
-            format_seconds(u64::MAX, "%H:%M:%S"),
+            format_time(u64::MAX, &args),
             format!("<unrepresentable time: {} sec>", u64::MAX)
         );
-        assert_eq!(format_seconds(0, "%Y-%m-%d"), "1970-01-01");
+    }
+
+    #[test]
+    fn clock_is_not_set_when_violations_found() {
+        assert!(clock_target(None).is_err());
+        assert_eq!(clock_target(Some(1_748_359_193)), Ok(1_748_359_193));
     }
 }

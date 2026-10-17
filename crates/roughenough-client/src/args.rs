@@ -1,25 +1,22 @@
-#![doc(hidden)]
-
 use clap::builder::RangedU64ValueParser;
-use clap::{Parser, ValueEnum};
+use clap::{ArgGroup, Parser, ValueEnum};
 use roughenough_protocol::tags::ProtocolVersion;
 
 /// Arguments for the client CLI
 #[derive(Parser, Debug)]
 #[command(version, about = "Roughenough roughtime client")]
+// Setting the clock needs authenticated responses: keys come from -k or from the server list
+#[command(group(ArgGroup::new("authenticated").args(["pub_key", "server_list"])))]
 pub struct Args {
     #[clap(
-        required = false,
+        required_unless_present = "server_list",
+        conflicts_with = "server_list",
         requires = "port",
         help = "Server hostname (e.g. roughtime.int08h.com)"
     )]
     pub hostname: Option<String>,
 
-    #[clap(
-        required = false,
-        requires = "hostname",
-        help = "Server port (e.g. 2003)"
-    )]
+    #[clap(requires = "hostname", help = "Server port (e.g. 2003)")]
     pub port: Option<u16>,
 
     #[clap(long, help = "Display the time as seconds since the epoch (UTC)")]
@@ -38,6 +35,7 @@ pub struct Args {
         short = 'k',
         long,
         value_name = "KEY",
+        conflicts_with = "server_list",
         help = "Public key of server (base64 or hex)"
     )]
     pub pub_key: Option<String>,
@@ -47,6 +45,7 @@ pub struct Args {
         long,
         value_name = "N",
         help = "Number of requests to send",
+        conflicts_with = "server_list",
         default_value_t = 1,
         value_parser = RangedU64ValueParser::<usize>::new().range(1..)
     )]
@@ -70,12 +69,16 @@ pub struct Args {
     )]
     pub server_list: Option<String>,
 
+    // The list-only flags (-u, -r, and --report) conflict with hostname as well as requiring
+    // server_list: clap waives a missing `requires` target when an argument that conflicts with
+    // it (here hostname) is present.
     #[clap(
         short = 'u',
         long,
         value_name = "N",
         help = "Number of different servers to query",
         requires = "server_list",
+        conflicts_with = "hostname",
         default_value_t = 3,
         value_parser = RangedU64ValueParser::<usize>::new().range(1..)
     )]
@@ -87,6 +90,7 @@ pub struct Args {
         value_name = "N",
         help = "Number of times to repeat the chained measurement sequence",
         requires = "server_list",
+        conflicts_with = "hostname",
         default_value_t = 2,
         value_parser = RangedU64ValueParser::<usize>::new().range(1..)
     )]
@@ -96,25 +100,24 @@ pub struct Args {
         short = 'q',
         long,
         conflicts_with = "verbose",
-        help = "Don't print any messages except for errors",
-        default_value_t = false
+        help = "Don't print any messages except for errors"
     )]
     pub quiet: bool,
 
     #[cfg(feature = "reporting")]
     #[clap(
         long = "report",
-        help = "Send malfeasance reports when causality violations are detected",
-        default_value_t = false
+        requires = "server_list",
+        conflicts_with = "hostname",
+        help = "Send malfeasance reports when causality violations are detected"
     )]
     pub send_report: bool,
 
     #[clap(
         short = 's',
         long = "set-clock",
-        requires = "pub_key",
-        help = "Set the system's clock to the received time (requires -k)",
-        default_value_t = false
+        requires = "authenticated",
+        help = "Set the system's clock to the received time (requires -k or -l)"
     )]
     pub set_clock: bool,
 
@@ -137,11 +140,7 @@ pub struct Args {
     )]
     pub verbose: u8,
 
-    #[clap(
-        long,
-        help = "Display time in UTC [default: local time]",
-        default_value_t = false
-    )]
+    #[clap(long, help = "Display time in UTC [default: local time]")]
     pub zulu: bool,
 }
 
@@ -161,11 +160,14 @@ pub enum VersionArg {
 
 impl VersionArg {
     /// The version list to offer, or `None` to use the client default
-    pub fn offered(&self) -> Option<Vec<ProtocolVersion>> {
+    pub fn offered(&self) -> Option<&'static [ProtocolVersion]> {
+        const DRAFT_ONLY: &[ProtocolVersion] = &[ProtocolVersion::DRAFT];
+        const BOTH: &[ProtocolVersion] = &[ProtocolVersion::RFC, ProtocolVersion::DRAFT];
+
         match self {
             VersionArg::V1 => None,
-            VersionArg::V19 => Some(vec![ProtocolVersion::DRAFT]),
-            VersionArg::Both => Some(vec![ProtocolVersion::RFC, ProtocolVersion::DRAFT]),
+            VersionArg::V19 => Some(DRAFT_ONLY),
+            VersionArg::Both => Some(BOTH),
         }
     }
 }
@@ -181,7 +183,58 @@ mod tests {
     fn set_clock_without_pub_key_is_rejected() {
         let err = Args::try_parse_from(["prog", "host", "2003", "-s"]).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
-        assert!(err.to_string().contains("--pub-key"));
+    }
+
+    #[test]
+    fn hostname_and_server_list_conflict() {
+        let err = Args::try_parse_from(["prog", "host", "2003", "-l", "servers.json"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn neither_hostname_nor_server_list_is_rejected() {
+        let err = Args::try_parse_from(["prog"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn set_clock_with_server_list_parses() {
+        let args = Args::try_parse_from(["prog", "-l", "servers.json", "-s"]).unwrap();
+        assert!(args.set_clock);
+        assert_eq!(args.server_list.as_deref(), Some("servers.json"));
+    }
+
+    #[test]
+    fn pub_key_with_server_list_is_rejected() {
+        let err = Args::try_parse_from(["prog", "-l", "servers.json", "-k", "abc123"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn num_requests_with_server_list_is_rejected() {
+        let err = Args::try_parse_from(["prog", "-l", "servers.json", "-n", "2"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn list_only_counts_with_hostname_are_rejected() {
+        for flag in ["-u", "-r"] {
+            let err = Args::try_parse_from(["prog", "host", "2003", flag, "2"]).unwrap_err();
+            assert_eq!(err.kind(), ErrorKind::ArgumentConflict, "{flag}");
+        }
+    }
+
+    #[cfg(feature = "reporting")]
+    #[test]
+    fn report_requires_server_list() {
+        let err = Args::try_parse_from(["prog", "--report"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
+
+        let err = Args::try_parse_from(["prog", "host", "2003", "--report"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::ArgumentConflict);
+
+        let args = Args::try_parse_from(["prog", "-l", "servers.json", "--report"]).unwrap();
+        assert!(args.send_report);
     }
 
     #[test]
@@ -229,11 +282,11 @@ mod tests {
         let args = Args::try_parse_from(["prog", "host", "5319", "-P", "both"]).unwrap();
         assert_eq!(
             args.protocol.offered(),
-            Some(vec![ProtocolVersion::RFC, ProtocolVersion::DRAFT])
+            Some(&[ProtocolVersion::RFC, ProtocolVersion::DRAFT][..])
         );
 
         let args = Args::try_parse_from(["prog", "host", "5319", "-P", "19"]).unwrap();
-        assert_eq!(args.protocol.offered(), Some(vec![ProtocolVersion::DRAFT]));
+        assert_eq!(args.protocol.offered(), Some(&[ProtocolVersion::DRAFT][..]));
     }
 
     #[test]

@@ -4,7 +4,6 @@
 
 #![forbid(unsafe_code)]
 
-pub mod args;
 pub mod client;
 pub mod measurement;
 pub mod reporting;
@@ -18,4 +17,4 @@ pub mod validation;
 pub use reporting::{MalfeasanceReport, REPORT_MEDIA_TYPE, ReportEntry};
 pub use validation::{CausalityViolation, ResponseValidator, ValidationError};
 
-pub use crate::client::*;
+pub use crate::client::{Client, ClientBuilder, ClientError, query};
