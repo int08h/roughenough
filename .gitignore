@@ -12,8 +12,5 @@ lcov.info
 coverage.json
 /coverage/
 
-# AI agent configuration (local development only)
-GEMINI.md
-
 # Local development tooling
 .junie/
