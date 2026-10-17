@@ -8,32 +8,6 @@ fixed_tag! {
     Nonce, SIZE, "NONC"
 }
 
-impl From<&[u8]> for Nonce {
-    fn from(bytes: &[u8]) -> Self {
-        let mut data = [0u8; SIZE];
-        data.copy_from_slice(bytes);
-        Nonce(data.into())
-    }
-}
-
-impl From<&Vec<u8>> for Nonce {
-    fn from(bytes: &Vec<u8>) -> Self {
-        Nonce::from(bytes.as_slice())
-    }
-}
-
-impl From<Nonce> for [u8; SIZE] {
-    fn from(nonce: Nonce) -> Self {
-        *nonce.0.as_bytes()
-    }
-}
-
-impl AsRef<[u8]> for Nonce {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_slice()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -74,5 +48,18 @@ mod tests {
     fn debug_label() {
         let nonce = Nonce::from([0xabu8; SIZE]);
         assert!(format!("{nonce:?}").starts_with("NONC(abab"));
+    }
+
+    #[test]
+    fn try_from_slice_checks_length() {
+        assert!(matches!(
+            Nonce::try_from(&[0u8; 31][..]),
+            Err(Error::WrongTagSize(SIZE, 31))
+        ));
+        assert!(matches!(
+            Nonce::try_from(&[0u8; 33][..]),
+            Err(Error::WrongTagSize(SIZE, 33))
+        ));
+        assert!(Nonce::try_from(&[0u8; SIZE][..]).is_ok());
     }
 }

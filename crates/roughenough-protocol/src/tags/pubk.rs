@@ -7,24 +7,11 @@ fixed_tag! {
     PublicKey, SIZE, "PUBK"
 }
 
-impl From<&[u8]> for PublicKey {
-    fn from(bytes: &[u8]) -> Self {
-        let mut data = [0u8; SIZE];
-        data.copy_from_slice(bytes);
-        PublicKey(data.into())
-    }
-}
-
-impl AsRef<[u8]> for PublicKey {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_slice()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::cursor::ParseCursor;
+    use crate::error::Error;
     use crate::wire::{FromWire, ToWire};
 
     #[test]
@@ -44,5 +31,18 @@ mod tests {
         let mut bytes = vec![0u8; SIZE - 1];
         let mut cursor = ParseCursor::new(&mut bytes);
         assert!(PublicKey::from_wire(&mut cursor).is_err());
+    }
+
+    #[test]
+    fn try_from_slice_checks_length() {
+        assert!(matches!(
+            PublicKey::try_from(&[0u8; 31][..]),
+            Err(Error::WrongTagSize(SIZE, 31))
+        ));
+        assert!(matches!(
+            PublicKey::try_from(&[0u8; 33][..]),
+            Err(Error::WrongTagSize(SIZE, 33))
+        ));
+        assert!(PublicKey::try_from(&[0u8; SIZE][..]).is_ok());
     }
 }

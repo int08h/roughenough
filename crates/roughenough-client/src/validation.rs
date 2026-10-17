@@ -267,7 +267,7 @@ impl ResponseValidator {
             );
             return Err(ValidationError::FailedProof(msg));
         };
-        let response_root = response.srep().root().as_ref();
+        let response_root = response.srep().root().as_array();
 
         if computed_root != *response_root {
             let msg = format!(
@@ -348,7 +348,7 @@ mod tests {
 
     fn validator_for(pub_key_b64: &[u8]) -> ResponseValidator {
         let pub_key = BASE64.decode(pub_key_b64).unwrap();
-        ResponseValidator::new_with_key(PublicKey::from(pub_key.as_slice()))
+        ResponseValidator::new_with_key(PublicKey::try_from(pub_key.as_slice()).unwrap())
     }
 
     #[test]
@@ -624,7 +624,7 @@ mod tests {
 
         // DELE with an undefined tag spliced in, signed over those exact bytes
         let mut dele = Delegation::default();
-        dele.set_pubk(PublicKey::from(online.public_key().as_ref()));
+        dele.set_pubk(PublicKey::try_from(online.public_key().as_ref()).unwrap());
         dele.set_mint(0);
         dele.set_maxt(u64::MAX);
         let dele_bytes = insert_tag(&dele.as_bytes().unwrap(), *b"GREZ", &[0xcc; 4]);
@@ -670,7 +670,7 @@ mod tests {
 
         let response = Response::from_frame_bytes(&response_bytes).unwrap();
 
-        let pub_key = PublicKey::from(longterm.public_key().as_ref());
+        let pub_key = PublicKey::try_from(longterm.public_key().as_ref()).unwrap();
         let validator = ResponseValidator::new_with_key(pub_key);
 
         let midpoint = validator

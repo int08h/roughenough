@@ -10,6 +10,15 @@
   `longterm-aws-secret-manager` are replaced by `longterm-aws`;
   `longterm-gcp-kms` and `longterm-gcp-secret-manager` are replaced by
   `longterm-gcp`. The implicit `tokio` feature is gone
+- Protocol: `Nonce` and `PublicKey` no longer implement the panicking
+  `From<&[u8]>`; use `TryFrom<&[u8]>`, which returns
+  `Error::WrongTagSize`
+- Protocol: `SrvCommitment::try_from` reports `Error::WrongTagSize` (was
+  `BufferTooSmall`)
+- Protocol: removed `tags::fixed_tag::FixedTag`, `From<&Vec<u8>> for
+  Nonce`, and `From<Nonce> for [u8; 32]`
+- Protocol: `MerkleRoot` implements `AsRef<[u8]>` instead of
+  `AsRef<[u8; 32]>`; use `MerkleRoot::as_array()` for the array
 
 ### Fixed
 
@@ -41,6 +50,7 @@
   Response from a shared byte slice
 - Client: `test-utils` feature exposing shared test fixtures
   (`roughenough_client::test_utils`) for other crates' tests
+- Protocol: all fixed-size tags gain `as_array()`
 
 ## [2.2.0] - 2026-10-11
 

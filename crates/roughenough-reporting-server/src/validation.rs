@@ -82,7 +82,8 @@ fn validate_entry(
     public_key_bytes: &[u8],
     index: usize,
 ) -> Result<(), String> {
-    let public_key = PublicKey::from(public_key_bytes);
+    let public_key = PublicKey::try_from(public_key_bytes)
+        .map_err(|e| format!("Entry {index}: invalid public key: {e}"))?;
     let validator = ResponseValidator::new_with_key(public_key);
 
     validator
@@ -238,7 +239,7 @@ mod tests {
         let draft_measurement = Measurement::builder()
             .server("127.0.0.1:2002".parse().unwrap())
             .hostname("draft".to_string())
-            .public_key(Some(PublicKey::from(draft_key.as_slice())))
+            .public_key(Some(PublicKey::try_from(draft_key.as_slice()).unwrap()))
             .request(draft_request)
             .response(draft_response)
             .response_bytes(draft_response_bytes.clone())

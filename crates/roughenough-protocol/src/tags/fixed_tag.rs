@@ -1,96 +1,26 @@
-use crate::cursor::ParseCursor;
-use crate::error::Error;
-use crate::{FromWire, ToWire};
-
-/// A generic fixed-size tag type that eliminates some runtime bounds checking for tags with a
-/// compile-time known size.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct FixedTag<const N: usize>([u8; N]);
-
-impl<const N: usize> FixedTag<N> {
-    #[inline]
-    pub fn new(data: [u8; N]) -> Self {
-        Self(data)
-    }
-
-    #[inline]
-    pub fn from_slice(slice: &[u8]) -> Result<Self, Error> {
-        if slice.len() != N {
-            return Err(Error::WrongTagSize(N, slice.len()));
-        }
-        let mut data = [0u8; N];
-        data.copy_from_slice(slice);
-        Ok(Self(data))
-    }
-
-    #[inline]
-    pub fn as_bytes(&self) -> &[u8; N] {
-        &self.0
-    }
-
-    #[inline]
-    pub fn as_slice(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-impl<const N: usize> Default for FixedTag<N> {
-    #[inline]
-    fn default() -> Self {
-        Self([0u8; N])
-    }
-}
-
-impl<const N: usize> From<[u8; N]> for FixedTag<N> {
-    #[inline]
-    fn from(data: [u8; N]) -> Self {
-        Self(data)
-    }
-}
-
-impl<const N: usize> From<&[u8; N]> for FixedTag<N> {
-    #[inline]
-    fn from(data: &[u8; N]) -> Self {
-        Self(*data)
-    }
-}
-
-impl<const N: usize> AsRef<[u8]> for FixedTag<N> {
-    #[inline]
-    fn as_ref(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-impl<const N: usize> ToWire for FixedTag<N> {
-    #[inline]
-    fn wire_size(&self) -> usize {
-        N
-    }
-
-    #[inline]
-    fn to_wire(&self, cursor: &mut ParseCursor) -> Result<(), Error> {
-        cursor.try_put_fixed(&self.0)
-    }
-}
-
-impl<const N: usize> FromWire for FixedTag<N> {
-    #[inline]
-    fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
-        Ok(Self(cursor.try_get_fixed()?))
-    }
-}
-
-/// Declare a fixed-size tag newtype over [`FixedTag`].
+/// Declare a fixed-size tag value type over `[u8; $size]`.
 macro_rules! fixed_tag {
     ($(#[$meta:meta])* $name:ident, $size:expr, $label:literal) => {
         $(#[$meta])*
-        #[derive(Clone, Copy, PartialEq, Eq, Default, Hash)]
-        pub struct $name($crate::tags::fixed_tag::FixedTag<$size>);
+        #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+        pub struct $name([u8; $size]);
+
+        impl $name {
+            pub fn as_array(&self) -> &[u8; $size] {
+                &self.0
+            }
+        }
+
+        // `[u8; N]` implements `Default` only up to N = 32, and SIG is 64 bytes
+        impl Default for $name {
+            fn default() -> Self {
+                Self([0u8; $size])
+            }
+        }
 
         impl std::fmt::Debug for $name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, concat!($label, "({})"), $crate::util::as_hex(self.0.as_slice()))
+                write!(f, concat!($label, "({})"), $crate::util::as_hex(&self.0))
             }
         }
 
@@ -103,7 +33,7 @@ macro_rules! fixed_tag {
                 &self,
                 cursor: &mut $crate::cursor::ParseCursor,
             ) -> Result<(), $crate::error::Error> {
-                self.0.to_wire(cursor)
+                cursor.try_put_fixed(&self.0)
             }
         }
 
@@ -111,7 +41,7 @@ macro_rules! fixed_tag {
             fn from_wire(
                 cursor: &mut $crate::cursor::ParseCursor,
             ) -> Result<Self, $crate::error::Error> {
-                Ok($name(cursor.try_get_fixed()?.into()))
+                Ok(Self(cursor.try_get_fixed()?))
             }
         }
 
@@ -129,7 +59,23 @@ macro_rules! fixed_tag {
 
         impl From<[u8; $size]> for $name {
             fn from(bytes: [u8; $size]) -> Self {
-                $name(bytes.into())
+                Self(bytes)
+            }
+        }
+
+        impl TryFrom<&[u8]> for $name {
+            type Error = $crate::error::Error;
+
+            fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+                <[u8; $size]>::try_from(bytes)
+                    .map(Self)
+                    .map_err(|_| $crate::error::Error::WrongTagSize($size, bytes.len()))
+            }
+        }
+
+        impl AsRef<[u8]> for $name {
+            fn as_ref(&self) -> &[u8] {
+                &self.0
             }
         }
     };

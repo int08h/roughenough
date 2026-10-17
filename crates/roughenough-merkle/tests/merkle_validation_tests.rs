@@ -7,7 +7,7 @@ mod tests {
     // Helper to create a nonce from hex string
     fn nonce_from_hex(hex: &str) -> Nonce {
         let bytes = HEXLOWER.decode(hex.as_bytes()).unwrap();
-        Nonce::from(bytes.as_slice())
+        Nonce::try_from(bytes.as_slice()).unwrap()
     }
 
     #[test]
@@ -347,6 +347,6 @@ mod tests {
         let merkle_root = MerkleRoot::from(computed_root);
 
         // Should be able to compare directly
-        assert_eq!(merkle_root.as_ref(), &computed_root);
+        assert_eq!(merkle_root.as_array(), &computed_root);
     }
 }

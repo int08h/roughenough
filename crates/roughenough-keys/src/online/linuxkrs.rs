@@ -179,7 +179,8 @@ pub mod krs_backend {
 
             // Derive public key
             let keypair = Ed25519KeyPair::from_seed_unchecked(seed.expose()).unwrap();
-            let public_key = PublicKey::from(keypair.public_key().as_ref());
+            let public_key = PublicKey::try_from(keypair.public_key().as_ref())
+                .expect("Ed25519 public keys are 32 bytes");
 
             debug!("stored {}-byte seed as {:?}", seed_len, krs_key.get_id());
 

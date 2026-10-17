@@ -12,14 +12,10 @@ use roughenough_protocol::tags::PublicKey;
 pub fn try_decode_key(encoded_key: &str) -> Result<PublicKey, DecodeError> {
     let key = try_decode(encoded_key)?;
 
-    if key.len() != 32 {
-        return Err(DecodeError {
-            position: key.len(),
-            kind: DecodeKind::Length,
-        });
-    }
-
-    Ok(PublicKey::from(key.as_slice()))
+    PublicKey::try_from(key.as_slice()).map_err(|_| DecodeError {
+        position: key.len(),
+        kind: DecodeKind::Length,
+    })
 }
 
 /// Attempt to decode `encoded_value` into a `Vec<u8>` using multiple encoding formats until

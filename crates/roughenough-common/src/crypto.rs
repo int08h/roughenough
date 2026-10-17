@@ -13,7 +13,7 @@ pub fn calculate_chained_nonce(prior_response_frame: &[u8], rand: &[u8]) -> Nonc
     chain_value.extend_from_slice(rand);
 
     let digest = digest(&SHA512, &chain_value);
-    Nonce::from(&digest.as_ref()[..32])
+    Nonce::try_from(&digest.as_ref()[..32]).expect("SHA-512 digest is 64 bytes")
 }
 
 /// Generate cryptographically secure random bytes

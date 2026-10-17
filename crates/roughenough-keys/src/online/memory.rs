@@ -37,7 +37,8 @@ impl MemoryBackend {
 impl SeedBackend for MemoryBackend {
     fn store_seed(&mut self, seed: Seed) -> Result<(), BackendError> {
         let keypair = Ed25519KeyPair::from_seed_unchecked(seed.expose()).unwrap();
-        let public_key = PublicKey::from(keypair.public_key().as_ref());
+        let public_key = PublicKey::try_from(keypair.public_key().as_ref())
+            .expect("Ed25519 public keys are 32 bytes");
 
         self.public_key = Some(public_key);
         self.seed = Some(seed);
