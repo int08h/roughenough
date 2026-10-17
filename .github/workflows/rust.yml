@@ -145,8 +145,9 @@ jobs:
         with:
           tool: cargo-fuzz
 
+      # The prebuilt cargo-fuzz is a musl binary, and cargo-fuzz defaults to its own target
       - name: Build fuzz targets
-        run: cargo fuzz build
+        run: cargo fuzz build --target x86_64-unknown-linux-gnu
 
   build:
     runs-on: ubuntu-latest
