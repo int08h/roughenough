@@ -318,15 +318,15 @@ impl Client {
             }
         };
 
-        Measurement::builder()
-            .server(self.server)
-            .hostname(self.hostname.clone())
-            .public_key(self.public_key)
-            .request(request)
-            .response(response)
-            .response_bytes(response_bytes)
-            .rand_value(rand_value)
-            .build()
+        Ok(Measurement::new(
+            self.server,
+            self.hostname.clone(),
+            self.public_key,
+            request,
+            response,
+            response_bytes,
+            rand_value,
+        ))
     }
 
     fn create_request(&self, nonce: &Nonce) -> Request {

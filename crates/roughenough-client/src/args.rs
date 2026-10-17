@@ -101,6 +101,7 @@ pub struct Args {
     )]
     pub quiet: bool,
 
+    #[cfg(feature = "reporting")]
     #[clap(
         long = "report",
         help = "Send malfeasance reports when causality violations are detected",
@@ -240,6 +241,13 @@ mod tests {
         let err = Args::try_parse_from(["prog", "--version"]).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::DisplayVersion);
         assert!(err.to_string().contains(env!("CARGO_PKG_VERSION")));
+    }
+
+    #[cfg(not(feature = "reporting"))]
+    #[test]
+    fn report_flag_requires_reporting_feature() {
+        let err = Args::try_parse_from(["prog", "-l", "servers.json", "--report"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::UnknownArgument);
     }
 
     #[test]

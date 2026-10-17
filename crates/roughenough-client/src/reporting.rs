@@ -1,7 +1,7 @@
 //! Observations providing proof that a server sent incorrect time.
 
 use ReportingError::{
-    BadEntry, BrokenChain, HttpError, InvalidResponse, MissingRand, NoViolation, TooFewEntries,
+    BadEntry, BrokenChain, InvalidResponse, MissingRand, NoViolation, TooFewEntries,
 };
 use data_encoding::BASE64;
 use roughenough_common::crypto::calculate_chained_nonce;
@@ -10,9 +10,6 @@ use roughenough_protocol::request::Request;
 use roughenough_protocol::tags::PublicKey;
 use roughenough_protocol::wire::FromFrame;
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "reporting")]
-use tracing::error;
-use tracing::info;
 
 use crate::measurement::Measurement;
 use crate::validation::{interval, violating_pairs};
@@ -24,9 +21,6 @@ pub const REPORT_MEDIA_TYPE: &str = "application/roughtime-malfeasance+json";
 /// Errors that can occur during malfeasance reporting
 #[derive(thiserror::Error, Debug)]
 pub enum ReportingError {
-    #[error("{0}")]
-    SerializationError(#[from] roughenough_protocol::error::Error),
-
     #[error("remote server: {0}")]
     HttpError(String),
 
@@ -172,7 +166,8 @@ impl MalfeasanceReport {
     }
 
     /// Extracts the chain of measurements that demonstrates the violation and formats
-    /// them according to the RFC specification. Use `submit()` to send them to a server.
+    /// them according to the RFC specification. With the `reporting` feature, `submit()` sends
+    /// them to a server.
     ///
     /// The report carries the violation's full measurement chain, in the order
     /// performed (RFC 8.4.1).
@@ -237,27 +232,11 @@ impl MalfeasanceReport {
     /// POSTs the malfeasance report to the specified URL
     #[cfg(feature = "reporting")]
     pub fn submit(&self, url: &str) -> Result<(), ReportingError> {
-        info!("Sending malfeasance report to {url}");
-
-        match ureq::post(url)
+        ureq::post(url)
             .content_type(REPORT_MEDIA_TYPE)
             .send_json(self)
-        {
-            Ok(_response) => {
-                info!("Successfully sent malfeasance report");
-                Ok(())
-            }
-            Err(e) => {
-                error!("failed to submit report: {e}");
-                Err(HttpError(e.to_string()))
-            }
-        }
-    }
-
-    #[cfg(not(feature = "reporting"))]
-    pub fn submit(&self, _url: &str) -> Result<(), ReportingError> {
-        info!("Report submission is disabled. Recompile with the 'reporting' feature to enable.");
-        Err(HttpError("Reporting is disabled".to_string()))
+            .map(|_response| ())
+            .map_err(|e| ReportingError::HttpError(e.to_string()))
     }
 }
 
@@ -389,16 +368,15 @@ mod tests {
         let draft_response = Response::from_frame_bytes(&draft_response_bytes).unwrap();
         assert_eq!(*draft_response.srep().ver(), ProtocolVersion::DRAFT);
 
-        let draft_measurement = Measurement::builder()
-            .server("127.0.0.1:2002".parse().unwrap())
-            .hostname("draft".to_string())
-            .public_key(Some(PublicKey::try_from(draft_key.as_slice()).unwrap()))
-            .request(draft_request)
-            .response(draft_response)
-            .response_bytes(draft_response_bytes.clone())
-            .rand_value(None)
-            .build()
-            .unwrap();
+        let draft_measurement = Measurement::new(
+            "127.0.0.1:2002".parse().unwrap(),
+            "draft".to_string(),
+            Some(PublicKey::try_from(draft_key.as_slice()).unwrap()),
+            draft_request,
+            draft_response,
+            draft_response_bytes.clone(),
+            None,
+        );
 
         // Entry 1: a version 1 exchange chained to entry 0 whose MIDP is
         // earlier than entry 0's
@@ -408,16 +386,15 @@ mod tests {
         let (request, response) = ctx.create_interaction_pair_with_nonce(BASE_TIME, &nonce);
         assert_eq!(*response.srep().ver(), ProtocolVersion::RFC);
 
-        let rfc_measurement = Measurement::builder()
-            .server("127.0.0.1:5319".parse().unwrap())
-            .hostname("rfc".to_string())
-            .public_key(Some(ctx.key_source.public_key()))
-            .request(request)
-            .response(response.clone())
-            .response_bytes(response.as_frame_bytes().unwrap())
-            .rand_value(Some(rand))
-            .build()
-            .unwrap();
+        let rfc_measurement = Measurement::new(
+            "127.0.0.1:5319".parse().unwrap(),
+            "rfc".to_string(),
+            Some(ctx.key_source.public_key()),
+            request,
+            response.clone(),
+            response.as_frame_bytes().unwrap(),
+            Some(rand),
+        );
 
         let measurements = vec![draft_measurement, rfc_measurement];
         let violation = CausalityViolation::new(&measurements, 0, 1);

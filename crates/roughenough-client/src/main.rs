@@ -8,6 +8,7 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use roughenough_client::args::Args;
 use roughenough_client::measurement::Measurement;
+#[cfg(feature = "reporting")]
 use roughenough_client::reporting::MalfeasanceReport;
 use roughenough_client::sequence::MeasurementSequence;
 use roughenough_client::server_list::ServerList;
@@ -74,6 +75,12 @@ fn query_multiple_servers(args: &Args, list_file: &String) -> u64 {
         std::process::exit(-1);
     });
 
+    #[cfg(feature = "reporting")]
+    if args.send_report && server_list.reporting_url().is_none() {
+        error!("--report requires a 'reports' URL in the server list");
+        std::process::exit(-1);
+    }
+
     let clients = clients_from_list(&server_list, args).unwrap_or_else(|e| {
         error!("Processing '{list_file}': {e}");
         std::process::exit(-1);
@@ -94,15 +101,14 @@ fn query_multiple_servers(args: &Args, list_file: &String) -> u64 {
             display_violation(args, violation);
         }
 
+        #[cfg(feature = "reporting")]
         if args.send_report
-            && let Some(report_url) = server_list.reporting_url()
+            && let Some(url) = server_list.reporting_url()
         {
-            info!("Sending malfeasance report to: {}", report_url);
-
             for violation in &violations {
-                let report = MalfeasanceReport::from_violation(violation);
-                if let Err(e) = report.submit(report_url) {
-                    error!("Failed to send malfeasance report: {e}");
+                match MalfeasanceReport::from_violation(violation).submit(url) {
+                    Ok(()) => info!("Sent malfeasance report to {url}"),
+                    Err(e) => error!("Failed to send malfeasance report to {url}: {e}"),
                 }
             }
         }

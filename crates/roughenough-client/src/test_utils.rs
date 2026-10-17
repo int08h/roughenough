@@ -16,16 +16,15 @@ pub fn measurement(midpoint: u64) -> Measurement {
     let resp_bytes = resp.as_frame_bytes().unwrap();
     let pubkey = PublicKey::from(ctx.key_source.public_key_bytes());
 
-    Measurement::builder()
-        .server("127.0.0.1:8000".parse().unwrap())
-        .request(req)
-        .response(resp)
-        .response_bytes(resp_bytes)
-        .hostname("test".to_string())
-        .public_key(Some(pubkey))
-        .rand_value(None)
-        .build()
-        .unwrap()
+    Measurement::new(
+        "127.0.0.1:8000".parse().unwrap(),
+        "test".to_string(),
+        Some(pubkey),
+        req,
+        resp,
+        resp_bytes,
+        None,
+    )
 }
 
 /// Arbitrary MIDP/RADI written after the exchange, so extreme values never reach the test
@@ -42,16 +41,15 @@ pub fn hostile_measurement(midpoint: u64, radius: u32) -> Measurement {
     let resp_bytes = resp.as_frame_bytes().unwrap();
     let pubkey = PublicKey::from(ctx.key_source.public_key_bytes());
 
-    Measurement::builder()
-        .server("127.0.0.1:8000".parse().unwrap())
-        .request(req)
-        .response(resp)
-        .response_bytes(resp_bytes)
-        .hostname("test".to_string())
-        .public_key(Some(pubkey))
-        .rand_value(None)
-        .build()
-        .unwrap()
+    Measurement::new(
+        "127.0.0.1:8000".parse().unwrap(),
+        "test".to_string(),
+        Some(pubkey),
+        req,
+        resp,
+        resp_bytes,
+        None,
+    )
 }
 
 /// A nonce-chained sequence (RFC 8.2): entry 0 uses a random nonce and `first_rand` as its
@@ -77,16 +75,15 @@ pub fn chained_measurements(midpoints: &[u64], first_rand: Option<[u8; 32]>) -> 
         let (request, response) = ctx.create_interaction_pair_with_nonce(midpoint, &nonce);
         let response_bytes = response.as_frame_bytes().unwrap();
 
-        let measurement = Measurement::builder()
-            .server("127.0.0.1:2003".parse().unwrap())
-            .hostname("test".to_string())
-            .public_key(Some(ctx.key_source.public_key()))
-            .request(request)
-            .response(response)
-            .response_bytes(response_bytes.clone())
-            .rand_value(rand_value)
-            .build()
-            .unwrap();
+        let measurement = Measurement::new(
+            "127.0.0.1:2003".parse().unwrap(),
+            "test".to_string(),
+            Some(ctx.key_source.public_key()),
+            request,
+            response,
+            response_bytes.clone(),
+            rand_value,
+        );
 
         prior_response = Some(response_bytes);
         measurements.push(measurement);

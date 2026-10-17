@@ -48,6 +48,13 @@
   `ClientError::BadResponse`
 - Client API: `ReportingError` has new variants for report verification
   failures
+- Client API: `Measurement::builder` and `MeasurementBuilder` are removed;
+  `Measurement`s come only from `Client`
+- Client API: `ReportingError::SerializationError` is removed
+- Client: `MalfeasanceReport::submit` and the `--report` flag exist only
+  with the `reporting` feature
+- Client: `--report` fails before any query when the server list has no
+  `reports` URL
 - Reporting server: `validate_report` and its `validation` module are
   removed; use `MalfeasanceReport::verify()`
 
