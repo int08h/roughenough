@@ -14,4 +14,4 @@ pub mod version_list;
 pub mod wire;
 
 // Re-export commonly used types
-pub use wire::{FromFrame, FromWire, FromWireN, ToFrame, ToWire};
+pub use wire::{FromFrame, FromWire, ToFrame, ToWire};

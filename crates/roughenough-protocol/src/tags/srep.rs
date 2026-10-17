@@ -4,7 +4,7 @@ use crate::error::Error::{MissingTag, NoSupportedVersions, WrongTagSize};
 use crate::header::{Header, Header5, RawHeader};
 use crate::tag::Tag;
 use crate::tags::{MerkleRoot, ProtocolVersion, SupportedVersions};
-use crate::wire::{FromWire, FromWireN, ToWire};
+use crate::wire::{FromWire, ToWire};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -127,13 +127,6 @@ impl ToWire for SignedResponse {
 }
 
 impl FromWire for SignedResponse {
-    fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
-        let msg_len = cursor.remaining();
-        Self::from_wire_n(cursor, msg_len)
-    }
-}
-
-impl FromWireN for SignedResponse {
     fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error> {
         const RAW_VER: u32 = Tag::VER as u32;
         const RAW_RADI: u32 = Tag::RADI as u32;
@@ -153,12 +146,7 @@ impl FromWireN for SignedResponse {
             let value_start = cursor.position();
 
             match raw_tag {
-                RAW_VER => {
-                    if value_len != size_of::<u32>() {
-                        return Err(WrongTagSize(size_of::<u32>(), value_len));
-                    }
-                    version = Some(ProtocolVersion::from_wire(cursor)?);
-                }
+                RAW_VER => version = Some(ProtocolVersion::from_wire_n(cursor, value_len)?),
                 RAW_RADI => {
                     if value_len != size_of::<u32>() {
                         return Err(WrongTagSize(size_of::<u32>(), value_len));
@@ -180,12 +168,7 @@ impl FromWireN for SignedResponse {
                     }
                     supported_versions = Some(vers);
                 }
-                RAW_ROOT => {
-                    if value_len != size_of::<MerkleRoot>() {
-                        return Err(WrongTagSize(size_of::<MerkleRoot>(), value_len));
-                    }
-                    merkle_root = Some(MerkleRoot::from_wire(cursor)?);
-                }
+                RAW_ROOT => merkle_root = Some(MerkleRoot::from_wire_n(cursor, value_len)?),
                 // RFC 9.2 adds new tags to SREP; RFC 7: clients MUST properly
                 // ignore undefined tags
                 _ => {}

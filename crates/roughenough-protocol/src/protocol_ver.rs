@@ -4,7 +4,7 @@ use std::mem::size_of;
 
 use crate::cursor::ParseCursor;
 use crate::error::Error;
-use crate::error::Error::InvalidVersion;
+use crate::error::Error::{InvalidVersion, WrongTagSize};
 use crate::wire::{FromWire, ToWire};
 
 /// A `ProtocolVersion` is a u32 version number identifying a specific Roughtime
@@ -111,7 +111,10 @@ impl ToWire for ProtocolVersion {
 }
 
 impl FromWire for ProtocolVersion {
-    fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
+    fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error> {
+        if n != size_of::<Self>() {
+            return Err(WrongTagSize(size_of::<Self>(), n));
+        }
         let value = cursor.try_get_u32_le()?;
         Self::from_u32(value).ok_or(InvalidVersion(value))
     }

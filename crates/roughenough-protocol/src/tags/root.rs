@@ -44,7 +44,7 @@ mod tests {
         );
 
         match result.unwrap_err() {
-            Error::BufferTooSmall(_, _) => {}
+            Error::WrongTagSize(SIZE, 0) => {}
             e => panic!("Unexpected error: {e:?}"),
         }
     }

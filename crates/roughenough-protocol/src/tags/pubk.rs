@@ -26,11 +26,12 @@ mod tests {
 
     #[test]
     fn short_buffer_is_rejected() {
-        // PUBK's enclosing DELE checks the declared tag size, so the main
-        // failure mode here is a short buffer
         let mut bytes = vec![0u8; SIZE - 1];
         let mut cursor = ParseCursor::new(&mut bytes);
-        assert!(PublicKey::from_wire(&mut cursor).is_err());
+        assert!(matches!(
+            PublicKey::from_wire(&mut cursor),
+            Err(Error::WrongTagSize(SIZE, n)) if n == SIZE - 1
+        ));
     }
 
     #[test]

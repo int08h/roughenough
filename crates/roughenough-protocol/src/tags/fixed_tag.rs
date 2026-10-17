@@ -38,14 +38,9 @@ macro_rules! fixed_tag {
         }
 
         impl $crate::wire::FromWire for $name {
-            fn from_wire(
-                cursor: &mut $crate::cursor::ParseCursor,
-            ) -> Result<Self, $crate::error::Error> {
-                Ok(Self(cursor.try_get_fixed()?))
-            }
-        }
-
-        impl $crate::wire::FromWireN for $name {
+            // Tiny and on the request hot path; without the hint these stay
+            // out of line when the caller lands in another codegen unit
+            #[inline]
             fn from_wire_n(
                 cursor: &mut $crate::cursor::ParseCursor,
                 n: usize,
@@ -53,7 +48,7 @@ macro_rules! fixed_tag {
                 if n != $size {
                     return Err($crate::error::Error::WrongTagSize($size, n));
                 }
-                <Self as $crate::wire::FromWire>::from_wire(cursor)
+                Ok(Self(cursor.try_get_fixed()?))
             }
         }
 

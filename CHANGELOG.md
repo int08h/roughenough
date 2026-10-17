@@ -30,6 +30,9 @@
   `try_put_u64_le`
 - Protocol: an over-long PATH reports `Error::InvalidPathLength` (was
   `BufferTooSmall`)
+- Protocol: `FromWireN` is merged into `FromWire`, which now requires
+  `from_wire_n(cursor, n)` and provides `from_wire(cursor)`. `from_wire`
+  on a fixed-size tag now requires exactly that many remaining bytes
 
 ### Fixed
 

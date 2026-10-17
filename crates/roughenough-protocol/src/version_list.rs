@@ -5,7 +5,7 @@ use Error::UnorderedVersion;
 use crate::cursor::ParseCursor;
 use crate::error::Error;
 use crate::protocol_ver::ProtocolVersion;
-use crate::wire::{FromWire, FromWireN, ToWire};
+use crate::wire::{FromWire, ToWire};
 
 /// An ordered list of supported protocol versions. Used by clients in VER, and servers in VERS:
 ///
@@ -100,12 +100,6 @@ impl ToWire for VersionList {
 }
 
 impl FromWire for VersionList {
-    fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
-        VersionList::from_wire_n(cursor, cursor.remaining())
-    }
-}
-
-impl FromWireN for VersionList {
     fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error> {
         let mut remaining = n;
         let mut vers = VersionList::default();

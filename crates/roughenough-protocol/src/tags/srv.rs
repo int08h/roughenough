@@ -20,7 +20,7 @@ mod tests {
     use super::*;
     use crate::cursor::ParseCursor;
     use crate::error::Error;
-    use crate::wire::{FromWire, FromWireN, ToWire};
+    use crate::wire::{FromWire, ToWire};
 
     #[test]
     fn round_trip() {

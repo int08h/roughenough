@@ -7,7 +7,7 @@ use crate::header::{Header, Header7, RawHeader};
 use crate::tag::Tag;
 use crate::tags::srep::SignedResponse;
 use crate::tags::{Certificate, MerklePath, MessageType, Nonce, Signature};
-use crate::wire::{FromFrame, FromWire, FromWireN, ToFrame, ToWire};
+use crate::wire::{FromFrame, FromWire, ToFrame, ToWire};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -132,7 +132,7 @@ impl Default for Response {
 }
 
 impl FromWire for Response {
-    fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
+    fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error> {
         const RAW_SIG: u32 = Tag::SIG as u32;
         const RAW_NONC: u32 = Tag::NONC as u32;
         const RAW_TYPE: u32 = Tag::TYPE as u32;
@@ -141,7 +141,7 @@ impl FromWire for Response {
         const RAW_CERT: u32 = Tag::CERT as u32;
         const RAW_INDX: u32 = Tag::INDX as u32;
 
-        let header = RawHeader::from_wire(cursor)?;
+        let header = RawHeader::from_wire_n(cursor, n)?;
 
         let mut signature: Option<Signature> = None;
         let mut nonce: Option<Nonce> = None;

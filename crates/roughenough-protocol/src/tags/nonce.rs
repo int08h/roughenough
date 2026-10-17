@@ -13,7 +13,7 @@ mod tests {
     use super::*;
     use crate::cursor::ParseCursor;
     use crate::error::Error;
-    use crate::wire::{FromWire, FromWireN, ToWire};
+    use crate::wire::{FromWire, ToWire};
 
     #[test]
     fn round_trip() {
@@ -41,7 +41,10 @@ mod tests {
     fn short_buffer_is_rejected() {
         let mut bytes = vec![0u8; SIZE - 1];
         let mut cursor = ParseCursor::new(&mut bytes);
-        assert!(Nonce::from_wire(&mut cursor).is_err());
+        assert!(matches!(
+            Nonce::from_wire(&mut cursor),
+            Err(Error::WrongTagSize(SIZE, n)) if n == SIZE - 1
+        ));
     }
 
     #[test]

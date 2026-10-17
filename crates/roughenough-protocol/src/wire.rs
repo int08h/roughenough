@@ -58,7 +58,14 @@ pub trait ToFrame: ToWire {
 }
 
 pub trait FromWire: Sized {
-    fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error>;
+    /// Parse a value occupying exactly the next `n` bytes of `cursor`.
+    fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error>;
+
+    /// Parse a value occupying all remaining bytes of `cursor`.
+    fn from_wire(cursor: &mut ParseCursor) -> Result<Self, Error> {
+        let n = cursor.remaining();
+        Self::from_wire_n(cursor, n)
+    }
 }
 
 /// Implementations can deserialize themselves from a framed Roughtime message:
@@ -102,10 +109,6 @@ pub trait FromFrame: FromWire {
         let mut cursor = ParseCursor::new(&mut buf);
         Self::from_frame(&mut cursor)
     }
-}
-
-pub trait FromWireN: Sized {
-    fn from_wire_n(cursor: &mut ParseCursor, n: usize) -> Result<Self, Error>;
 }
 
 #[cfg(test)]
