@@ -393,7 +393,6 @@ pub(crate) mod testing {
             let request = Request::from_frame_bytes(&frame).expect("mock got a valid request");
 
             let mut ctx = self.ctx.borrow_mut();
-            ctx.response_handler.clear();
             let version = ProtocolVersion::negotiate(request.ver().versions())
                 .expect("mock got a request offering version 1");
             ctx.response_handler

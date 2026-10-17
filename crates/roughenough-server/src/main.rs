@@ -14,8 +14,8 @@
 //!   the root once, then sends responses to each client. This amortizes the (relatively)
 //!   expensive Ed25519 signature calculation across all requests in a batch.
 //!
-//! - **Processing Pipeline**: UDP Socket -> NetworkHandler -> RequestHandler -> BatchingResponder
-//!   -> UDP Socket
+//! - **Processing Pipeline**: UDP Socket -> NetworkHandler -> RequestValidator -> ResponseHandler
+//!   -> NetworkHandler -> UDP Socket
 //!
 use std::io;
 use std::net::{SocketAddr, UdpSocket as StdUdpSocket};

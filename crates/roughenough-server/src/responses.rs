@@ -99,8 +99,8 @@ impl ResponseHandler {
         self.version_templates.clear();
     }
 
-    /// Process all responses. `callback` receives each response as a borrowed slice that's
-    /// valid only during the callback.
+    /// Process all responses, then clear the batch. `callback` receives each response as a
+    /// borrowed slice that's valid only during the callback.
     pub fn process_responses<F>(&mut self, mut callback: F)
     where
         F: FnMut(SocketAddr, &[u8]),
@@ -143,6 +143,9 @@ impl ResponseHandler {
                 &self.response_buf[..frame_size],
             );
         }
+
+        self.merkle_tree.clear();
+        self.requests.clear();
     }
 
     /// Return the index of a template carrying this batch's SREP and SIG for
@@ -191,11 +194,6 @@ impl ResponseHandler {
         self.key_source.public_key()
     }
 
-    pub fn clear(&mut self) {
-        self.merkle_tree.clear();
-        self.requests.clear();
-    }
-
     #[allow(dead_code)] // used in worker metrics collection
     pub fn metrics(&self) -> ResponseMetrics {
         self.response_metrics
@@ -242,7 +240,7 @@ mod tests {
     }
 
     #[test]
-    fn clear_state() {
+    fn process_responses_leaves_handler_empty() {
         let mut responder = new_response_handler();
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
 
@@ -258,7 +256,7 @@ mod tests {
         assert_eq!(responder.num_pending(), 1);
         assert!(!responder.merkle_tree().is_empty());
 
-        responder.clear();
+        responder.process_responses(|_, _| {});
 
         assert_eq!(responder.num_pending(), 0);
         assert!(responder.merkle_tree().is_empty());
@@ -404,7 +402,6 @@ mod tests {
             responder.process_responses(|_, bytes| {
                 responses.push(Response::from_frame_bytes(bytes).unwrap());
             });
-            responder.clear();
             responses
         };
 
@@ -456,7 +453,6 @@ mod tests {
             responder.process_responses(|_, bytes| {
                 responses.push(Response::from_frame_bytes(bytes).unwrap());
             });
-            responder.clear();
             responses.pop().unwrap()
         };
 

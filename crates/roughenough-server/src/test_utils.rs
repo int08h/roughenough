@@ -2,6 +2,7 @@
 //! Provides "glue" needed for complex testing scenarios
 //!
 
+use std::net::SocketAddr;
 use std::time::Duration;
 
 use roughenough_common::clocksource::ClockSource;
@@ -12,6 +13,7 @@ use roughenough_protocol::tags::{Nonce, ProtocolVersion};
 use roughenough_protocol::{FromFrame, ToFrame};
 
 use crate::keysource::KeySource;
+use crate::requests::RequestValidator;
 use crate::responses::ResponseHandler;
 
 #[allow(dead_code)]
@@ -25,6 +27,41 @@ pub struct TestContext {
 /// Creates a test ResponseHandler from a fixed seed and configuration
 pub fn new_response_handler() -> ResponseHandler {
     TestContext::new(64).response_handler
+}
+
+/// The worker's request path without its sockets: validate, batch, and respond.
+pub struct RequestPipeline {
+    pub validator: RequestValidator,
+    pub responder: ResponseHandler,
+}
+
+impl RequestPipeline {
+    pub fn new(batch_size: u8) -> Self {
+        let responder = TestContext::new(batch_size).response_handler;
+        Self::with_responder(responder)
+    }
+
+    pub fn with_responder(responder: ResponseHandler) -> Self {
+        let validator = RequestValidator::new(&responder.long_term_public_key());
+        Self {
+            validator,
+            responder,
+        }
+    }
+
+    pub fn collect(&mut self, bytes: &mut [u8], addr: SocketAddr) {
+        if let Some((request, version)) = self.validator.validate(bytes) {
+            self.responder.add_request(bytes, request, version, addr);
+        }
+    }
+
+    /// Responds to every collected request and returns the responses.
+    pub fn drain(&mut self) -> Vec<(SocketAddr, Vec<u8>)> {
+        let mut responses = Vec::new();
+        self.responder
+            .process_responses(|addr, bytes| responses.push((addr, bytes.to_vec())));
+        responses
+    }
 }
 
 /// Creates a TestContext so the midpoints of responses can be set to arbitrary values.
@@ -64,7 +101,6 @@ impl TestContext {
         midpoint: u64,
         nonce: &Nonce,
     ) -> (Request, Response) {
-        self.response_handler.clear();
         self.clock.set_time(midpoint);
 
         let request = Request::new(nonce);

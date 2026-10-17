@@ -1,5 +1,3 @@
-use std::net::SocketAddr;
-
 use roughenough_common::crypto::make_srv_commitment;
 use roughenough_protocol::cursor::ParseCursor;
 use roughenough_protocol::request::{REQUEST_SIZE, Request};
@@ -7,33 +5,32 @@ use roughenough_protocol::tags::{ProtocolVersion, PublicKey, SrvCommitment};
 use roughenough_protocol::wire::FromFrame;
 
 use crate::metrics::types::RequestMetrics;
-use crate::responses::ResponseHandler;
 
-pub struct RequestHandler {
-    responder: ResponseHandler,
+pub struct RequestValidator {
     metrics: RequestMetrics,
     /// SRV commitment to this server's long-term key, H(0xff || public_key)
     srv_commitment: SrvCommitment,
 }
 
-impl RequestHandler {
-    pub fn new(handler: ResponseHandler) -> Self {
-        let srv_commitment = make_srv_commitment(&handler.long_term_public_key());
+impl RequestValidator {
+    pub fn new(long_term_key: &PublicKey) -> Self {
+        let srv_commitment = make_srv_commitment(long_term_key);
 
         Self {
-            responder: handler,
             metrics: RequestMetrics::default(),
             srv_commitment,
         }
     }
 
-    pub fn collect_request(&mut self, request_bytes: &mut [u8], src_addr: SocketAddr) {
+    /// Returns the parsed request and negotiated version, or `None` for a
+    /// request this server does not answer (counted in the metrics).
+    pub fn validate(&mut self, request_bytes: &mut [u8]) -> Option<(Request, ProtocolVersion)> {
         // RFC 5.1: request size SHOULD be at least 1024 bytes for UDP; this
         // implementation requires it. Larger requests are accepted up to a
         // full MTU payload (the receive buffer is MAX_REQUEST_SIZE bytes).
         if request_bytes.len() < REQUEST_SIZE {
             self.metrics.num_runt_requests += 1;
-            return;
+            return None;
         } else if request_bytes.len() > REQUEST_SIZE {
             self.metrics.num_oversized_requests += 1;
         }
@@ -47,76 +44,45 @@ impl RequestHandler {
                     && srv != &self.srv_commitment
                 {
                     self.metrics.num_srv_mismatch += 1;
-                    return;
+                    return None;
                 }
 
                 // RFC 5.1.1: a request offering no version in common with this
                 // server MAY be ignored; this implementation ignores it
                 let Some(version) = ProtocolVersion::negotiate(request.ver().versions()) else {
                     self.metrics.num_no_common_version += 1;
-                    return;
+                    return None;
                 };
 
-                self.responder
-                    .add_request(request_bytes, request, version, src_addr);
                 self.metrics.num_ok_requests += 1;
+                Some((request, version))
             }
             Err(_) => {
                 self.metrics.num_bad_requests += 1;
+                None
             }
         }
     }
 
-    pub fn generate_responses<F>(&mut self, callback: F)
-    where
-        F: FnMut(SocketAddr, &[u8]),
-    {
-        self.responder.process_responses(callback);
-        self.responder.clear();
-    }
-
-    pub fn replace_online_key(&mut self) {
-        self.responder.replace_online_key();
-    }
-
-    pub fn public_key(&self) -> PublicKey {
-        self.responder.public_key()
-    }
-
-    pub fn key_validity(&self) -> (u64, u64) {
-        self.responder.key_validity()
-    }
-
-    #[allow(dead_code)] // used in tests, but compiler can't see that
     pub fn metrics(&self) -> RequestMetrics {
         self.metrics
     }
 
-    #[allow(dead_code)] // used in tests, but compiler can't see that
     pub fn reset_metrics(&mut self) {
         self.metrics = RequestMetrics::default();
-        self.responder.reset_metrics();
-    }
-
-    #[allow(dead_code)] // used in worker metrics collection
-    pub fn response_metrics(&self) -> crate::metrics::types::ResponseMetrics {
-        self.responder.metrics()
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::net::SocketAddr;
+
     use roughenough_protocol::request::MAX_REQUEST_SIZE;
     use roughenough_protocol::tags::Nonce;
     use roughenough_protocol::wire::ToFrame;
 
     use super::*;
-    use crate::test_utils::new_response_handler;
-
-    fn create_request_handler() -> RequestHandler {
-        let responder = new_response_handler();
-        RequestHandler::new(responder)
-    }
+    use crate::test_utils::RequestPipeline;
 
     fn create_test_request_bytes(nonce_value: u8) -> Vec<u8> {
         let nonce = Nonce::from([nonce_value; 32]);
@@ -129,13 +95,13 @@ mod tests {
 
     #[test]
     fn test_process_valid_request() {
-        let mut handler = create_request_handler();
+        let mut pipeline = RequestPipeline::new(64);
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
         let mut request_bytes = create_test_request_bytes(42);
 
-        handler.collect_request(&mut request_bytes, addr);
+        pipeline.collect(&mut request_bytes, addr);
 
-        let metrics = handler.metrics();
+        let metrics = pipeline.validator.metrics();
         assert_eq!(metrics.num_ok_requests, 1);
         assert_eq!(metrics.num_bad_requests, 0);
         assert_eq!(metrics.num_runt_requests, 0);
@@ -144,26 +110,26 @@ mod tests {
 
     #[test]
     fn test_process_runt_request() {
-        let mut handler = create_request_handler();
+        let mut pipeline = RequestPipeline::new(64);
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
         let mut short_request = vec![0u8; REQUEST_SIZE - 1];
 
-        handler.collect_request(&mut short_request, addr);
+        pipeline.collect(&mut short_request, addr);
 
-        let metrics = handler.metrics();
+        let metrics = pipeline.validator.metrics();
         assert_eq!(metrics.num_ok_requests, 0);
         assert_eq!(metrics.num_runt_requests, 1);
     }
 
     #[test]
     fn oversized_garbage_request_is_rejected_as_bad() {
-        let mut handler = create_request_handler();
+        let mut pipeline = RequestPipeline::new(64);
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
         let mut large_request = vec![0u8; REQUEST_SIZE + 1];
 
-        handler.collect_request(&mut large_request, addr);
+        pipeline.collect(&mut large_request, addr);
 
-        let metrics = handler.metrics();
+        let metrics = pipeline.validator.metrics();
         assert_eq!(metrics.num_ok_requests, 0);
         assert_eq!(metrics.num_oversized_requests, 1);
         assert_eq!(metrics.num_bad_requests, 1);
@@ -173,21 +139,20 @@ mod tests {
     fn oversized_valid_request_is_answered() {
         // A valid 1024-byte request with trailing bytes beyond the declared
         // frame length parses the same as its 1024-byte prefix
-        let mut handler = create_request_handler();
+        let mut pipeline = RequestPipeline::new(64);
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
 
         let mut request_bytes = create_test_request_bytes(42);
         request_bytes.resize(MAX_REQUEST_SIZE, 0);
 
-        handler.collect_request(&mut request_bytes, addr);
+        pipeline.collect(&mut request_bytes, addr);
 
-        let metrics = handler.metrics();
+        let metrics = pipeline.validator.metrics();
         assert_eq!(metrics.num_ok_requests, 1);
         assert_eq!(metrics.num_oversized_requests, 1);
         assert_eq!(metrics.num_bad_requests, 0);
 
-        let mut responses = Vec::new();
-        handler.generate_responses(|_, bytes| responses.push(bytes.to_vec()));
+        let responses = pipeline.drain();
         assert_eq!(responses.len(), 1, "oversized request must be answered");
     }
 
@@ -205,16 +170,15 @@ mod tests {
         let mut request_bytes = build_raw_request(entries);
         assert_eq!(request_bytes.len(), MAX_REQUEST_SIZE);
 
-        let mut handler = create_request_handler();
+        let mut pipeline = RequestPipeline::new(64);
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-        handler.collect_request(&mut request_bytes, addr);
+        pipeline.collect(&mut request_bytes, addr);
 
-        let metrics = handler.metrics();
+        let metrics = pipeline.validator.metrics();
         assert_eq!(metrics.num_ok_requests, 1);
         assert_eq!(metrics.num_oversized_requests, 1);
 
-        let mut responses = Vec::new();
-        handler.generate_responses(|_, bytes| responses.push(bytes.to_vec()));
+        let responses = pipeline.drain();
         assert_eq!(responses.len(), 1, "full-MTU request must be answered");
     }
 
@@ -222,7 +186,7 @@ mod tests {
     fn mismatched_srv_request_is_dropped() {
         // RFC 5.2: when a request's SRV tag does not match a long-term key held
         // by this server, the request MUST be ignored
-        let mut handler = create_request_handler();
+        let mut pipeline = RequestPipeline::new(64);
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
 
         let wrong_commitment = roughenough_protocol::tags::SrvCommitment::from([0xab; 32]);
@@ -230,37 +194,35 @@ mod tests {
         let request = Request::new_with_server(&nonce, &wrong_commitment);
         let mut request_bytes = request.as_frame_bytes().unwrap();
 
-        handler.collect_request(&mut request_bytes, addr);
+        pipeline.collect(&mut request_bytes, addr);
 
-        let metrics = handler.metrics();
+        let metrics = pipeline.validator.metrics();
         assert_eq!(metrics.num_ok_requests, 0);
         assert_eq!(metrics.num_srv_mismatch, 1);
 
-        let mut responses = Vec::new();
-        handler.generate_responses(|_, bytes| responses.push(bytes.to_vec()));
+        let responses = pipeline.drain();
         assert!(responses.is_empty(), "mismatched SRV must not be answered");
     }
 
     #[test]
     fn matching_srv_request_is_answered() {
-        let mut handler = create_request_handler();
+        let mut pipeline = RequestPipeline::new(64);
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
 
         let commitment = roughenough_common::crypto::make_srv_commitment(
-            &handler.responder.long_term_public_key(),
+            &pipeline.responder.long_term_public_key(),
         );
         let nonce = Nonce::from([7u8; 32]);
         let request = Request::new_with_server(&nonce, &commitment);
         let mut request_bytes = request.as_frame_bytes().unwrap();
 
-        handler.collect_request(&mut request_bytes, addr);
+        pipeline.collect(&mut request_bytes, addr);
 
-        let metrics = handler.metrics();
+        let metrics = pipeline.validator.metrics();
         assert_eq!(metrics.num_ok_requests, 1);
         assert_eq!(metrics.num_srv_mismatch, 0);
 
-        let mut responses = Vec::new();
-        handler.generate_responses(|_, bytes| responses.push(bytes.to_vec()));
+        let responses = pipeline.drain();
         assert_eq!(responses.len(), 1, "matching SRV must be answered");
     }
 
@@ -287,16 +249,15 @@ mod tests {
         let mut request_bytes = build_raw_request(entries);
         assert_eq!(request_bytes.len(), REQUEST_SIZE);
 
-        let mut handler = create_request_handler();
+        let mut pipeline = RequestPipeline::new(64);
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-        handler.collect_request(&mut request_bytes, addr);
+        pipeline.collect(&mut request_bytes, addr);
 
-        let metrics = handler.metrics();
+        let metrics = pipeline.validator.metrics();
         assert_eq!(metrics.num_ok_requests, 0);
         assert_eq!(metrics.num_no_common_version, 1);
 
-        let mut responses = Vec::new();
-        handler.generate_responses(|_, bytes| responses.push(bytes.to_vec()));
+        let responses = pipeline.drain();
         assert!(responses.is_empty(), "no common version: not answered");
     }
 
@@ -329,16 +290,15 @@ mod tests {
             let mut request_bytes = build_raw_request(entries);
             assert_eq!(request_bytes.len(), REQUEST_SIZE);
 
-            let mut handler = create_request_handler();
+            let mut pipeline = RequestPipeline::new(64);
             let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-            handler.collect_request(&mut request_bytes, addr);
-            assert_eq!(handler.metrics().num_ok_requests, 1);
+            pipeline.collect(&mut request_bytes, addr);
+            assert_eq!(pipeline.validator.metrics().num_ok_requests, 1);
 
-            let mut responses = Vec::new();
-            handler.generate_responses(|_, bytes| responses.push(bytes.to_vec()));
+            let mut responses = pipeline.drain();
             assert_eq!(responses.len(), 1);
 
-            let mut cursor = ParseCursor::new(&mut responses[0]);
+            let mut cursor = ParseCursor::new(&mut responses[0].1);
             let response = Response::from_frame(&mut cursor).unwrap();
 
             assert_eq!(
@@ -359,7 +319,7 @@ mod tests {
         use roughenough_protocol::response::Response;
         use roughenough_protocol::wire::FromFrame;
 
-        let mut handler = create_request_handler();
+        let mut pipeline = RequestPipeline::new(64);
 
         // The pre-RFC draft version parses but is not negotiated; other
         // experimental-range versions are unknown. Neither is answered.
@@ -369,15 +329,14 @@ mod tests {
             (8003, 0x8000000b, 0x43),
             (8004, 0xbfffffff, 0x44),
         ] {
-            collect_one_version(&mut handler, wire_ver, nonce_byte, port);
+            collect_one_version(&mut pipeline, wire_ver, nonce_byte, port);
         }
 
-        let metrics = handler.metrics();
+        let metrics = pipeline.validator.metrics();
         assert_eq!(metrics.num_ok_requests, 1);
         assert_eq!(metrics.num_no_common_version, 3);
 
-        let mut responses = Vec::new();
-        handler.generate_responses(|addr, bytes| responses.push((addr, bytes.to_vec())));
+        let mut responses = pipeline.drain();
         assert_eq!(responses.len(), 1);
 
         let (addr, bytes) = &mut responses[0];
@@ -400,20 +359,24 @@ mod tests {
         let mut request_bytes = build_raw_request(entries);
         assert_eq!(request_bytes.len(), REQUEST_SIZE);
 
-        let mut handler = create_request_handler();
+        let mut pipeline = RequestPipeline::new(64);
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-        handler.collect_request(&mut request_bytes, addr);
+        pipeline.collect(&mut request_bytes, addr);
 
-        let metrics = handler.metrics();
+        let metrics = pipeline.validator.metrics();
         assert_eq!(metrics.num_ok_requests, 0);
         assert_eq!(metrics.num_no_common_version, 1);
 
-        let mut responses = Vec::new();
-        handler.generate_responses(|_, bytes| responses.push(bytes.to_vec()));
+        let responses = pipeline.drain();
         assert!(responses.is_empty(), "private-use version: not answered");
     }
 
-    fn collect_one_version(handler: &mut RequestHandler, wire_ver: u32, nonce_byte: u8, port: u16) {
+    fn collect_one_version(
+        pipeline: &mut RequestPipeline,
+        wire_ver: u32,
+        nonce_byte: u8,
+        port: u16,
+    ) {
         let entries: &[(&[u8; 4], Vec<u8>)] = &[
             (b"VER\x00", wire_ver.to_le_bytes().to_vec()),
             (b"NONC", vec![nonce_byte; 32]),
@@ -422,7 +385,7 @@ mod tests {
         ];
         let mut request_bytes = build_raw_request(entries);
         let addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
-        handler.collect_request(&mut request_bytes, addr);
+        pipeline.collect(&mut request_bytes, addr);
     }
 
     #[test]
@@ -443,32 +406,26 @@ mod tests {
         let mut request_bytes = build_raw_request(entries);
         assert_eq!(request_bytes.len(), REQUEST_SIZE);
 
-        let mut handler = create_request_handler();
+        let mut pipeline = RequestPipeline::new(64);
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-        handler.collect_request(&mut request_bytes, addr);
+        pipeline.collect(&mut request_bytes, addr);
 
-        assert_eq!(handler.metrics().num_ok_requests, 1);
-        assert_eq!(handler.metrics().num_bad_requests, 0);
+        assert_eq!(pipeline.validator.metrics().num_ok_requests, 1);
+        assert_eq!(pipeline.validator.metrics().num_bad_requests, 0);
 
-        let mut responses = Vec::new();
-        handler.generate_responses(|addr, bytes| {
-            responses.push((addr, bytes.to_vec()));
-        });
+        let responses = pipeline.drain();
         assert_eq!(responses.len(), 1, "the request must be answered");
     }
 
     #[test]
-    fn test_generate_responses() {
-        let mut handler = create_request_handler();
+    fn response_goes_to_request_source() {
+        let mut pipeline = RequestPipeline::new(64);
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
         let mut request_bytes = create_test_request_bytes(42);
 
-        handler.collect_request(&mut request_bytes, addr);
+        pipeline.collect(&mut request_bytes, addr);
 
-        let mut responses = Vec::new();
-        handler.generate_responses(|addr, bytes| {
-            responses.push((addr, bytes.to_vec()));
-        });
+        let responses = pipeline.drain();
 
         assert_eq!(responses.len(), 1);
         let (response_addr, response_bytes) = &responses[0];
@@ -478,14 +435,14 @@ mod tests {
 
     #[test]
     fn test_metrics_reset() {
-        let mut handler = create_request_handler();
+        let mut pipeline = RequestPipeline::new(64);
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
         let mut request_bytes = create_test_request_bytes(42);
 
-        handler.collect_request(&mut request_bytes, addr);
-        assert_eq!(handler.metrics().num_ok_requests, 1);
+        pipeline.collect(&mut request_bytes, addr);
+        assert_eq!(pipeline.validator.metrics().num_ok_requests, 1);
 
-        handler.reset_metrics();
-        assert_eq!(handler.metrics().num_ok_requests, 0);
+        pipeline.validator.reset_metrics();
+        assert_eq!(pipeline.validator.metrics().num_ok_requests, 0);
     }
 }

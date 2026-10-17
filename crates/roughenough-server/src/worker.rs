@@ -12,8 +12,8 @@ use tracing::info;
 use crate::metrics::ReportSchedule;
 use crate::metrics::aggregator::WorkerMetrics;
 use crate::network::CollectResult::Empty;
-use crate::network::{CollectResult, NetworkHandler};
-use crate::requests::RequestHandler;
+use crate::network::NetworkHandler;
+use crate::requests::RequestValidator;
 use crate::responses::ResponseHandler;
 
 /// Batches processed per wakeup before deadlines and the shutdown flag are re-checked.
@@ -22,8 +22,8 @@ const MAX_BATCHES_PER_WAKEUP: usize = 8;
 /// Validity time span for the current online key, (MINT, rotate_at).
 /// `rotate_at` is jittered up to 255 random seconds before MAXT, so workers
 /// don't thundering-herd their key rotations and stall responses.
-fn rotation_window(req_handler: &RequestHandler) -> (u64, u64) {
-    let (mint, maxt) = req_handler.key_validity();
+fn rotation_window(responder: &ResponseHandler) -> (u64, u64) {
+    let (mint, maxt) = responder.key_validity();
     let jitter = u64::from(random_bytes::<1>()[0]);
     (mint, maxt.saturating_sub(jitter))
 }
@@ -54,7 +54,8 @@ pub struct Worker {
     worker_id: usize,
     clock: ClockSource,
     net_handler: NetworkHandler,
-    req_handler: RequestHandler,
+    validator: RequestValidator,
+    responder: ResponseHandler,
     metrics_channel: SyncSender<WorkerMetrics>,
     metrics_schedule: ReportSchedule,
     key_mint: u64,
@@ -75,15 +76,16 @@ impl Worker {
         metrics_interval: Duration,
     ) -> Self {
         let now = clock.epoch_seconds();
-        let req_handler = RequestHandler::new(responder);
-        let (key_mint, rotate_at) = rotation_window(&req_handler);
+        let validator = RequestValidator::new(&responder.long_term_public_key());
+        let (key_mint, rotate_at) = rotation_window(&responder);
 
         Self {
             worker_id,
             clock,
             metrics_channel,
             net_handler: NetworkHandler::new(batch_size),
-            req_handler,
+            validator,
+            responder,
             metrics_schedule: ReportSchedule::new(now, metrics_interval.as_secs()),
             key_mint,
             rotate_at,
@@ -142,9 +144,22 @@ impl Worker {
 
             if still_readable {
                 for _ in 0..MAX_BATCHES_PER_WAKEUP {
-                    let collect_result = self.collect_requests(&mut sock);
+                    let collect_result =
+                        self.net_handler
+                            .collect_requests(&mut sock, |request_bytes, src_addr| {
+                                if let Some((request, version)) =
+                                    self.validator.validate(request_bytes)
+                                {
+                                    self.responder.add_request(
+                                        request_bytes,
+                                        request,
+                                        version,
+                                        src_addr,
+                                    );
+                                }
+                            });
 
-                    self.req_handler.generate_responses(|addr, bytes| {
+                    self.responder.process_responses(|addr, bytes| {
                         self.net_handler.queue_response(bytes, addr);
                     });
                     self.net_handler.flush_responses(&mut sock);
@@ -158,16 +173,9 @@ impl Worker {
         }
     }
 
-    fn collect_requests(&mut self, sock: &mut MioUdpSocket) -> CollectResult {
-        self.net_handler
-            .collect_requests(sock, |request_bytes, src_addr| {
-                self.req_handler.collect_request(request_bytes, src_addr);
-            })
-    }
-
     fn replace_online_key(&mut self) {
-        self.req_handler.replace_online_key();
-        (self.key_mint, self.rotate_at) = rotation_window(&self.req_handler);
+        self.responder.replace_online_key();
+        (self.key_mint, self.rotate_at) = rotation_window(&self.responder);
         self.log_online_key();
     }
 
@@ -175,7 +183,7 @@ impl Worker {
         info!(
             "worker-{}, online key {:?}",
             self.worker_id,
-            self.req_handler.public_key()
+            self.responder.public_key()
         );
     }
 
@@ -183,15 +191,16 @@ impl Worker {
         let snapshot = WorkerMetrics {
             worker_id: self.worker_id,
             network: self.net_handler.metrics(),
-            request: self.req_handler.metrics(),
-            response: self.req_handler.response_metrics(),
+            request: self.validator.metrics(),
+            response: self.responder.metrics(),
         };
 
         // On failure the counters keep accumulating and ride along with the next
         // snapshot, so a full channel delays counts instead of losing them
         if self.metrics_channel.try_send(snapshot).is_ok() {
             self.net_handler.reset_metrics();
-            self.req_handler.reset_metrics();
+            self.validator.reset_metrics();
+            self.responder.reset_metrics();
         }
     }
 }
