@@ -109,14 +109,7 @@ fn mio_loop_steady_state_is_allocation_free() {
     let key_source = KeySource::new(seed, ClockSource::System, args.rotation_interval());
     let responder = ResponseHandler::new(args.batch_size, key_source);
     let metrics_interval = Duration::from_secs(args.metrics_interval);
-    let mut worker = Worker::new(
-        0,
-        args.batch_size as usize,
-        responder,
-        ClockSource::System,
-        tx,
-        metrics_interval,
-    );
+    let mut worker = Worker::new(0, responder, tx, metrics_interval);
 
     let sock = UdpSocket::bind("127.0.0.1:0").expect("bind server socket");
     sock.set_nonblocking(true).expect("set_nonblocking");

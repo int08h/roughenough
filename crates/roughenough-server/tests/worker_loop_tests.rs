@@ -5,7 +5,6 @@
 //! bounded-drain guarantee under flood.
 
 use std::net::{SocketAddr, UdpSocket};
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::{Acquire, Release};
 use std::sync::mpsc::{SyncSender, channel, sync_channel};
@@ -46,19 +45,12 @@ fn new_worker_with_key(
     clock: ClockSource,
 ) -> (Worker, MioUdpSocket, SocketAddr, PublicKey) {
     let seed = Box::new(MemoryBackend::from_value(&[42u8; 32]));
-    let key_source = KeySource::new(seed, clock.clone(), args.rotation_interval());
+    let key_source = KeySource::new(seed, clock, args.rotation_interval());
     let responder = ResponseHandler::new(args.batch_size, key_source);
     let online_key = responder.public_key();
     let metrics_interval = Duration::from_secs(args.metrics_interval);
 
-    let worker = Worker::new(
-        0,
-        args.batch_size as usize,
-        responder,
-        clock,
-        tx,
-        metrics_interval,
-    );
+    let worker = Worker::new(0, responder, tx, metrics_interval);
 
     let sock = UdpSocket::bind("127.0.0.1:0").expect("bind server socket");
     // production bind_socket sets nonblocking; a blocking socket behind
@@ -279,41 +271,36 @@ fn worker_shuts_down_under_load() {
 }
 
 #[test]
-fn worker_panic_fires_exit_guard() {
-    let keep_running = AtomicBool::new(true);
-    let (tx, _rx) = sync_channel(4);
-    let (mut worker, sock, _server_addr) = new_worker(test_args(), tx);
-
-    let panic_flag = Arc::new(AtomicBool::new(false));
-    worker.set_test_panic_flag(panic_flag.clone());
-
+fn exit_guard_reports_worker_panic() {
     let (exit_tx, exit_rx) = channel();
 
     thread::scope(|s| {
-        let worker_thread = s.spawn(|| {
-            // same shape as main(): the guard's Drop runs during the panic
-            // unwind and reports the death to the monitoring channel
+        // same shape as main(): the guard's Drop runs during the panic
+        // unwind and reports the death to the monitoring channel
+        let guarded = s.spawn(move || {
             let _guard = ExitGuard::new(7, exit_tx);
-            worker.run(sock, &keep_running);
+            panic!("injected");
         });
 
-        // healthy worker: no exit signal
-        assert!(
-            exit_rx.recv_timeout(Duration::from_millis(300)).is_err(),
-            "exit guard fired while the worker was healthy"
-        );
-
-        panic_flag.store(true, Release);
-
-        // the flag is polled once per loop iteration, so the signal arrives
-        // within one 350ms poll quantum (well under a metrics interval)
-        let worker_id = exit_rx
-            .recv_timeout(Duration::from_secs(2))
-            .expect("worker death was not signaled");
-        assert_eq!(worker_id, 7);
-
+        let exit_signal = exit_rx.recv_timeout(Duration::from_secs(2));
+        assert_eq!(exit_signal, Ok(7));
         // consume the panic so the scope does not re-raise it
-        assert!(worker_thread.join().is_err(), "worker should have panicked");
+        assert!(guarded.join().is_err(), "thread should have panicked");
+    });
+}
+
+#[test]
+fn exit_guard_reports_normal_exit() {
+    let (exit_tx, exit_rx) = channel();
+
+    thread::scope(|s| {
+        let guarded = s.spawn(move || {
+            let _guard = ExitGuard::new(7, exit_tx);
+        });
+
+        let exit_signal = exit_rx.recv_timeout(Duration::from_secs(2));
+        assert_eq!(exit_signal, Ok(7));
+        guarded.join().expect("thread panicked");
     });
 }
 

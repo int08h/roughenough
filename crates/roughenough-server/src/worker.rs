@@ -60,21 +60,16 @@ pub struct Worker {
     metrics_schedule: ReportSchedule,
     key_mint: u64,
     rotate_at: u64,
-    /// Test-only: when true the worker panics at the top of its next loop iteration
-    #[cfg(feature = "test-utils")]
-    test_panic_flag: Option<std::sync::Arc<AtomicBool>>,
 }
 
 impl Worker {
-    /// `clock` must be the same clock as the responder's `KeySource`
     pub fn new(
         worker_id: usize,
-        batch_size: usize,
         responder: ResponseHandler,
-        clock: ClockSource,
         metrics_channel: SyncSender<WorkerMetrics>,
         metrics_interval: Duration,
     ) -> Self {
+        let clock = responder.clock().clone();
         let now = clock.epoch_seconds();
         let validator = RequestValidator::new(&responder.long_term_public_key());
         let (key_mint, rotate_at) = rotation_window(&responder);
@@ -83,21 +78,13 @@ impl Worker {
             worker_id,
             clock,
             metrics_channel,
-            net_handler: NetworkHandler::new(batch_size),
+            net_handler: NetworkHandler::new(responder.batch_size()),
             validator,
             responder,
             metrics_schedule: ReportSchedule::new(now, metrics_interval.as_secs()),
             key_mint,
             rotate_at,
-            #[cfg(feature = "test-utils")]
-            test_panic_flag: None,
         }
-    }
-
-    #[cfg(feature = "test-utils")]
-    #[doc(hidden)]
-    pub fn set_test_panic_flag(&mut self, flag: std::sync::Arc<AtomicBool>) {
-        self.test_panic_flag = Some(flag);
     }
 
     pub fn run(&mut self, mut sock: MioUdpSocket, keep_running: &AtomicBool) {
@@ -117,13 +104,6 @@ impl Worker {
         let mut still_readable = false;
 
         while keep_running.load(Relaxed) {
-            #[cfg(feature = "test-utils")]
-            if let Some(flag) = &self.test_panic_flag
-                && flag.load(Relaxed)
-            {
-                panic!("test-induced worker panic");
-            }
-
             let now = self.clock.epoch_seconds();
 
             if self.metrics_schedule.poll(now).is_some() {

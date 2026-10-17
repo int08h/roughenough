@@ -48,6 +48,10 @@ impl KeySource {
             .make_online_key(&self.clock_source, self.validity_length)
     }
 
+    pub fn clock(&self) -> &ClockSource {
+        &self.clock_source
+    }
+
     pub fn public_key(&self) -> PublicKey {
         self.identity.lock().unwrap().public_key()
     }

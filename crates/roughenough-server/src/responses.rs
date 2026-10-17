@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 
+use roughenough_common::clocksource::ClockSource;
 use roughenough_keys::online::OnlineKey;
 use roughenough_merkle::{MerklePath, MerkleTree};
 use roughenough_protocol::cursor::ParseCursor;
@@ -188,6 +189,14 @@ impl ResponseHandler {
     pub fn key_validity(&self) -> (u64, u64) {
         let dele = self.online_key.cert().dele();
         (dele.mint(), dele.maxt())
+    }
+
+    pub fn batch_size(&self) -> usize {
+        self.batch_size
+    }
+
+    pub fn clock(&self) -> &ClockSource {
+        self.key_source.clock()
     }
 
     pub fn long_term_public_key(&self) -> PublicKey {

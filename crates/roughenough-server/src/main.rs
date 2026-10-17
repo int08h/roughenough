@@ -84,8 +84,7 @@ fn main() {
 
     info!("Long term public key: {:?}", key_source.public_key());
 
-    let (metrics_thread, metrics_chan_tx) =
-        start_metrics_thread(&args, clock.clone(), &KEEP_RUNNING);
+    let (metrics_thread, metrics_chan_tx) = start_metrics_thread(&args, clock, &KEEP_RUNNING);
 
     let mut threads = Vec::new();
     threads.push(metrics_thread);
@@ -93,7 +92,6 @@ fn main() {
     let (exit_tx, exit_rx) = channel();
 
     for i in 0..args.num_threads {
-        let clock = clock.clone();
         let ks = key_source.clone();
         let metrics_chan_tx = metrics_chan_tx.clone();
         let exit_tx = exit_tx.clone();
@@ -102,7 +100,7 @@ fn main() {
             .name(format!("worker-{i}"))
             .spawn(move || {
                 let _exit_guard = ExitGuard::new(i as usize, exit_tx);
-                worker_task(i, ks, worker_config, clock, metrics_chan_tx)
+                worker_task(i, ks, worker_config, metrics_chan_tx)
             })
             .unwrap();
 
@@ -180,21 +178,13 @@ fn worker_task(
     idx: u16,
     key_source: KeySource,
     config: WorkerConfig,
-    clock: ClockSource,
     metrics_channel: SyncSender<WorkerMetrics>,
 ) {
     let sock = bind_socket(config.socket_addr).expect("Failed to bind socket");
     let responder = ResponseHandler::new(config.batch_size as u8, key_source);
     let idx = idx as usize;
 
-    let mut worker = Worker::new(
-        idx,
-        config.batch_size,
-        responder,
-        clock,
-        metrics_channel,
-        config.metrics_interval,
-    );
+    let mut worker = Worker::new(idx, responder, metrics_channel, config.metrics_interval);
 
     worker.run(sock, &KEEP_RUNNING);
 }

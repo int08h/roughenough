@@ -53,7 +53,7 @@ libc = { workspace = true }
 [dev-dependencies]
 divan = { workspace = true }
 roughenough-protocol = { workspace = true, features = ["test-utils"] }
-# self-dependency: enables test-utils (worker panic injection, TestContext)
+# self-dependency: enables test-utils (TestContext and test helpers)
 # when building this crate's own tests/ targets
 roughenough-server = { path = ".", features = ["test-utils"] }
 
