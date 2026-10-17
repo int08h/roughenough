@@ -125,7 +125,7 @@ impl FromWireN for MerklePath {
         }
 
         if n > Self::capacity() {
-            return Err(BufferTooSmall(n, Self::capacity()));
+            return Err(InvalidPathLength(n as u32));
         }
 
         if !n.is_multiple_of(Self::ELEMENT_SIZE) {

@@ -84,10 +84,6 @@ impl VersionList {
     pub fn versions(&self) -> &[ProtocolVersion] {
         &self.versions[..self.num_versions]
     }
-
-    pub fn is_supported(&self, version: ProtocolVersion) -> bool {
-        self.versions().contains(&version)
-    }
 }
 
 impl ToWire for VersionList {
@@ -180,14 +176,14 @@ mod tests {
     fn new() {
         let versions = VersionList::new(&[ProtocolVersion::DRAFT]);
         assert_eq!(versions.versions(), &[ProtocolVersion::DRAFT]);
-        assert!(versions.is_supported(ProtocolVersion::DRAFT));
+        assert!(versions.versions().contains(&ProtocolVersion::DRAFT));
     }
 
     #[test]
     fn zero_versions() {
         let versions = VersionList::new(&[]);
         assert!(versions.versions().is_empty());
-        assert!(!versions.is_supported(ProtocolVersion::DRAFT));
+        assert!(!versions.versions().contains(&ProtocolVersion::DRAFT));
     }
 
     #[test]
@@ -208,15 +204,15 @@ mod tests {
 
         versions.push_back(ProtocolVersion::RFC);
         assert_eq!(versions.versions(), &[ProtocolVersion::RFC]);
-        assert!(versions.is_supported(ProtocolVersion::RFC));
-        assert!(!versions.is_supported(ProtocolVersion::DRAFT));
+        assert!(versions.versions().contains(&ProtocolVersion::RFC));
+        assert!(!versions.versions().contains(&ProtocolVersion::DRAFT));
 
         versions.push_back(ProtocolVersion::DRAFT);
         assert_eq!(
             versions.versions(),
             &[ProtocolVersion::RFC, ProtocolVersion::DRAFT]
         );
-        assert!(versions.is_supported(ProtocolVersion::DRAFT));
+        assert!(versions.versions().contains(&ProtocolVersion::DRAFT));
         assert_eq!(versions.wire_size(), 2 * size_of::<ProtocolVersion>());
     }
 

@@ -19,6 +19,17 @@
   Nonce`, and `From<Nonce> for [u8; 32]`
 - Protocol: `MerkleRoot` implements `AsRef<[u8]>` instead of
   `AsRef<[u8; 32]>`; use `MerkleRoot::as_array()` for the array
+- Protocol: removed unused API: `Tag`'s `Ord`/`PartialOrd`,
+  `Tag::is_nested`, `Tag::HASH_PREFIX_SRV` (use
+  `SrvCommitment::HASH_PREFIX_SRV`), `Tag::from_wire`, `TryFrom<u32> for
+  Tag`, `From<Tag> for u32`, `Error::InvalidTag`, `Error::IoError`,
+  `Response::MINIMUM_SIZE` (use `wire::MINIMUM_FRAME_SIZE`),
+  `VersionList::is_supported`, `MessageType::Invalid`, `FromStr for
+  ProtocolVersion`, and the `ParseCursor` methods `has_remaining`,
+  `capacity`, `get_u32`, `try_get_u32`, `try_put_slice`, `reset`, and
+  `try_put_u64_le`
+- Protocol: an over-long PATH reports `Error::InvalidPathLength` (was
+  `BufferTooSmall`)
 
 ### Fixed
 
@@ -39,6 +50,8 @@
 - Client: `--timeout 0` is rejected instead of panicking
 - Client: a late or duplicated response to an earlier request is skipped
   instead of failing the query (affects `-n N`)
+- Client: a response whose VERS lists no supported version is rejected
+  with `NoSupportedVersions` (RFC 5.2.5)
 
 ### Added
 

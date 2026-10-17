@@ -178,7 +178,10 @@ fn path_over_32_elements_is_rejected() {
     let framed = frame(&replace_value(&msg, *b"PATH", &[0x22u8; 33 * 32]));
 
     let result = Response::from_frame_bytes(&framed);
-    assert!(result.is_err(), "PATH of 33 elements must be rejected");
+    assert!(
+        matches!(result, Err(Error::InvalidPathLength(1056))),
+        "PATH of 33 elements must be rejected: {result:?}"
+    );
 }
 
 #[test]

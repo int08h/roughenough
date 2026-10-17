@@ -172,10 +172,13 @@ impl FromWireN for SignedResponse {
                     midpoint = Some(cursor.try_get_u64_le()?);
                 }
                 RAW_VERS => {
-                    if value_len == 0 {
+                    let vers = SupportedVersions::from_wire_n(cursor, value_len)?;
+                    // RFC 5.2.5: VERS MUST contain VER, which is always a known version; a list
+                    // with no known version cannot, and could not be reserialized
+                    if vers.versions().is_empty() {
                         return Err(NoSupportedVersions);
                     }
-                    supported_versions = Some(SupportedVersions::from_wire_n(cursor, value_len)?);
+                    supported_versions = Some(vers);
                 }
                 RAW_ROOT => {
                     if value_len != size_of::<MerkleRoot>() {
@@ -206,6 +209,7 @@ impl FromWireN for SignedResponse {
 mod tests {
     use super::*;
     use crate::tags::{MerkleRoot, ProtocolVersion, SupportedVersions};
+    use crate::util::test_utils::replace_value;
 
     fn create_valid_signed_response() -> SignedResponse {
         let mut srep = SignedResponse::default();
@@ -262,5 +266,18 @@ mod tests {
             Err(MissingTag("ROOT")) => (), // ok, expected
             _ => panic!("unexpected result: {result:?}"),
         }
+    }
+
+    #[test]
+    fn vers_of_only_unknown_versions_is_rejected() {
+        let bytes = create_valid_signed_response().as_bytes().unwrap();
+        let mut bytes = replace_value(&bytes, *b"VERS", &5u32.to_le_bytes());
+        let mut cursor = ParseCursor::new(&mut bytes);
+
+        let result = SignedResponse::from_wire(&mut cursor);
+        assert!(
+            matches!(result, Err(NoSupportedVersions)),
+            "unexpected result: {result:?}"
+        );
     }
 }

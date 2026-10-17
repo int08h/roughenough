@@ -10,7 +10,6 @@ use crate::wire::{FromWire, FromWireN, ToWire};
 pub enum MessageType {
     Request = 0x00000000,
     Response = 0x00000001,
-    Invalid = 0xffffffff,
 }
 
 impl ToWire for MessageType {
@@ -60,8 +59,7 @@ mod tests {
 
     #[test]
     fn undefined_values_are_rejected() {
-        // Only 0 (request) and 1 (response) are defined; 0xffffffff is the
-        // Invalid sentinel and must not parse either
+        // Only 0 (request) and 1 (response) are defined
         for bad in [2u32, 0x8000_0000, 0xffff_ffff] {
             let mut bytes = bad.to_le_bytes().to_vec();
             let mut cursor = ParseCursor::new(&mut bytes);

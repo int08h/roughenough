@@ -23,10 +23,6 @@ pub struct Response {
 }
 
 impl Response {
-    /// All responses will be *at least* this many bytes, and could be longer as the PATH and SREP
-    /// values are variable-length.
-    pub const MINIMUM_SIZE: usize = 404;
-
     /// RFC 5.2: A response MUST contain the tags SIG, NONC, TYPE, PATH, SREP, CERT,
     /// and INDX.
     const TAGS: [Tag; 7] = [
