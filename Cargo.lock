@@ -2860,7 +2860,7 @@ dependencies = [
 
 [[package]]
 name = "roughenough-client"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "aws-lc-rs",
  "clap",
@@ -2882,7 +2882,7 @@ dependencies = [
 
 [[package]]
 name = "roughenough-common"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "aws-lc-rs",
  "data-encoding",
@@ -2892,7 +2892,7 @@ dependencies = [
 
 [[package]]
 name = "roughenough-integration-test"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "clap",
  "roughenough-common",
@@ -2903,7 +2903,7 @@ dependencies = [
 
 [[package]]
 name = "roughenough-keys"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "aws-config",
  "aws-lc-rs",
@@ -2933,7 +2933,7 @@ dependencies = [
 
 [[package]]
 name = "roughenough-merkle"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "aws-lc-rs",
  "divan",
@@ -2942,7 +2942,7 @@ dependencies = [
 
 [[package]]
 name = "roughenough-protocol"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "divan",
  "pastey",
@@ -2952,7 +2952,7 @@ dependencies = [
 
 [[package]]
 name = "roughenough-reporting-server"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "axum",
  "clap",
@@ -2973,7 +2973,7 @@ dependencies = [
 
 [[package]]
 name = "roughenough-server"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "clap",
  "divan",

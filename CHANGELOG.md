@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-10-17
+
 ### Breaking
 
 - Server library: `NetworkHandler::send_response` and `NetworkHandler`'s
@@ -180,9 +182,7 @@
 ### Added
 
 - Server: new features `online-ssh-agent`, `longterm-aws`, `longterm-gcp`,
-  and `release`; release binaries and the Docker image are built with
-  `--features release` instead of `--all-features`, so they no longer
-  include test hooks
+  and `release`
 - Protocol: `FromFrame::from_frame_bytes` parses a framed Request or
   Response from a shared byte slice
 - Client: `test-utils` feature exposing shared test fixtures
@@ -205,8 +205,18 @@
 ### Changed
 
 - Server: metrics timestamps follow `--fixed-offset`
+- Server: release binaries and the Docker image are built with
+  `--features release` instead of `--all-features`, so they no longer
+  include test hooks
 - Build: all crates declare `rust-version = "1.94.1"` (MSRV), the minimum
   the AWS SDK crates require
+- Docs: the versioning policy reserves MAJOR for Roughtime wire
+  incompatibility; library API and CLI breaks ship in MINOR releases
+
+### Removed
+
+- Integration: the load generator (`roughenough_load_test`) no longer
+  accepts `--public-key`, which it never used
 
 ## [2.2.0] - 2026-10-11
 
@@ -427,13 +437,11 @@ Roughtime is now published as RFC 10049. This release follows the RFC.
 This project aspirationally follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) and tries to 
 adhere to it as closely/practically as possible:
 
-- **MAJOR** version increments indicate incompatible API changes
-- **MINOR** version increments add functionality in a backward compatible manner
-- **PATCH** version increments make backward compatible bug fixes
-
-Given a version number MAJOR.MINOR.PATCH:
-- Breaking changes to public APIs or protocol implementation increment MAJOR
-- New features that maintain backward compatibility increment MINOR
-- Bug fixes and internal improvements increment PATCH
+- **MAJOR** increments when a release breaks Roughtime wire compatibility with deployed
+  clients or servers (for example, dropping support for a protocol version).
+- **MINOR** increments for new features and for breaking changes to the Rust library APIs
+  or the command-line interfaces. Every such break is listed under `### Breaking` in that
+  release's notes.
+- **PATCH** increments for backward-compatible bug fixes and internal improvements.
 
 
