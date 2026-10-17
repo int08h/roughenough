@@ -1,7 +1,7 @@
 # Linux BPF Request Filter
 
-Notes for whoever tests or changes the classic BPF socket filter. It was
-written on macOS and has **not yet run on Linux**.
+Notes for whoever tests or changes the classic BPF socket filter. CI runs
+`bpf_filter_tests` on the GitHub Actions ubuntu runner.
 
 ## What it does
 
@@ -33,25 +33,19 @@ crowd out real requests. The userspace checks in `network.rs` and
   test. It sends invalid and valid datagrams to a filtered loopback socket
   over IPv4 and IPv6 and checks that only the valid ones arrive.
 
-## Assumption to confirm on Linux
+## UDP header assumption
 
 On a UDP socket, the filter sees the 8-byte UDP header at offset 0, and
 the packet length includes it (`UDP_HEADER_LEN` in `filter.rs`). This
 matches `udp_queue_rcv_one_skb` and `udpv6_queue_rcv_one_skb`, which call
 `sk_filter_trim_cap(sk, skb, sizeof(struct udphdr))` while `skb->data`
-points at the UDP header. `bpf_filter_tests` checks it. If that test
-receives nothing at all, this assumption is wrong for that kernel.
+points at the UDP header. Confirmed by `bpf_filter_tests`; if that test
+receives nothing at all on some kernel, the assumption does not hold there.
 
-## What was verified on macOS
+## What CI covers
 
-- The filter unit tests pass, including one that checks every jump stays
-  inside the program. Changing a jump offset makes a test fail.
-- `filter.rs` and `bpf_filter_tests.rs` type-check and are clippy-clean
-  for `aarch64-unknown-linux-gnu`. This used a scratch crate depending only
-  on `roughenough-protocol`, `socket2`, and `libc`. The full server could
-  not be cross-compiled because AWS-LC needs a C cross-compiler.
-- The Linux-only `attach` call in `main.rs` has not been compiled for Linux.
-- Nothing has run on Linux. No benchmarks have been taken.
+The ubuntu CI jobs build and lint the Linux-only `attach` path and run the
+filter unit tests and `bpf_filter_tests`.
 
 ## Testing on Linux
 
@@ -89,12 +83,17 @@ source and still need confirming.
 
 ## Benchmarking (still needed)
 
-CLAUDE.md requires before-and-after measurements. The baseline is commit
+AGENTS.md requires before-and-after measurements. The baseline is commit
 `91e4890`, the commit before the filter. Run a runt flood from a separate
-host or process while `load_gen` (in `roughenough-integration`) measures
-valid traffic. Compare the response rate and latency percentiles, never
-averages. `ss -uam` shows receive-buffer use and drops per socket during
-the flood. `load_gen` cannot send runts, so the flood needs its own tool.
+host or process while `roughenough_load_test` measures valid traffic:
+
+```bash
+cargo run --release --bin roughenough_load_test -- <host> <port> -n N -w W -f F
+```
+
+Compare the response rate and latency percentiles, never averages.
+`ss -uam` shows receive-buffer use and drops per socket during the flood.
+`roughenough_load_test` cannot send runts, so the flood needs its own tool.
 
 ## Metrics impact
 

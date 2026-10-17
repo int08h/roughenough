@@ -24,11 +24,11 @@ cd roughenough
 **Build the project:**
 
 ```bash
-# Build all workspace crates
+# Build the default members (every crate except reporting-server)
 cargo build
 
-# Build with all optional features
-cargo build --all-features
+# Build every crate, including reporting-server
+cargo build --workspace
 
 # Build release version
 cargo build --release
@@ -43,44 +43,83 @@ cargo test
 # Run the end-to-end test against the debug build (add --release to both commands for release)
 cargo build && cargo run --bin roughenough_integration_test
 
-# Run checks
-cargo check
-cargo clippy
+# Run the checks CI runs
 cargo +nightly fmt --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo deny check
 ```
-
-## Development Workflow
 
 ## Project Structure
 
-- **crates/roughenough-protocol**: Core wire format, request/response types, TLV encoding
-- **crates/roughenough-merkle**: Merkle tree with Roughtime-specific tweaks
-- **crates/roughenough-server**: mio-based UDP server with batching
-- **crates/roughenough-client**: Command-line client and library
-- **crates/roughenough-common**: Shared cryptography and encoding utilities
-- **crates/roughenough-keys**: Key material handling with multiple secure backends
-- **crates/roughenough-reporting-server**: Malfeasance report collection server
-- **crates/roughenough-integration**: End-to-end integration tests
-- **fuzz**: Fuzzing harness (separate crate, requires nightly)
+Cargo workspace with eight crates under `crates/`:
+
+- **roughenough-protocol**: Core wire format, request/response types, tag definitions, TLV encoding
+- **roughenough-merkle**: Merkle tree with Roughtime-specific leaf/node tweaks (SHA-512, first 32 bytes)
+- **roughenough-server**: UDP server using mio, with request batching and Merkle tree signatures
+- **roughenough-client**: Command-line client and library: output formatting, response validation, and
+  optional malfeasance reporting (`reporting` feature)
+- **roughenough-common**: Shared cryptography and encoding utilities, and the clock source
+- **roughenough-keys**: Key material handling
+  - Online seed backends: in-memory (default), Linux KRS (`online-linux-krs`), SSH agent
+    (`online-ssh-agent`), and PKCS#11 (`online-pkcs11`)
+  - Long-term seed protection through the `roughenough_keys` tool: AWS KMS and Secrets Manager
+    (`longterm-aws`), and GCP KMS and Secret Manager (`longterm-gcp`)
+- **roughenough-reporting-server**: Web server that collects malfeasance reports. Not a default member:
+  `cargo build` and `cargo test` skip it; `-p roughenough-reporting-server` builds and tests it
+- **roughenough-integration**: End-to-end harness (`roughenough_integration_test`) that runs the server and
+  client binaries, and the load generator `roughenough_load_test`
+- **fuzz**: Fuzz targets `fuzz-request-parse`, `fuzz-response-parse`, and `fuzz-structured` (excluded from the
+  workspace, requires nightly)
 - **doc/**: Protocol documentation and implementation guides
+
+## Development Commands
+
+### Building
+
+```bash
+cargo build                                                       # Default members (skips reporting-server)
+cargo build --workspace                                           # Every crate, including reporting-server
+cargo build -p roughenough-reporting-server                       # Reporting server only
+cargo build --release -p roughenough-server --features release    # Server with every shipped feature
+cargo build --release -p roughenough-client --features reporting  # Client with malfeasance reporting
+```
 
 ### Running Tests
 
 ```bash
-# Run all tests
+# Run all tests (default members)
 cargo test
 
 # Run tests for specific crate
 cargo test -p roughenough-protocol
-cargo test -p roughenough-merkle
+cargo test -p roughenough-reporting-server
 
-# Run the end-to-end test (debug, then release)
+# Run every test with all features enabled, as CI does (see the ssh-agent note below)
+cargo test --workspace --all-features
+
+# Run the end-to-end test of the server and client binaries from the same profile (debug, then release)
 cargo build && cargo run --bin roughenough_integration_test
 cargo build --release && cargo run --release --bin roughenough_integration_test
 
-# Run tests with all features enabled
-cargo test --all-features
+# Keys backends are feature-gated; check one combination (CI's Keys Feature Matrix checks each)
+cargo check -p roughenough-keys --features longterm-aws
 ```
+
+With `--all-features` (or `--features online-ssh-agent`), the ssh-agent backend tests need a running agent in
+`SSH_AUTH_SOCK`. They remove every identity from that agent, so point `SSH_AUTH_SOCK` at a throwaway agent
+(`eval "$(ssh-agent)"`), not your own.
+
+### Code Quality
+
+```bash
+cargo +nightly fmt                                                  # Format (requires nightly)
+cargo +nightly fmt --check                                          # Format check
+cargo clippy --workspace --all-targets --all-features -- -D warnings  # Lint
+cargo deny check                                                    # Advisories, bans, licenses, and sources
+```
+
+CI runs all four checks. `.pre-commit-config.yaml` runs the format check and clippy as git pre-commit hooks;
+enable them with `pre-commit install`.
 
 ### Benchmarking
 
@@ -90,9 +129,10 @@ When making performance-critical changes, always benchmark before and after:
 # Run all benchmarks
 cargo bench
 
-# Running benchmarks for specific crates
+# Running benchmarks for specific crates (merkle, server, and protocol have benches)
 cargo bench -p roughenough-merkle
 cargo bench -p roughenough-server
+cargo bench -p roughenough-protocol
 ```
 
 **Important:** Use benchmarks to validate performance improvements. Be skeptical of assumptions - measure actual 
@@ -108,8 +148,7 @@ cargo llvm-cov -p roughenough-protocol --html                           # one cr
 cargo llvm-cov clean --workspace
 ```
 
-With `--all-features`, the ssh-agent backend tests need a running agent in `SSH_AUTH_SOCK`. They remove every
-identity from that agent, so point `SSH_AUTH_SOCK` at a throwaway agent (`eval "$(ssh-agent)"`), not your own.
+`--all-features` runs the ssh-agent backend tests, which need a throwaway agent (see Running Tests).
 
 ### Fuzzing
 
@@ -134,13 +173,23 @@ cargo +nightly fuzz cmin <target>
 cargo +nightly fuzz run <target> <path-to-crash-artifact>
 ```
 
+### Running Binaries
+
+```bash
+cargo run --bin roughenough_server -- --insecure-zero-seed       # Server (testing only; production needs --seed-file)
+cargo run --bin roughenough_client -- -h                         # Client (see --help for options)
+cargo run -p roughenough-keys --bin roughenough_keys -- --help   # Keys tool
+cargo run -p roughenough-reporting-server --bin roughenough_reporting_server  # Reporting server (port 3000)
+cargo run --release --bin roughenough_load_test -- <host> <port> -n N -w W -f F  # Load generator
+```
+
 ## Coding Standards
 
 ### Rust Style Guide
 
 - Follow the official [Rust Style Guide](https://doc.rust-lang.org/nightly/style-guide/)
 - Use `cargo +nightly fmt` to format code (requires nightly toolchain)
-- Run `cargo clippy` and address all warnings
+- Run `cargo clippy --workspace --all-targets --all-features -- -D warnings` and address all warnings
 
 ### Dependencies
 
@@ -190,8 +239,8 @@ and `integration` crates all carry `#![forbid(unsafe_code)]`.
    - Write clear, focused commits
    - Add tests for new functionality
    - Update documentation as needed
-   - Ensure all tests pass: `cargo test`
-   - Ensure no clippy warnings: `cargo clippy`
+   - Ensure all tests pass: `cargo test --workspace --all-features`
+   - Ensure no clippy warnings: `cargo clippy --workspace --all-targets --all-features -- -D warnings`
    - Format code: `cargo +nightly fmt`
 
 3. **Push your branch:**

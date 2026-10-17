@@ -136,34 +136,6 @@ The client offers version 1 by default. `-P both` offers version 1 and draft
 version 0x8000000c, and `-P 19` offers only the draft version. Draft responses
 are verified with the draft context strings (`"RoughTime v1 ..."`).
 
-### Running Tests
-
-```bash
-# Run all tests
-cargo test
-
-# Run tests for specific crate
-cargo test -p roughenough-protocol
-
-# Run the end-to-end test (debug, then release)
-cargo build && cargo run --bin roughenough_integration_test
-cargo build --release && cargo run --release --bin roughenough_integration_test
-```
-
-## Project Structure
-
-Roughtime is structured as a Cargo workspace with multiple crates:
-
-- **protocol** - Core wire format handling, request/response types, data structures
-- **merkle** - Merkle tree implementation with Roughtime-specific tweaks
-- **server** - High-performance UDP server with async I/O and batching
-- **client** - Command-line client for querying Roughtime servers
-- **common** - Shared cryptography and encoding utilities, and the clock source
-- **keys** - Key material handling with multiple secure storage backends
-- **reporting-server** - Web server for collecting malfeasance reports
-- **integration** - End-to-end integration tests
-- **fuzz** - Fuzzing harness
-
 ## Optional Features
 
 ### Server Features
@@ -198,7 +170,8 @@ See [doc/PROTECTION.md](doc/PROTECTION.md) for detailed information on seed prot
 
 ## Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines, the project layout, and
+development commands.
 
 Thank you to all past and present contributors:
 
