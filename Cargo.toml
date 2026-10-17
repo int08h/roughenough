@@ -22,7 +22,7 @@ aws-config = { version = "1.12", default-features = false, features = ["default-
 aws-lc-rs = { version = "1.18", default-features = false, features = ["aws-lc-sys", "alloc"] }
 # Keep in lockstep with the aws-lc-sys version aws-lc-rs requires: aws-lc-sys
 # version-mangles its symbols and links key, so skew does not fail the build,
-# it silently links two copies of AWS-LC (CI checks cargo tree --duplicates).
+# it silently links two copies of AWS-LC (cargo-deny bans check in deny.toml).
 aws-lc-sys = { version = "0.45", default-features = false }
 aws-sdk-kms = { version = "1.123", default-features = false, features = ["default-https-client", "rt-tokio"] }
 aws-sdk-secretsmanager = { version = "1.120", default-features = false, features = ["default-https-client", "rt-tokio"] }

@@ -1,11 +1,18 @@
 # cargo-deny configuration
 # https://embarkstudios.github.io/cargo-deny/
 
+[graph]
+# Release binaries ship with the optional backends, so check what they contain
+all-features = true
+
 [advisories]
 version = 2
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "warn"
+ignore = [
+    { id = "RUSTSEC-2023-0071", reason = "RSA side channel; no RSA keys are used" },
+]
 
 [licenses]
 version = 2
@@ -19,7 +26,11 @@ allow = [
     "BSD-3-Clause",
     "ISC",
     "OpenSSL",
-    "Unicode-3.0"
+    "Unicode-3.0",
+    # 0BSD: recvmsg, doctest-file (ssh-agent backend). CDLA-Permissive-2.0: Mozilla CA
+    # root data in webpki-roots/webpki-root-certs (client reporting, cloud SDKs).
+    "0BSD",
+    "CDLA-Permissive-2.0",
 ]
 
 [licenses.private]
@@ -29,6 +40,9 @@ ignore = false
 multiple-versions = "warn"
 wildcards = "allow"
 highlight = "all"
+# aws-lc-sys version-mangles its symbols and links key, so version skew links two
+# AWS-LC copies silently instead of failing the build
+deny = [{ crate = "aws-lc-sys", deny-multiple-versions = true, reason = "see comment above" }]
 
 [sources]
 unknown-registry = "deny"

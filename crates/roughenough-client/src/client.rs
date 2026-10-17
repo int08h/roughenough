@@ -73,7 +73,7 @@ const MAX_DISCARDED_DATAGRAMS: usize = 8;
 /// if `hostname` resolves to more than one address.
 ///
 /// The returned [Measurement] holds the remote server's timestamp along the full [Request] and
-/// [Response] structs for more advanced use.
+/// [Response](roughenough_protocol::response::Response) structs for more advanced use.
 ///
 /// ```no_run,rust
 /// // You can get the public key from the `ecosystem.json` file, or
