@@ -64,6 +64,15 @@
 - Client: the UDP socket is connected, so datagrams from other sources
   are ignored, and a closed port fails fast with "Connection refused"
   instead of waiting for the timeout
+- Client API: `server_list` types are deserialize-only; `ServerList::new`,
+  `add_server`, `to_json`, `Server::new`, and `Address::new` are removed
+- Client API: removed the unused server-list accessors `Server::addresses`,
+  `first_address`, `version`, and `public_key_type`, and
+  `Address::protocol`; `ServerList::validate` and `Server::validate` are
+  private, and `Address::validate` is removed
+- Client API: `ServerList::choose_random` returns `Vec<&Server>`
+- Client API: an invalid server-list address is reported as
+  `server_list::Error::InvalidJson`
 
 ### Fixed
 
