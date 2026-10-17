@@ -1,6 +1,6 @@
 //! Representing lists of Roughtime servers
 
-use roughenough_common::crypto::secure_shuffle;
+use roughenough_common::crypto::random_bytes;
 use serde::Deserialize;
 
 /// Represents a Roughtime server list
@@ -246,6 +246,27 @@ impl TryFrom<String> for HostPort {
             }
         });
         parsed.ok_or(Error::InvalidAddress { address })
+    }
+}
+
+/// Shuffle a slice in place (Fisher-Yates) using cryptographically secure randomness
+fn secure_shuffle<T>(slice: &mut [T]) {
+    for i in (1..slice.len()).rev() {
+        let j = random_index(i + 1);
+        slice.swap(i, j);
+    }
+}
+
+/// Uniform random index in `[0, bound)`; rejection sampling avoids modulo bias
+fn random_index(bound: usize) -> usize {
+    debug_assert!(bound > 0 && bound <= u32::MAX as usize);
+    let bound = bound as u32;
+    let zone = u32::MAX - (u32::MAX % bound);
+    loop {
+        let r = u32::from_le_bytes(random_bytes::<4>());
+        if r < zone {
+            return (r % bound) as usize;
+        }
     }
 }
 
@@ -583,5 +604,18 @@ mod tests {
             server_list.choose_random(server_list.servers().len() + 1),
             Err(Error::ConfigError(_))
         ));
+    }
+
+    #[test]
+    fn secure_shuffle_is_a_permutation() {
+        for len in [0, 1, 2, 3, 17, 100] {
+            let original: Vec<usize> = (0..len).collect();
+            for _ in 0..10 {
+                let mut shuffled = original.clone();
+                secure_shuffle(&mut shuffled);
+                shuffled.sort_unstable();
+                assert_eq!(shuffled, original);
+            }
+        }
     }
 }

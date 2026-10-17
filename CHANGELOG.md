@@ -126,6 +126,9 @@
   `online::pkcs11` are removed). `OnlineKey` is exported only as
   `roughenough_keys::online::OnlineKey`, and `LongTermIdentity` only as
   `roughenough_keys::longterm::LongTermIdentity`
+- Common: `encoding::hexdump`, `encoding::try_decode_key`, and
+  `crypto::secure_shuffle` are removed (moved into roughenough-client;
+  `try_decode_key` is now `roughenough_client::client::try_decode_key`)
 
 ### Security
 

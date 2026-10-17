@@ -8,13 +8,13 @@ use std::time::Duration;
 use clap::Parser;
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
+use roughenough_client::client::try_decode_key;
 use roughenough_client::measurement::Measurement;
 #[cfg(feature = "reporting")]
 use roughenough_client::reporting::MalfeasanceReport;
 use roughenough_client::sequence::MeasurementSequence;
 use roughenough_client::server_list::ServerList;
 use roughenough_client::{CausalityViolation, Client, ClientError};
-use roughenough_common::encoding::try_decode_key;
 use tracing::{Level, debug, error, info};
 
 use crate::args::Args;

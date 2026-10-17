@@ -52,8 +52,9 @@
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::time::Duration;
 
+use data_encoding::{DecodeError, DecodeKind};
 use roughenough_common::crypto::{make_srv_commitment, random_bytes};
-use roughenough_common::encoding::try_decode_key;
+use roughenough_common::encoding::try_decode;
 use roughenough_protocol::ToFrame;
 use roughenough_protocol::request::{MAX_RESPONSE_SIZE, Request};
 use roughenough_protocol::tags::{Nonce, ProtocolVersion, PublicKey, SrvCommitment};
@@ -94,6 +95,17 @@ pub fn query(hostname: &str, port: u16, key: Option<&str>) -> Result<Measurement
     client.query()
 }
 
+/// Decode a public key from various encodings (hex, base64, etc).
+/// Tries multiple encoding formats until one succeeds.
+pub fn try_decode_key(encoded_key: &str) -> Result<PublicKey, DecodeError> {
+    let key = try_decode(encoded_key)?;
+
+    PublicKey::try_from(key.as_slice()).map_err(|_| DecodeError {
+        position: key.len(),
+        kind: DecodeKind::Length,
+    })
+}
+
 /// Things that can go wrong when querying a server
 #[derive(thiserror::Error, Debug)]
 pub enum ClientError {
@@ -104,7 +116,7 @@ pub enum ClientError {
     BadResponse(#[from] roughenough_protocol::error::Error),
 
     #[error("public key decode failed: {0}")]
-    BadPublicKey(#[from] data_encoding::DecodeError),
+    BadPublicKey(#[from] DecodeError),
 
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
@@ -485,5 +497,55 @@ mod tests {
         let client = client_answered_with(ProtocolVersion::RFC, &[ProtocolVersion::RFC]);
         let result = client.query();
         assert!(result.is_ok(), "expected Ok, got {result:?}");
+    }
+
+    #[test]
+    fn test_decode_key_hex_lower() {
+        let key_hex = "0101010101010101010101010101010101010101010101010101010101010101";
+        let result = try_decode_key(key_hex).unwrap();
+        assert_eq!(result.as_ref(), &[0x01u8; 32]);
+    }
+
+    #[test]
+    fn test_decode_key_hex_upper() {
+        let key_hex = "0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A";
+        let result = try_decode_key(key_hex).unwrap();
+        assert_eq!(result.as_ref(), &[0x0au8; 32]);
+    }
+
+    #[test]
+    fn test_decode_key_base64() {
+        // 32 bytes of 0x42
+        let key_b64 = "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=";
+        let result = try_decode_key(key_b64).unwrap();
+        assert_eq!(result.as_ref(), &[0x42u8; 32]);
+    }
+
+    #[test]
+    fn test_decode_key_base64_nopad() {
+        // 32 bytes of 0x42 without padding
+        let key_b64 = "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI";
+        let result = try_decode_key(key_b64).unwrap();
+        assert_eq!(result.as_ref(), &[0x42u8; 32]);
+    }
+
+    #[test]
+    fn test_decode_key_wrong_length() {
+        let key_hex = "0101010101010101"; // Only 8 bytes
+        let result = try_decode_key(key_hex);
+        assert!(matches!(
+            result,
+            Err(DecodeError {
+                position: 8,
+                kind: DecodeKind::Length
+            })
+        ));
+    }
+
+    #[test]
+    fn test_decode_key_invalid_encoding() {
+        let key = "not-a-valid-key-encoding!!!";
+        let result = try_decode_key(key);
+        assert!(matches!(result, Err(DecodeError { .. })));
     }
 }

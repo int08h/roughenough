@@ -1,6 +1,6 @@
 //! Abstraction for network transport mechanisms used by clients.
 
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Write};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
 use std::time::Duration;
 
@@ -70,9 +70,51 @@ impl ClientTransport for UdpTransport {
 fn trace_dump(data: &[u8]) -> Result<(), ClientError> {
     if tracing::enabled!(tracing::Level::TRACE) {
         let mut dump = Vec::new();
-        roughenough_common::encoding::hexdump(data, &mut dump)?;
+        hexdump(data, &mut dump)?;
         trace!("\n{}", String::from_utf8_lossy(&dump));
     }
+    Ok(())
+}
+
+/// Write a hex dump of the provided data to the writer.
+///
+/// The output format is similar to traditional hex dump tools:
+/// - 8-digit hex offset
+/// - 16 bytes per line in hex (grouped by 2 bytes)
+/// - ASCII representation on the right
+fn hexdump<W: Write>(data: &[u8], writer: &mut W) -> std::io::Result<()> {
+    const BYTES_PER_LINE: usize = 16;
+
+    for (offset, chunk) in data.chunks(BYTES_PER_LINE).enumerate() {
+        write!(writer, "{:08x}: ", offset * BYTES_PER_LINE)?;
+
+        for (i, byte) in chunk.iter().enumerate() {
+            write!(writer, "{byte:02x}")?;
+            if i % 2 == 1 {
+                write!(writer, " ")?;
+            }
+        }
+
+        let padding = BYTES_PER_LINE - chunk.len();
+        for i in 0..padding {
+            write!(writer, "  ")?;
+            if (chunk.len() + i) % 2 == 1 {
+                write!(writer, " ")?;
+            }
+        }
+
+        write!(writer, " |")?;
+        for byte in chunk {
+            let ch = if byte.is_ascii_graphic() || *byte == b' ' {
+                *byte as char
+            } else {
+                '.'
+            };
+            write!(writer, "{ch}")?;
+        }
+        writeln!(writer, "|")?;
+    }
+
     Ok(())
 }
 
@@ -137,6 +179,32 @@ mod tests {
         let mut buf = [0u8; 16];
         let n = transport.recv(&mut buf).unwrap();
         assert_eq!(&buf[..n], b"ping");
+    }
+
+    #[test]
+    fn test_hexdump() {
+        let data = b"Hello, World! This is a test.";
+        let mut output = Vec::new();
+
+        hexdump(data, &mut output).unwrap();
+        let result = String::from_utf8(output).unwrap();
+
+        assert!(result.contains("00000000:"));
+        assert!(result.contains("4865 6c6c")); // "Hell" with space
+        assert!(result.contains("|Hello, World! Th|"));
+        assert!(result.contains("|is is a test.|"));
+    }
+
+    #[test]
+    fn test_hexdump_short() {
+        let data = b"Test";
+        let mut output = Vec::new();
+
+        hexdump(data, &mut output).unwrap();
+        let result = String::from_utf8(output).unwrap();
+
+        assert!(result.contains("00000000: 5465 7374"));
+        assert!(result.contains("|Test|"));
     }
 }
 
