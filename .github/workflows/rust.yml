@@ -159,6 +159,10 @@ jobs:
     - name: Run doctests
       run: cargo test --doc --workspace --all-features
 
+    # cargo run builds only the harness, not the server and client it runs
+    - name: End-to-end test
+      run: cargo build && cargo run --bin roughenough_integration_test
+
     - name: Coverage reports
       run: |
         cargo llvm-cov report --lcov --output-path lcov.info

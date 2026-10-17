@@ -43,8 +43,9 @@ cargo test                     # Test default members
 cargo test --workspace         # Test all crates including reporting-server
 cargo test -p roughenough-protocol    # Test specific crate
 
-# Integration test (tests both debug and release binaries; run from project root)
-cargo build && cargo build --release && target/debug/roughenough_integration_test
+# End-to-end test of the server and client binaries from the same profile
+cargo build && cargo run --bin roughenough_integration_test
+cargo build --release && cargo run --release --bin roughenough_integration_test
 
 # Reporting server (not a default member; build and test with -p)
 cargo build -p roughenough-reporting-server

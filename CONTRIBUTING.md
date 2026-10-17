@@ -40,8 +40,8 @@ cargo build --release
 # Run all tests
 cargo test
 
-# Run integration test on debug+release builds
-cargo build && cargo build --release && target/debug/roughenough_integration_test
+# Run the end-to-end test against the debug build (add --release to both commands for release)
+cargo build && cargo run --bin roughenough_integration_test
 
 # Run checks
 cargo check
@@ -74,9 +74,9 @@ cargo test
 cargo test -p roughenough-protocol
 cargo test -p roughenough-merkle
 
-# Run integration tests
-cargo build
-target/debug/roughenough_integration_test
+# Run the end-to-end test (debug, then release)
+cargo build && cargo run --bin roughenough_integration_test
+cargo build --release && cargo run --release --bin roughenough_integration_test
 
 # Run tests with all features enabled
 cargo test --all-features

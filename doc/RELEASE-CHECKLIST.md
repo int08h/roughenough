@@ -10,7 +10,9 @@ Use this checklist when preparing a new release of Roughenough for publication t
 - [ ] All benchmarks run without errors: `cargo bench --workspace`
 - [ ] No clippy warnings: `cargo clippy --workspace --all-features`
 - [ ] Code is formatted: `cargo +nightly fmt --check`
-- [ ] Integration tests pass: `target/debug/roughenough_integration_test`
+- [ ] End-to-end tests pass:
+  - [ ] `cargo build && cargo run --bin roughenough_integration_test`
+  - [ ] `cargo build --release && cargo run --release --bin roughenough_integration_test`
 - [ ] Optional features build correctly:
   - [ ] `cargo build -p roughenough-keys --features online-linux-krs`
   - [ ] `cargo build -p roughenough-keys --features online-ssh-agent`

@@ -242,10 +242,9 @@ mod tests {
     #[test]
     fn seed_source_is_required_unless_pkcs11() {
         let args = Args::try_parse_from(["prog"]).unwrap();
-        assert_eq!(
-            args.validate_seed_source().unwrap_err().kind(),
-            ErrorKind::MissingRequiredArgument
-        );
+        let err = args.validate_seed_source().unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
+        assert!(err.to_string().contains("--seed-file"), "{err}");
 
         let args = Args::try_parse_from(["prog", "--seed-backend", "pkcs11"]).unwrap();
         assert!(args.validate_seed_source().is_ok());

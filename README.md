@@ -145,8 +145,9 @@ cargo test
 # Run tests for specific crate
 cargo test -p roughenough-protocol
 
-# Run integration tests
-target/debug/roughenough_integration_test
+# Run the end-to-end test (debug, then release)
+cargo build && cargo run --bin roughenough_integration_test
+cargo build --release && cargo run --release --bin roughenough_integration_test
 ```
 
 ## Project Structure

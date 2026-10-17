@@ -62,7 +62,7 @@ cargo test -p roughenough-server --lib filter      # includes opcodes_match_libc
 cargo test -p roughenough-server --test bpf_filter_tests
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace
-cargo build && target/debug/roughenough_integration_test
+cargo build && cargo run --bin roughenough_integration_test
 ```
 
 To check a live server, start it and send runts and junk, then confirm
