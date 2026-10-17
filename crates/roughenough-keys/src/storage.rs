@@ -1,6 +1,5 @@
 use roughenough_common::encoding;
 use tracing::{debug, trace};
-use zeroize::Zeroizing;
 
 use crate::longterm::envelope::SeedEnvelope;
 use crate::seed::Seed;
@@ -30,6 +29,12 @@ pub enum StorageError {
 
     #[error("invalid resource: {0}")]
     InvalidResource(String),
+}
+
+/// Decode a hex or base64 seed value
+pub fn decode_seed(encoded: &str) -> Result<Seed, StorageError> {
+    let bytes = encoding::try_decode(encoded)?;
+    Seed::try_from(bytes.as_slice()).map_err(|e| StorageError::InvalidSeed(e.to_string()))
 }
 
 /// Loads the seed from secure long-term storage and transfers it to an online backend. This is a
@@ -147,12 +152,7 @@ impl Protection {
     }
 
     async fn try_load_plain(&self, value: &str) -> Result<Seed, StorageError> {
-        let data = Zeroizing::new(encoding::try_decode(value)?);
-        if data.len() != 32 {
-            let msg = format!("need 32 bytes, found: {0}", data.len());
-            return Err(StorageError::InvalidSeed(msg));
-        }
-        Ok(Seed::new(&data))
+        decode_seed(value)
     }
 
     #[cfg(feature = "longterm-aws")]
@@ -407,7 +407,7 @@ mod tests {
 
     #[test]
     fn storing_a_plain_seed_is_an_error_not_a_panic() {
-        let seed = Seed::new(&[7u8; 32]);
+        let seed = Seed::from_bytes(&[7u8; 32]);
         let result = block_on(try_store_seed(&seed, "seed://aabbccdd"));
 
         match result {
@@ -420,7 +420,7 @@ mod tests {
 
     #[test]
     fn storing_with_unknown_scheme_is_an_error() {
-        let seed = Seed::new(&[7u8; 32]);
+        let seed = Seed::from_bytes(&[7u8; 32]);
         let result = block_on(try_store_seed(&seed, "vault://something"));
         assert!(matches!(result, Err(StorageError::InvalidSeed(_))));
     }
@@ -445,7 +445,7 @@ mod tests {
     #[cfg(not(feature = "longterm-aws"))]
     #[test]
     fn aws_kms_without_feature_is_not_implemented() {
-        let seed = Seed::new(&[7u8; 32]);
+        let seed = Seed::from_bytes(&[7u8; 32]);
         let load = block_on(try_load_seed("aws-kms://whatever"));
         assert!(matches!(load, Err(StorageError::NotImplemented(_))));
         let store = block_on(try_store_seed(&seed, "aws-kms://whatever"));
@@ -455,7 +455,7 @@ mod tests {
     #[cfg(not(feature = "longterm-gcp"))]
     #[test]
     fn gcp_kms_without_feature_is_not_implemented() {
-        let seed = Seed::new(&[7u8; 32]);
+        let seed = Seed::from_bytes(&[7u8; 32]);
         let load = block_on(try_load_seed("gcp-kms://whatever"));
         assert!(matches!(load, Err(StorageError::NotImplemented(_))));
         let store = block_on(try_store_seed(&seed, "gcp-kms://whatever"));
@@ -465,7 +465,7 @@ mod tests {
     #[cfg(not(feature = "longterm-aws"))]
     #[test]
     fn aws_secret_manager_without_feature_is_not_implemented() {
-        let seed = Seed::new(&[7u8; 32]);
+        let seed = Seed::from_bytes(&[7u8; 32]);
         let load = block_on(try_load_seed("aws-secret://whatever"));
         assert!(matches!(load, Err(StorageError::NotImplemented(_))));
         let store = block_on(try_store_seed(&seed, "aws-secret://whatever"));
@@ -475,7 +475,7 @@ mod tests {
     #[cfg(not(feature = "longterm-gcp"))]
     #[test]
     fn gcp_secret_manager_without_feature_is_not_implemented() {
-        let seed = Seed::new(&[7u8; 32]);
+        let seed = Seed::from_bytes(&[7u8; 32]);
         let load = block_on(try_load_seed("gcp-secret://whatever"));
         assert!(matches!(load, Err(StorageError::NotImplemented(_))));
         let store = block_on(try_store_seed(&seed, "gcp-secret://whatever"));

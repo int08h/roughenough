@@ -17,8 +17,8 @@ impl MemoryBackend {
         })
     }
 
-    pub fn from_value(value: &[u8]) -> MemoryBackend {
-        let seed = Seed::new(value);
+    pub fn from_value(value: &[u8; 32]) -> MemoryBackend {
+        let seed = Seed::from_bytes(value);
         let mut backend = MemoryBackend::default();
         backend.store_seed(seed).expect("bug: seed is valid");
 
@@ -51,7 +51,7 @@ impl SeedBackend for MemoryBackend {
             .seed
             .as_ref()
             .unwrap_or_else(|| panic!("bug: no seed?"));
-        Ok(Seed::new(seed.expose()))
+        Ok(Seed::from_bytes(seed.expose()))
     }
 
     fn sign(&mut self, data: &[u8]) -> Result<[u8; 64], BackendError> {
@@ -65,7 +65,7 @@ impl SeedBackend for MemoryBackend {
 
     fn seed_len(&self) -> usize {
         match &self.seed {
-            Some(seed) => seed.len(),
+            Some(_) => Seed::LEN,
             None => 0,
         }
     }

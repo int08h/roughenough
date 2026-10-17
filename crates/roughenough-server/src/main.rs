@@ -154,7 +154,7 @@ fn load_seed(args: &Args) -> Box<dyn SeedBackend> {
     let seed = match &args.seed_file {
         None => {
             warn!("Using all-zero seed because --insecure-zero-seed was specified");
-            Seed::new(&[0u8; 32])
+            Seed::from_bytes(&[0u8; 32])
         }
         Some(path) => {
             let contents = match seed_file::read(path) {
@@ -192,7 +192,7 @@ fn load_seed(args: &Args) -> Box<dyn SeedBackend> {
 
     info!(
         "Loaded {}-byte seed into '{}' backend",
-        seed.len(),
+        Seed::LEN,
         &args.seed_backend
     );
 

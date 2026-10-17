@@ -85,6 +85,16 @@
   with the new `ValidationError::VerNotInVers` (RFC 5.2.5).
   `ResponseValidator::validate` does not perform this check; call
   `check_vers_contains_ver` to apply it elsewhere
+- Keys: `Seed::new(&[u8])` and `Seed::len()` are removed; use
+  `Seed::try_from(&[u8])` or `Seed::from_bytes(&[u8; 32])`.
+  `Seed::expose()` returns `&[u8; 32]`. `MemoryBackend::from_value` takes
+  `&[u8; 32]`. Common: `encoding::try_decode` returns
+  `Zeroizing<Vec<u8>>` and accepts mixed-case hex
+
+### Security
+
+- Keys, Common: decode buffers for seed values are zeroized, including
+  failed decoding attempts
 
 ### Fixed
 
@@ -125,6 +135,8 @@
 - Client: `MalfeasanceReport::verify()` validates a received report
 - Client: `-s` works with `-l` without `-k`, since the server list
   supplies the public keys
+- Keys: `storage::decode_seed` decodes a hex or base64 seed value;
+  `Seed::LEN` and `seed::InvalidSeedLength` are new
 
 ## [2.2.0] - 2026-10-11
 

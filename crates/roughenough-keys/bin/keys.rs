@@ -13,6 +13,7 @@ use roughenough_keys::seed::Seed;
 use roughenough_keys::{runtime, storage};
 use roughenough_protocol::util::as_hex;
 use tracing::{debug, error};
+use zeroize::Zeroizing;
 
 #[derive(clap::Parser, Debug)]
 #[command(version)]
@@ -205,18 +206,16 @@ async fn handle_get(mut input: InFile, mut output: OutFile) {
 
 /// Store a long-term identity seed in a Secret manager
 async fn handle_store(mut input: InFile, mut output: OutFile, secret: String, json: bool) {
-    let mut seed_bytes = Vec::new();
+    let mut seed_bytes = Zeroizing::new(Vec::new());
     input.read_to_end(&mut seed_bytes).unwrap();
 
-    if seed_bytes.len() != 32 {
-        error!(
-            "Invalid seed length: expected 32 bytes, got {}",
-            seed_bytes.len()
-        );
-        return;
-    }
-
-    let seed = Seed::new(&seed_bytes);
+    let seed = match Seed::try_from(seed_bytes.as_slice()) {
+        Ok(seed) => seed,
+        Err(e) => {
+            error!("Invalid seed: {e}");
+            return;
+        }
+    };
 
     match storage::try_store_seed(&seed, &secret).await {
         Ok(envelope) => {
@@ -315,18 +314,16 @@ async fn handle_open(mut input: InFile, mut output: OutFile, key: Option<String>
 
 /// Envelope encrypt a long-term identity seed
 async fn handle_seal(mut input: InFile, mut output: OutFile, key: String) {
-    let mut seed_bytes = Vec::new();
+    let mut seed_bytes = Zeroizing::new(Vec::new());
     input.read_to_end(&mut seed_bytes).unwrap();
 
-    if seed_bytes.len() != 32 {
-        error!(
-            "Invalid seed length: expected 32 bytes, got {}",
-            seed_bytes.len()
-        );
-        return;
-    }
-
-    let seed = Seed::new(&seed_bytes);
+    let seed = match Seed::try_from(seed_bytes.as_slice()) {
+        Ok(seed) => seed,
+        Err(e) => {
+            error!("Invalid seed: {e}");
+            return;
+        }
+    };
 
     match storage::try_store_seed(&seed, &key).await {
         Ok(envelope) => {

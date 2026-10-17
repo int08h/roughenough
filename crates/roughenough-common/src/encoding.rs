@@ -3,9 +3,10 @@
 use std::io::Write;
 
 use data_encoding::{
-    BASE64, BASE64_NOPAD, BASE64URL, BASE64URL_NOPAD, DecodeError, DecodeKind, HEXLOWER, HEXUPPER,
+    BASE64, BASE64_NOPAD, BASE64URL, BASE64URL_NOPAD, DecodeError, DecodeKind, HEXLOWER_PERMISSIVE,
 };
 use roughenough_protocol::tags::PublicKey;
+use zeroize::Zeroizing;
 
 /// Decode a public key from various encodings (hex, base64, etc).
 /// Tries multiple encoding formats until one succeeds.
@@ -18,19 +19,41 @@ pub fn try_decode_key(encoded_key: &str) -> Result<PublicKey, DecodeError> {
     })
 }
 
-/// Attempt to decode `encoded_value` into a `Vec<u8>` using multiple encoding formats until
-/// one succeeds.
-pub fn try_decode(encoded_value: &str) -> Result<Vec<u8>, DecodeError> {
-    // Try all supported encodings
-    let value = HEXLOWER
-        .decode(encoded_value.as_bytes())
-        .or_else(|_| HEXUPPER.decode(encoded_value.as_bytes()))
-        .or_else(|_| BASE64URL.decode(encoded_value.as_bytes()))
-        .or_else(|_| BASE64URL_NOPAD.decode(encoded_value.as_bytes()))
-        .or_else(|_| BASE64.decode(encoded_value.as_bytes()))
-        .or_else(|_| BASE64_NOPAD.decode(encoded_value.as_bytes()))?;
+/// Attempt to decode `encoded_value` using hex (any case), then the base64 variants, until one
+/// succeeds.
+///
+/// The value may be a seed, so every attempt decodes into a buffer that is zeroized on drop,
+/// including attempts that fail part way through.
+pub fn try_decode(encoded_value: &str) -> Result<Zeroizing<Vec<u8>>, DecodeError> {
+    let input = encoded_value.as_bytes();
+    let mut last_err = None;
 
-    Ok(value)
+    for encoding in [
+        &HEXLOWER_PERMISSIVE,
+        &BASE64URL,
+        &BASE64URL_NOPAD,
+        &BASE64,
+        &BASE64_NOPAD,
+    ] {
+        let len = match encoding.decode_len(input.len()) {
+            Ok(len) => len,
+            Err(e) => {
+                last_err = Some(e);
+                continue;
+            }
+        };
+
+        let mut buf = Zeroizing::new(vec![0u8; len]);
+        match encoding.decode_mut(input, &mut buf) {
+            Ok(n) => {
+                buf.truncate(n);
+                return Ok(buf);
+            }
+            Err(partial) => last_err = Some(partial.error),
+        }
+    }
+
+    Err(last_err.expect("at least one encoding was tried"))
 }
 
 /// Write a hex dump of the provided data to the writer.
@@ -127,6 +150,17 @@ mod tests {
         let key = "not-a-valid-key-encoding!!!";
         let result = try_decode_key(key);
         assert!(matches!(result, Err(DecodeError { .. })));
+    }
+
+    #[test]
+    fn test_decode_hex_mixed_case() {
+        let value = try_decode(&"aB".repeat(32)).unwrap();
+        assert_eq!(value.as_slice(), &[0xab; 32]);
+    }
+
+    #[test]
+    fn test_decode_returns_zeroizing() {
+        let _: Zeroizing<Vec<u8>> = try_decode("00").unwrap();
     }
 
     #[test]

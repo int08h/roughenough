@@ -35,7 +35,7 @@ pub(crate) fn seal_seed(dek: [u8; 32], seed: &Seed, aad: &[u8]) -> Result<Vec<u8
     // in_out is now (encrypted_seed || tag || nonce)
     assert_eq!(
         in_out.len(),
-        seed.len() + AES_256_GCM.tag_len() + AES_256_GCM.nonce_len()
+        Seed::LEN + AES_256_GCM.tag_len() + AES_256_GCM.nonce_len()
     );
     Ok(in_out)
 }
@@ -59,13 +59,7 @@ pub(crate) fn open_seed(
     let mut in_out = Zeroizing::new(encrypted_seed[..ciphertext_len].to_vec());
     let plaintext = key.open_in_place(nonce, Aad::from(aad), &mut in_out)?;
 
-    // Seed::new asserts a 32-byte length; the plaintext length comes from the
-    // envelope, so check it here and error instead
-    if plaintext.len() != 32 {
-        return Err(Unspecified);
-    }
-
-    Ok(Seed::new(plaintext))
+    Seed::try_from(&plaintext[..]).map_err(|_| Unspecified)
 }
 
 /// Serialize strings to/from base64 for serde.
@@ -98,7 +92,7 @@ mod tests {
             0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
             0x1d, 0x1e, 0x1f, 0x20,
         ];
-        let original_seed = Seed::new(&original_seed_data);
+        let original_seed = Seed::from_bytes(&original_seed_data);
 
         let dek = [
             0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xab, 0xac, 0xad, 0xae,

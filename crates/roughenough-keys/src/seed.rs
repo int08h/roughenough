@@ -2,9 +2,8 @@ use std::fmt::{Debug, Formatter};
 
 #[cfg(all(target_os = "linux", feature = "online-linux-krs"))]
 use linux_keyutils::KeyError;
-use roughenough_common::crypto::random_bytes;
 use roughenough_protocol::tags::PublicKey;
-use zeroize::ZeroizeOnDrop;
+use zeroize::Zeroize;
 
 #[cfg(all(target_os = "linux", feature = "online-linux-krs"))]
 pub use crate::online::linuxkrs::*;
@@ -25,36 +24,56 @@ pub trait SeedBackend: Send {
 }
 
 /// Secret value used to derive the keypair of a LongTermIdentity.
-#[derive(ZeroizeOnDrop)]
-pub struct Seed {
-    value: Vec<u8>,
+///
+/// The bytes live on the heap so that moving a `Seed` copies only a pointer and leaves no seed
+/// bytes behind on the stack.
+pub struct Seed(Box<[u8; 32]>);
+
+#[derive(thiserror::Error, Debug)]
+#[error("seed must be 32 bytes, found {0}")]
+pub struct InvalidSeedLength(pub usize);
+
+impl Seed {
+    pub const LEN: usize = 32;
+
+    pub fn from_bytes(bytes: &[u8; 32]) -> Seed {
+        // Allocate zeroed then copy, so no stack temporary holds the seed
+        let mut boxed = Box::new([0u8; 32]);
+        boxed.copy_from_slice(bytes);
+        Seed(boxed)
+    }
+
+    pub fn new_random() -> Seed {
+        let mut boxed = Box::new([0u8; 32]);
+        aws_lc_rs::rand::fill(boxed.as_mut()).expect("should be infallible");
+        Seed(boxed)
+    }
+
+    pub fn expose(&self) -> &[u8; 32] {
+        &self.0
+    }
 }
 
-#[allow(clippy::len_without_is_empty)]
-impl Seed {
-    pub fn new(value: &[u8]) -> Self {
-        assert_eq!(value.len(), 32, "seed must be 32 bytes");
-        Self {
-            value: Vec::from(value),
-        }
-    }
+impl TryFrom<&[u8]> for Seed {
+    type Error = InvalidSeedLength;
 
-    pub fn new_random() -> Self {
-        Seed::new(&random_bytes::<32>())
+    fn try_from(bytes: &[u8]) -> Result<Seed, InvalidSeedLength> {
+        let bytes: &[u8; 32] = bytes
+            .try_into()
+            .map_err(|_| InvalidSeedLength(bytes.len()))?;
+        Ok(Seed::from_bytes(bytes))
     }
+}
 
-    pub fn expose(&self) -> &[u8] {
-        &self.value
-    }
-
-    pub fn len(&self) -> usize {
-        self.value.len()
+impl Drop for Seed {
+    fn drop(&mut self) {
+        self.0.zeroize();
     }
 }
 
 impl Debug for Seed {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Seed(len={})", self.len())
+        write!(f, "Seed(len={})", Self::LEN)
     }
 }
 
@@ -183,6 +202,31 @@ fn pkcs11_from_env() -> Result<Box<dyn SeedBackend>, BackendError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invalid_seed_length_is_an_error() {
+        assert!(Seed::try_from(&b"this won't work"[..]).is_err());
+    }
+
+    #[test]
+    fn seed_try_from_accepts_32_bytes_only() {
+        for len in [31, 33] {
+            match Seed::try_from(vec![7u8; len].as_slice()) {
+                Err(InvalidSeedLength(found)) => assert_eq!(found, len),
+                Ok(_) => panic!("{len}-byte seed was accepted"),
+            }
+        }
+
+        let seed = Seed::try_from([7u8; 32].as_slice()).unwrap();
+        assert_eq!(seed.expose(), &[7u8; 32]);
+    }
+
+    #[test]
+    fn seed_debug_does_not_print_bytes() {
+        let debug = format!("{:?}", Seed::from_bytes(&[0xab; 32]));
+        assert!(!debug.contains("ab"), "{debug}");
+        assert!(!debug.contains("171"), "{debug}");
+    }
 
     // Regression: these arms were todo!()/unreachable!() panics in a pub fn
     // taking an arbitrary &str

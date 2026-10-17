@@ -1,12 +1,10 @@
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_secretsmanager::error::DisplayErrorContext;
-use roughenough_common::encoding::try_decode;
 use roughenough_protocol::util::as_hex;
 use tracing::debug;
-use zeroize::Zeroizing;
 
 use crate::seed::Seed;
-use crate::storage::StorageError;
+use crate::storage::{StorageError, decode_seed};
 
 pub struct AwsSecretManager {}
 
@@ -94,17 +92,7 @@ impl AwsSecretManager {
 }
 
 fn decode_secret_string(encoded_value: &str) -> Result<Seed, StorageError> {
-    let value = Zeroizing::new(try_decode(encoded_value)?);
-    debug!("Decoded a {}-byte value", value.len());
-
-    if value.len() != 32 {
-        return Err(StorageError::InvalidSeed(format!(
-            "need 32 bytes, found: {}",
-            value.len()
-        )));
-    }
-
-    Ok(Seed::new(&value))
+    decode_seed(encoded_value)
 }
 
 fn extract_aws_region(arn: &str) -> Result<String, StorageError> {

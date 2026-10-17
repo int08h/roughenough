@@ -1,10 +1,8 @@
-use roughenough_common::encoding::try_decode;
 use roughenough_protocol::util::as_hex;
 use tracing::debug;
-use zeroize::Zeroizing;
 
 use crate::seed::Seed;
-use crate::storage::StorageError;
+use crate::storage::{StorageError, decode_seed};
 
 // projects/630192955771/secrets/roughenough-seed-test-1/versions/1
 // https://cloud.google.com/docs/authentication/application-default-credentials
@@ -95,17 +93,7 @@ fn decode_secret_payload(data: &[u8], data_crc32c: Option<i64>) -> Result<Seed, 
 
     let encoded_value = std::str::from_utf8(data)
         .map_err(|error| StorageError::InvalidSeed(format!("secret is not UTF-8: {error}")))?;
-    let value = Zeroizing::new(try_decode(encoded_value)?);
-    debug!("Decoded a {}-byte value", value.len());
-
-    if value.len() != 32 {
-        return Err(StorageError::InvalidSeed(format!(
-            "need 32 bytes, found: {}",
-            value.len()
-        )));
-    }
-
-    Ok(Seed::new(&value))
+    decode_seed(encoded_value)
 }
 
 /// projects/{project}/secrets/{secret}/versions/{version}

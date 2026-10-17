@@ -43,7 +43,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true, optional = true, features = ["rt", "macros"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-zeroize = { workspace = true, features = ["zeroize_derive"] }
+zeroize = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]

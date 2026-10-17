@@ -42,7 +42,7 @@ pub mod krs_backend {
     use linux_keyutils::{KeyError, KeyPermissionsBuilder, KeyRing, KeyRingIdentifier, Permission};
     use roughenough_protocol::tags::PublicKey;
     use tracing::{debug, error};
-    use zeroize::Zeroize;
+    use zeroize::Zeroizing;
 
     use crate::seed::{BackendError, Seed, SeedBackend};
 
@@ -167,7 +167,7 @@ pub mod krs_backend {
                 panic!("{} already exists somehow?", Self::KEY_NAME);
             }
 
-            let seed_len = seed.len();
+            let seed_len = Seed::LEN;
             let krs_key = thread_key_ring.add_key(Self::KEY_NAME, seed.expose())?;
 
             // Set restrictive permissions
@@ -193,18 +193,17 @@ pub mod krs_backend {
         fn handle_get_seed(thread_key_ring: &KeyRing) -> Result<Seed, BackendError> {
             match thread_key_ring.search(Self::KEY_NAME) {
                 Ok(seed_key) => {
-                    // Ed25519 seeds are always 32 bytes
-                    let mut buf = vec![0u8; 32];
+                    let mut buf = Zeroizing::new([0u8; Seed::LEN]);
                     let nread = seed_key.read(&mut buf).map_err(BackendError::from)?;
 
-                    if nread != 32 {
+                    if nread != Seed::LEN {
                         return Err(BackendError::NotFound(format!(
-                            "Expected 32-byte seed, got {nread} bytes"
+                            "Expected {}-byte seed, got {nread} bytes",
+                            Seed::LEN
                         )));
                     }
 
-                    let seed = Seed::new(&buf);
-                    buf.zeroize();
+                    let seed = Seed::from_bytes(&buf);
 
                     debug!(
                         "read {}-byte seed '{}' from {:?}",
@@ -330,7 +329,7 @@ pub mod krs_backend {
 
             // when we store a seed
             let value = [99u8; 32];
-            backend.store_seed(Seed::new(&value)).unwrap();
+            backend.store_seed(Seed::from_bytes(&value)).unwrap();
 
             // then we can read it back
             let read = backend.get_seed().unwrap();
@@ -346,7 +345,7 @@ pub mod krs_backend {
 
             // when we store a seed
             let value = [123u8; 32];
-            backend.store_seed(Seed::new(&value)).unwrap();
+            backend.store_seed(Seed::from_bytes(&value)).unwrap();
 
             // and we confirmed it's there
             let read = backend.get_seed().unwrap();
@@ -368,7 +367,9 @@ pub mod krs_backend {
 
             // And we should be able to store a new seed
             let new_value = [99u8; 32];
-            new_backend.store_seed(Seed::new(&new_value)).unwrap();
+            new_backend
+                .store_seed(Seed::from_bytes(&new_value))
+                .unwrap();
         }
 
         #[test]
@@ -408,8 +409,7 @@ pub mod krs_backend {
                     // Each thread performs multiple operations
                     for j in 0..3 {
                         // Get seed
-                        let seed = backend_clone.lock().unwrap().get_seed().unwrap();
-                        assert_eq!(seed.len(), 32);
+                        backend_clone.lock().unwrap().get_seed().unwrap();
 
                         // Sign data
                         let data = format!("thread {i} iteration {j}");
@@ -445,8 +445,7 @@ pub mod krs_backend {
             // Move backend to another thread and perform operations
             let handle = thread::spawn(move || {
                 // These operations should work even though we're on a different thread
-                let retrieved_seed = backend.get_seed().unwrap();
-                assert_eq!(retrieved_seed.len(), 32);
+                backend.get_seed().unwrap();
 
                 let data = b"cross-thread test";
                 let signature = backend.sign(data).unwrap();
@@ -457,8 +456,7 @@ pub mod krs_backend {
 
             // Get backend back and verify it still works
             let backend = handle.join().unwrap();
-            let seed = backend.get_seed().unwrap();
-            assert_eq!(seed.len(), 32);
+            backend.get_seed().unwrap();
         }
     }
 }

@@ -4,7 +4,6 @@ use std::path::Path;
 use ssh_agent_client_rs::Client;
 use ssh_key::{PrivateKey, PublicKey};
 use tracing::{debug, info};
-use zeroize::Zeroize;
 
 use crate::seed::{BackendError, Seed, SeedBackend};
 
@@ -65,7 +64,7 @@ impl SeedBackend for SshAgentBackend {
 
         self.connection.add_identity(&private_key)?;
         self.public_key = Some(private_key.public_key().clone());
-        self.seed_len = seed.len();
+        self.seed_len = Seed::LEN;
 
         debug!(
             "added {}-byte seed as private key to ssh-agent",
@@ -108,10 +107,8 @@ impl SeedBackend for SshAgentBackend {
     }
 }
 
-fn key_from_seed(seed: &[u8]) -> PrivateKey {
-    let mut seed0: [u8; 32] = seed.try_into().expect("seed is 32 bytes");
-    let key = ssh_key::private::Ed25519Keypair::from_seed(&seed0);
-    seed0.zeroize();
+fn key_from_seed(seed: &[u8; 32]) -> PrivateKey {
+    let key = ssh_key::private::Ed25519Keypair::from_seed(seed);
 
     let mut private_key = ssh_key::PrivateKey::from(key);
     private_key.set_comment("roughenough-seed");

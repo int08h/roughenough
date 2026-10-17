@@ -195,7 +195,6 @@ mod tests {
 
         // Create a test seed
         let original_seed = Seed::new_random();
-        let original_bytes = original_seed.expose().to_vec();
 
         // Encrypt the seed
         let envelope = GcpKms::encrypt_seed(key_id, &original_seed)
@@ -216,7 +215,7 @@ mod tests {
             .expect("decrypt_seed should succeed");
 
         // Verify the decrypted seed matches the original
-        assert_eq!(decrypted_seed.expose(), &original_bytes);
+        assert_eq!(decrypted_seed.expose(), original_seed.expose());
     }
 
     #[test]
