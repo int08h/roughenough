@@ -101,18 +101,15 @@ performance with representative workloads. Please include benchmark results in y
 ### Code Coverage
 
 ```bash
-# Install cargo-llvm-cov (one time)
-cargo install cargo-llvm-cov
-
-# Generate HTML coverage report
-./coverage.sh
-
-# Generate lcov format for CI
-./coverage.sh --lcov
-
-# Coverage for specific crate
-cargo llvm-cov -p roughenough-protocol --html
+cargo install cargo-llvm-cov                                            # once
+cargo llvm-cov --workspace --all-features --open                        # HTML report, opens browser
+cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
+cargo llvm-cov -p roughenough-protocol --html                           # one crate
+cargo llvm-cov clean --workspace
 ```
+
+With `--all-features`, the ssh-agent backend tests need a running agent in `SSH_AUTH_SOCK`. They remove every
+identity from that agent, so point `SSH_AUTH_SOCK` at a throwaway agent (`eval "$(ssh-agent)"`), not your own.
 
 ### Fuzzing
 

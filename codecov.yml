@@ -6,15 +6,19 @@ component_management:
     - component_id: protocol
       name: Roughtime Protocol
       paths:
-        - crates/protocol/src/**
-        - crates/merkle/src/**
-        - crates/common/src/**
-        - crates/keys/src/**
+        - crates/roughenough-protocol/src/**
+        - crates/roughenough-merkle/src/**
+        - crates/roughenough-common/src/**
+        - crates/roughenough-keys/src/**
     - component_id: client
       name: Client
       paths:
-        - crates/client/src/**
+        - crates/roughenough-client/src/**
     - component_id: server
       name: Server
       paths:
-        - crates/server/src/**
+        - crates/roughenough-server/src/**
+    - component_id: reporting
+      name: Reporting Server
+      paths:
+        - crates/roughenough-reporting-server/src/**

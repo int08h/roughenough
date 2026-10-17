@@ -79,10 +79,11 @@ cargo +nightly fuzz cmin <target>           # Minimize corpus
 
 ### Code Coverage
 ```bash
-# Install: cargo install cargo-llvm-cov
-./coverage.sh                  # HTML report, opens in browser
-./coverage.sh --lcov           # lcov format for CI
-./coverage.sh --help           # All options
+cargo install cargo-llvm-cov                                            # once
+cargo llvm-cov --workspace --all-features --open                        # HTML report, opens browser
+cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
+cargo llvm-cov -p roughenough-protocol --html                           # one crate
+cargo llvm-cov clean --workspace
 ```
 
 ### Running Binaries
