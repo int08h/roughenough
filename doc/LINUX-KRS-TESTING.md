@@ -34,7 +34,8 @@ The backend was rewritten on the `fix-correctness-bugs` branch. Compared to `mas
   It is re-exported as `roughenough_keys::seed::LinuxKrsBackend`, and the server builds it
   with `seed::open(BackendKind::Krs, Some(seed))`.
 
-All of this has been compiled and reviewed on macOS only. No Linux build has run it.
+All of this was first compiled and reviewed on macOS. The steps below have since passed on
+Debian 13 (kernel 7.2.6), with step 5 run under the systemd filter rather than Docker.
 
 ## Environment
 
@@ -79,7 +80,11 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```
 
 With `--no-default-features`, `BackendKind::Krs` must still parse. Opening it must then
-fail with `BackendNotAvailable`.
+fail with `BackendNotAvailable`. `open_krs_without_feature_is_not_available` checks this:
+
+```bash
+cargo test -p roughenough-keys --no-default-features seed::tests::open_krs
+```
 
 ### 2. Server code that only runs on Linux
 
@@ -152,6 +157,27 @@ In the same container, the server should exit with status 1 and log
 cargo run --bin roughenough_server -- --seed-backend krs --insecure-zero-seed
 ```
 
+Without Docker or Podman, a transient systemd user service can apply the same restriction.
+Docker's default profile fails these syscalls with `EPERM`, so set that errno too; the
+default action kills the process with `SIGSYS` instead. Build first, then run the binaries
+directly, so that cargo itself does not run under the filter:
+
+```bash
+cargo test -p roughenough-keys --no-run   # prints the test binary path
+cargo build
+deny_keyring() {
+  systemd-run --user --quiet --wait --pipe --collect -p WorkingDirectory="$PWD" \
+    -p "SystemCallFilter=~add_key keyctl request_key" -p SystemCallErrorNumber=EPERM \
+    -E RUST_LOG=debug "$@"
+}
+deny_keyring "$PWD"/target/debug/deps/roughenough_keys-<hash> \
+  seed::linuxkrs::tests::new_with_seed_succeeds --nocapture
+deny_keyring "$PWD"/target/debug/roughenough_server --seed-backend krs --insecure-zero-seed
+```
+
+`systemd-run --wait` exits with the service's status. As a control, run the test binary
+without the two `-p` filter options; the test should then pass.
+
 ### 6. End to end with the server (VM, not a default container)
 
 ```bash
@@ -169,7 +195,7 @@ target/debug/roughenough_server --seed-backend krs --insecure-zero-seed -i 127.0
   its online key with the backend at startup, so this also exercises `sign` from several
   threads.
 
-Query the server with the logged key. The log prints it as `PublicKey(<hex>)`; pass only the
+Query the server with the logged key. The log prints it as `PUBK(<hex>)`; pass only the
 hex part:
 
 ```bash

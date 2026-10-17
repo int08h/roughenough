@@ -220,6 +220,18 @@ mod tests {
         assert_backend_signs(backend.as_mut());
     }
 
+    #[cfg(not(all(target_os = "linux", feature = "online-linux-krs")))]
+    #[test]
+    fn open_krs_without_feature_is_not_available() {
+        match open(BackendKind::Krs, Some(Seed::new_random())) {
+            Err(BackendError::BackendNotAvailable(BackendKind::Krs, feature)) => {
+                assert_eq!(feature, "online-linux-krs (Linux only)");
+            }
+            Ok(_) => panic!("expected BackendNotAvailable, got Ok"),
+            Err(other) => panic!("expected BackendNotAvailable, got {other:?}"),
+        }
+    }
+
     #[cfg(not(feature = "online-pkcs11"))]
     #[test]
     fn open_pkcs11_without_feature_is_not_available() {
