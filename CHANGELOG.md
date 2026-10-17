@@ -93,6 +93,9 @@
 - Keys: `storage::try_load_seed` and `storage::try_store_seed` are
   synchronous; `storage::try_load_seed_sync` and the `runtime` module are
   removed; `Protection::from_prefix` is replaced by `Protection::split`
+- Server library: the hidden `seed_file` module moved to
+  `roughenough_keys::seed_file`. Keys: `StorageError` has a new
+  `SeedFile` variant for seed-file I/O and validation errors
 
 ### Security
 
@@ -143,6 +146,8 @@
   `Seed::LEN` and `seed::InvalidSeedLength` are new
 - Keys: `storage::parse_envelope` decodes a prefixed seed envelope, and
   `storage::load_envelope` recovers the seed an envelope refers to
+- Keys: `storage::load_seed_file` reads and validates a seed file, then
+  loads the seed it describes
 
 ## [2.2.0] - 2026-10-11
 

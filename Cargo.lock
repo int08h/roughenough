@@ -2917,6 +2917,7 @@ dependencies = [
  "data-encoding",
  "google-cloud-kms-v1",
  "google-cloud-secretmanager-v1",
+ "libc",
  "linux-keyutils",
  "roughenough-common",
  "roughenough-protocol",
@@ -2997,7 +2998,6 @@ dependencies = [
  "time-format",
  "tracing",
  "tracing-subscriber",
- "zeroize",
 ]
 
 [[package]]

@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use roughenough_common::encoding;
 use tracing::{debug, trace};
 
@@ -39,6 +41,9 @@ pub enum StorageError {
 
     #[error("invalid resource: {0}")]
     InvalidResource(String),
+
+    #[error("seed file: {0}")]
+    SeedFile(#[from] std::io::Error),
 }
 
 impl StorageError {
@@ -76,6 +81,15 @@ pub fn try_load_seed(value: &str) -> Result<Seed, StorageError> {
             load_envelope(&envelope)
         }
     }
+}
+
+/// Reads and validates a seed file, then loads the seed it describes.
+///
+/// Blocks; do not call from an async context.
+pub fn load_seed_file(path: &Path) -> Result<Seed, StorageError> {
+    let contents = crate::seed_file::read(path)?;
+    let encoded_value = contents.encoded_value()?;
+    try_load_seed(encoded_value)
 }
 
 /// Protects `seed` with the long-term storage that `resource` names.

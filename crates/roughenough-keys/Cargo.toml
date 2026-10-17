@@ -46,6 +46,10 @@ tracing-subscriber = { workspace = true }
 zeroize = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 
+[target.'cfg(unix)'.dependencies]
+# O_NOFOLLOW and O_CLOEXEC for opening seed files (seed_file.rs)
+libc = { workspace = true }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 linux-keyutils = { workspace = true, optional = true }
 

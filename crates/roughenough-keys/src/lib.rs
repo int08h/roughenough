@@ -6,6 +6,7 @@ pub mod online;
 #[cfg(any(feature = "longterm-aws", feature = "longterm-gcp"))]
 pub(crate) mod runtime;
 pub mod seed;
+pub mod seed_file;
 pub mod storage;
 
 #[cfg(test)]

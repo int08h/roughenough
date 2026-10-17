@@ -30,13 +30,12 @@ use clap::Parser;
 use mio::net::UdpSocket as MioUdpSocket;
 use roughenough_common::clocksource::ClockSource;
 use roughenough_keys::seed::{Seed, SeedBackend, try_choose_backend};
-use roughenough_keys::storage::try_load_seed;
+use roughenough_keys::storage::load_seed_file;
 use roughenough_server::args::{Args, SeedBackendArg};
 use roughenough_server::keysource::KeySource;
 use roughenough_server::metrics::aggregator::{MetricsAggregator, WorkerMetrics};
 use roughenough_server::metrics::snapshot::validate_metrics_directory;
 use roughenough_server::responses::ResponseHandler;
-use roughenough_server::seed_file;
 use roughenough_server::worker::{ExitGuard, Worker};
 use signal_hook::iterator::Signals;
 use socket2::{Domain, Socket, Type};
@@ -156,30 +155,13 @@ fn load_seed(args: &Args) -> Box<dyn SeedBackend> {
             warn!("Using all-zero seed because --insecure-zero-seed was specified");
             Seed::from_bytes(&[0u8; 32])
         }
-        Some(path) => {
-            let contents = match seed_file::read(path) {
-                Ok(contents) => contents,
-                Err(e) => {
-                    error!("reading seed file '{}': {e}", path.display());
-                    std::process::exit(1);
-                }
-            };
-            let encoded_value = match contents.encoded_value() {
-                Ok(value) => value,
-                Err(e) => {
-                    error!("reading seed file '{}': {e}", path.display());
-                    std::process::exit(1);
-                }
-            };
-
-            match try_load_seed(encoded_value) {
-                Ok(seed) => seed,
-                Err(e) => {
-                    error!("loading seed from '{}': {e}", path.display());
-                    std::process::exit(1);
-                }
+        Some(path) => match load_seed_file(path) {
+            Ok(seed) => seed,
+            Err(e) => {
+                error!("loading seed from '{}': {e}", path.display());
+                std::process::exit(1);
             }
-        }
+        },
     };
 
     let mut backend = match try_choose_backend(&args.seed_backend.to_string()) {
