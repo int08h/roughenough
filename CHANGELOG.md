@@ -114,6 +114,13 @@
 - Keys: `OnlineKey::new` and `OnlineKey::sign` are no longer public;
   create online keys with `LongTermIdentity::make_online_key`. The
   `online::linuxkrs::krs_backend` module path is removed
+- Keys CLI: `roughenough_keys` subcommands are now `generate`,
+  `protect`, and `recover` (replacing `generate`, `seal`, `store`,
+  `open`, and `get`). `--key`/`--secret` become `--resource`. Output
+  defaults to the one-line seed-file form (`--json` for pretty JSON).
+  Inputs are seed files (hex or base64 text, optionally `seed://`); raw
+  32-byte binary input is no longer accepted. Failures exit non-zero,
+  and log output goes to stderr
 
 ### Security
 
@@ -143,6 +150,7 @@
 - Client: a response whose VERS lists no supported version is rejected
   with `NoSupportedVersions` (RFC 5.2.5)
 - Client: `--zulu` prints the time zone as UTC instead of a literal `%Z`
+- Docs: README no longer claims seed files may hold raw binary
 
 ### Added
 
@@ -166,6 +174,8 @@
   `storage::load_envelope` recovers the seed an envelope refers to
 - Keys: `storage::load_seed_file` reads and validates a seed file, then
   loads the seed it describes
+- Keys: `logging::sdk_targets` builds the log filter that gives cloud
+  SDK and HTTP crates their own level
 
 ## [2.2.0] - 2026-10-11
 

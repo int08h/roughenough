@@ -11,6 +11,32 @@ Two approaches are available to protect the long-term seed:
 At Roughenough server startup the seed is either: 1) retrieved from the secret manager, or 2) the seed is decrypted
 by the KMS. Both approaches require interaction with an external service, but only at server startup.
 
+## Creating a protected seed file
+
+The `roughenough_keys` tool writes a one-line seed file that the server loads with `--seed-file`. Build both with the
+feature for your cloud: `cargo build --release -p roughenough-keys --features longterm-aws` (or `longterm-gcp`), and
+the server with the same feature or with `--features release`, which includes both.
+
+```bash
+# Encrypt an existing seed file (hex, base64, or seed://) with a KMS key
+roughenough_keys protect -i seed.txt --resource aws-kms://arn:aws:kms:... -o roughenough.seed
+
+# Generate a new random seed and store it in a secret manager
+roughenough_keys generate --resource gcp-secret://projects/P/secrets/S -o roughenough.seed
+
+# Print the plain seed that a seed file refers to, as a seed:// value
+roughenough_keys recover -i roughenough.seed
+```
+
+`--resource` accepts `aws-kms://<key ARN>`, `gcp-kms://<key name>`, `aws-secret://<secret ARN>`, and
+`gcp-secret://<secret name>`. `protect` applies the server's seed-file checks to its input (no group or other access, no
+symlinks), and also accepts an already protected seed file, which it re-protects under the new resource. `--json`
+prints the envelope as pretty JSON instead; `recover` accepts either form. `recover --key` decrypts with a different
+key id; an id without a scheme prefix, such as a bare ARN, keeps the envelope's scheme.
+
+Output files are created with mode 0600 and never overwrite an existing file. Prefer `-o` over redirecting stdout for
+`recover`, since its output is the plain seed. Every failure exits non-zero and prints nothing to stdout.
+
 # Runtime Key Protection
 
 The long-term identity signs generated online keys at runtime to create a chain-of-trust. Thus access to the long-term 

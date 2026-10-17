@@ -1,6 +1,7 @@
 // The two FFI wrapper methods in online::aws_lc_ed25519 opt in explicitly.
 #![deny(unsafe_code)]
 
+pub mod logging;
 pub mod longterm;
 pub mod online;
 #[cfg(any(feature = "longterm-aws", feature = "longterm-gcp"))]

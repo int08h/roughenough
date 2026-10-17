@@ -29,6 +29,7 @@ use std::time::Duration;
 use clap::Parser;
 use mio::net::UdpSocket as MioUdpSocket;
 use roughenough_common::clocksource::ClockSource;
+use roughenough_keys::logging;
 use roughenough_keys::seed::{self, Seed, SeedBackend};
 use roughenough_keys::storage::load_seed_file;
 use roughenough_server::args::Args;
@@ -40,9 +41,9 @@ use roughenough_server::worker::{ExitGuard, Worker};
 use signal_hook::iterator::Signals;
 use socket2::{Domain, Socket, Type};
 use tracing::{debug, error, info, warn};
+use tracing_subscriber::Layer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::{Layer, filter};
 
 /// Global flag that will be set to `false` when all threads should exit.
 static KEEP_RUNNING: AtomicBool = AtomicBool::new(true);
@@ -251,15 +252,7 @@ fn enable_logging(args: &Args) {
         2.. => tracing::Level::TRACE,
     };
 
-    let filters = filter::Targets::new()
-        .with_target("aws_config", cloud_sdk_verbosity)
-        .with_target("aws_sdk_kms", cloud_sdk_verbosity)
-        .with_target("aws_sdk_secretsmanager", cloud_sdk_verbosity)
-        .with_target("google_cloud_kms_v1", cloud_sdk_verbosity)
-        .with_target("google_cloud_secretmanager_v1", cloud_sdk_verbosity)
-        .with_target("hyper_util", cloud_sdk_verbosity)
-        .with_target("rustls", cloud_sdk_verbosity)
-        .with_default(verbosity); // for all other targets
+    let filters = logging::sdk_targets(cloud_sdk_verbosity, verbosity);
 
     let fmt_layer = tracing_subscriber::fmt::layer()
         .compact()

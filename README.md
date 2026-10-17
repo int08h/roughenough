@@ -48,20 +48,36 @@ you can use `--insecure-zero-seed` to run with an all-zero seed.
 On Unix-like systems the seed file needs to be a regular file (no symlinks) with
 `0400` or `0600` file permissions.
 
-The seed file can contain one of (usually obtained from `roughenough-keys`): 
-* exactly 32 bytes of binary random data
-* a base64 or hex encoded value (`seed://` )
+The seed file holds text in one of these forms:
+* a hex or base64 encoded 32-byte seed, optionally prefixed with `seed://`
 * an AWS or GCP KMS envelope (`aws-kms://` or `gcp-kms://`)
 * an AWS or GCP Secret Manager reference (`aws-secret://` or `gcp-secret://`)
-  
-Use the `roughenough-keys` tool to generate a seed and encrypt/wrap it with
-a secret manager or KMS.
+
+The `roughenough_keys` tool creates the protected forms: `generate` creates a new
+random seed and protects it, `protect` protects the seed in an existing seed file,
+and `recover` prints the plain seed that a seed file refers to. Build the tool and
+the server with the `longterm-aws` or `longterm-gcp` feature; see
+[doc/PROTECTION.md](doc/PROTECTION.md).
+
+```bash
+# Generate a new mode-0600 plain seed file
+(umask 077 && openssl rand -hex 32 > seed.txt)
+
+# Encrypt it with AWS KMS; the output is a seed file the server loads
+roughenough_keys protect -i seed.txt --resource aws-kms://arn:aws:kms:... -o roughenough.seed
+
+# Or generate a new seed and store it in GCP Secret Manager
+roughenough_keys generate --resource gcp-secret://projects/P/secrets/S -o roughenough.seed
+
+# Print the plain seed that a seed file refers to
+roughenough_keys recover -i roughenough.seed
+```
 
 ```bash
 # Debug build, testing-only zero seed
 cargo run --bin roughenough_server -- --insecure-zero-seed
 
-# Generate a new mode-0600 raw seed file
+# Generate a new mode-0600 plain seed file
 (umask 077 && openssl rand -hex 32 > roughenough.seed)
 
 # Release build with optimizations and a real seed file
