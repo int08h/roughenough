@@ -143,7 +143,8 @@ mod tests {
         let ctx = TestContext::new(64);
         let client = Client::builder(test_addr())
             .transport(Box::new(InProcessTransport::new(ctx)))
-            .build();
+            .build()
+            .unwrap();
         let sequence = MeasurementSequence::new(vec![client]);
 
         match sequence.run(1) {

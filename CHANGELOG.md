@@ -57,6 +57,13 @@
   `reports` URL
 - Reporting server: `validate_report` and its `validation` module are
   removed; use `MalfeasanceReport::verify()`
+- Client API: `ClientTransport::send`/`recv` no longer take or return a
+  `SocketAddr`
+- Client API: `UdpTransport::new` returns `io::Result`, and
+  `ClientBuilder::build` returns `Result<Client, ClientError>`
+- Client: the UDP socket is connected, so datagrams from other sources
+  are ignored, and a closed port fails fast with "Connection refused"
+  instead of waiting for the timeout
 
 ### Fixed
 

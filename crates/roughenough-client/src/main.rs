@@ -181,7 +181,7 @@ fn build_client(
     if let Some(versions) = args.protocol.offered() {
         builder = builder.versions(&versions);
     }
-    Ok(builder.build())
+    builder.build()
 }
 
 fn clients_from_list(

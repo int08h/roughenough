@@ -1,6 +1,7 @@
 //! Abstraction for network transport mechanisms used by clients.
 
-use std::net::{SocketAddr, UdpSocket};
+use std::io::ErrorKind;
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
 use std::time::Duration;
 
 use tracing::{debug, trace};
@@ -9,57 +10,59 @@ use crate::ClientError;
 
 /// Abstraction for network transport mechanisms used by clients.
 /// Allows clients to work with different protocols (UDP, TCP, etc.) through a common interface.
+/// A transport talks to exactly one server, fixed when it is created.
 pub trait ClientTransport {
-    /// Sends data to the specified network address.
-    /// Returns the number of bytes sent or an error if the operation fails.
-    fn send(&self, data: &[u8], addr: SocketAddr) -> Result<usize, ClientError>;
+    /// Sends `data` to the server.
+    fn send(&self, data: &[u8]) -> Result<(), ClientError>;
 
-    /// Receives data from any network address.
-    /// Returns the number of bytes received and the sender's address, or an error on failure.
-    fn recv(&self, buf: &mut [u8]) -> Result<(usize, SocketAddr), ClientError>;
+    /// Receives one message from the server into `buf`, returning its length.
+    fn recv(&self, buf: &mut [u8]) -> Result<usize, ClientError>;
 }
 
 /// UDP implementation of ClientTransport.
 pub struct UdpTransport {
     socket: UdpSocket,
+    server: SocketAddr,
 }
 
 impl UdpTransport {
-    pub fn new(addr: &SocketAddr, timeout: Duration) -> Self {
-        let bind_addr = if addr.is_ipv6() {
-            "[::]:0"
-        } else {
-            "0.0.0.0:0"
+    /// Creates a UDP socket connected to `server`. Connecting makes the kernel drop datagrams
+    /// from any other source, and surfaces ICMP port unreachable as an error on `recv` rather
+    /// than a timeout.
+    pub fn new(server: SocketAddr, timeout: Duration) -> std::io::Result<Self> {
+        let bind_addr = match server {
+            SocketAddr::V4(_) => SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
+            SocketAddr::V6(_) => SocketAddr::from((Ipv6Addr::UNSPECIFIED, 0)),
         };
-        let socket = UdpSocket::bind(bind_addr).unwrap();
-        socket.set_read_timeout(Some(timeout)).unwrap();
-        socket.set_write_timeout(Some(timeout)).unwrap();
+        let socket = UdpSocket::bind(bind_addr)?;
+        socket.connect(server)?;
+        socket.set_read_timeout(Some(timeout))?;
+        socket.set_write_timeout(Some(timeout))?;
 
-        Self { socket }
+        Ok(Self { socket, server })
     }
 }
 
 impl ClientTransport for UdpTransport {
-    fn send(&self, data: &[u8], addr: SocketAddr) -> Result<usize, ClientError> {
-        debug!("sending {} bytes to {}", data.len(), addr);
+    fn send(&self, data: &[u8]) -> Result<(), ClientError> {
+        debug!("sending {} bytes to {}", data.len(), self.server);
         trace_dump(data)?;
-        Ok(self.socket.send_to(data, addr)?)
+        self.socket.send(data)?;
+        Ok(())
     }
 
-    fn recv(&self, buf: &mut [u8]) -> Result<(usize, SocketAddr), ClientError> {
-        match self.socket.recv_from(buf) {
-            Ok((nbytes, addr)) => {
-                debug!("received {} bytes from {}", nbytes, addr);
+    fn recv(&self, buf: &mut [u8]) -> Result<usize, ClientError> {
+        match self.socket.recv(buf) {
+            Ok(nbytes) => {
+                debug!("received {} bytes from {}", nbytes, self.server);
                 trace_dump(&buf[..nbytes])?;
-                Ok((nbytes, addr))
+                Ok(nbytes)
             }
-            Err(e) => {
-                if e.kind() == std::io::ErrorKind::WouldBlock {
-                    Err(ClientError::ServerTimeout)
-                } else {
-                    Err(ClientError::IoError(e))
-                }
+            // Windows reports an expired read timeout as TimedOut rather than WouldBlock
+            Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+                Err(ClientError::ServerTimeout)
             }
+            Err(e) => Err(ClientError::IoError(e)),
         }
     }
 }
@@ -86,10 +89,9 @@ mod tests {
         let silent_addr = silent.local_addr().unwrap();
 
         let timeout = Duration::from_millis(100);
-        let transport = UdpTransport::new(&silent_addr, timeout);
+        let transport = UdpTransport::new(silent_addr, timeout).unwrap();
 
-        let sent = transport.send(b"anyone there?", silent_addr).unwrap();
-        assert_eq!(sent, 13);
+        transport.send(b"anyone there?").unwrap();
 
         let start = Instant::now();
         let mut buf = [0u8; 64];
@@ -102,12 +104,30 @@ mod tests {
     }
 
     #[test]
+    fn datagrams_from_other_sources_are_dropped() {
+        let silent = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let silent_addr = silent.local_addr().unwrap();
+        let transport = UdpTransport::new(silent_addr, Duration::from_millis(100)).unwrap();
+        transport.send(b"hello").unwrap();
+
+        let intruder = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let local = transport.socket.local_addr().unwrap();
+        intruder.send_to(b"injected", local).unwrap();
+
+        let mut buf = [0u8; 64];
+        match transport.recv(&mut buf) {
+            Err(ClientError::ServerTimeout) => {}
+            other => panic!("expected ServerTimeout, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn send_and_recv_round_trip() {
         let echo = UdpSocket::bind("127.0.0.1:0").unwrap();
         let echo_addr = echo.local_addr().unwrap();
 
-        let transport = UdpTransport::new(&echo_addr, Duration::from_secs(2));
-        transport.send(b"ping", echo_addr).unwrap();
+        let transport = UdpTransport::new(echo_addr, Duration::from_secs(2)).unwrap();
+        transport.send(b"ping").unwrap();
 
         // Echo the datagram back to the transport's ephemeral port
         let mut echo_buf = [0u8; 16];
@@ -115,7 +135,7 @@ mod tests {
         echo.send_to(&echo_buf[..n], from).unwrap();
 
         let mut buf = [0u8; 16];
-        let (n, _addr) = transport.recv(&mut buf).unwrap();
+        let n = transport.recv(&mut buf).unwrap();
         assert_eq!(&buf[..n], b"ping");
     }
 }
@@ -158,15 +178,15 @@ pub(crate) mod testing {
     }
 
     impl ClientTransport for InProcessTransport {
-        fn send(&self, data: &[u8], _addr: SocketAddr) -> Result<usize, ClientError> {
+        fn send(&self, data: &[u8]) -> Result<(), ClientError> {
             *self.last_request.borrow_mut() = data.to_vec();
-            Ok(data.len())
+            Ok(())
         }
 
-        fn recv(&self, buf: &mut [u8]) -> Result<(usize, SocketAddr), ClientError> {
+        fn recv(&self, buf: &mut [u8]) -> Result<usize, ClientError> {
             if let Some(canned) = self.pre_queue.borrow_mut().pop_front() {
                 buf[..canned.len()].copy_from_slice(&canned);
-                return Ok((canned.len(), test_addr()));
+                return Ok(canned.len());
             }
 
             if self.starve {
@@ -188,7 +208,7 @@ pub(crate) mod testing {
                 .process_responses(|_addr, bytes| out.extend_from_slice(bytes));
 
             buf[..out.len()].copy_from_slice(&out);
-            Ok((out.len(), test_addr()))
+            Ok(out.len())
         }
     }
 
@@ -214,5 +234,6 @@ pub(crate) mod testing {
             .public_key(pub_key)
             .transport(Box::new(transport))
             .build()
+            .unwrap()
     }
 }

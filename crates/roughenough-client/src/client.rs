@@ -36,7 +36,8 @@
 //! let server: SocketAddr = "roughtime.int08h.com:2003".parse().unwrap();
 //! let client = Client::builder(server)
 //!     .timeout(Duration::from_secs(5))
-//!     .build();
+//!     .build()
+//!     .unwrap();
 //!
 //! let measurement = client.query().unwrap();
 //! ```
@@ -169,12 +170,14 @@ impl ClientBuilder {
         self
     }
 
-    pub fn build(self) -> Client {
+    /// Fails if no transport was given and the UDP socket cannot be created.
+    pub fn build(self) -> Result<Client, ClientError> {
         let timeout = self.timeout.unwrap_or(Self::DEFAULT_TIMEOUT);
 
-        let transport = self
-            .transport
-            .unwrap_or_else(|| Box::new(UdpTransport::new(&self.server, timeout)));
+        let transport = match self.transport {
+            Some(transport) => transport,
+            None => Box::new(UdpTransport::new(self.server, timeout)?),
+        };
 
         let srv_commit = self
             .public_key
@@ -182,7 +185,7 @@ impl ClientBuilder {
 
         let validator = ResponseValidator::new(self.public_key);
 
-        Client {
+        Ok(Client {
             transport,
             validator,
             srv_commit,
@@ -190,7 +193,7 @@ impl ClientBuilder {
             hostname: self.hostname,
             public_key: self.public_key,
             versions: self.versions,
-        }
+        })
     }
 }
 
@@ -247,7 +250,7 @@ impl Client {
             builder = builder.versions(versions);
         }
 
-        Ok(builder.build())
+        builder.build()
     }
 
     /// The server's socket address
@@ -299,12 +302,12 @@ impl Client {
     ) -> Result<Measurement, ClientError> {
         let request = self.create_request(&nonce);
         let request_bytes = request.as_frame_bytes()?;
-        self.transport.send(&request_bytes, self.server)?;
+        self.transport.send(&request_bytes)?;
 
         let mut discarded = 0;
         let (response, response_bytes) = loop {
             let mut buf = [0u8; MAX_RESPONSE_SIZE];
-            let (nbytes, _addr) = self.transport.recv(&mut buf)?;
+            let nbytes = self.transport.recv(&mut buf)?;
             let response_bytes = buf[..nbytes].to_vec();
 
             let result = self.validator.validate(&request_bytes, &response_bytes);
@@ -352,7 +355,7 @@ mod tests {
 
     #[test]
     fn builder_defaults() {
-        let client = Client::builder(test_addr()).build();
+        let client = Client::builder(test_addr()).build().unwrap();
 
         assert_eq!(client.server, test_addr());
         assert_eq!(client.hostname, "unknown");
@@ -364,7 +367,10 @@ mod tests {
     #[test]
     fn builder_with_key_derives_srv_commitment() {
         let key = test_key();
-        let client = Client::builder(test_addr()).public_key(key).build();
+        let client = Client::builder(test_addr())
+            .public_key(key)
+            .build()
+            .unwrap();
 
         assert_eq!(client.public_key, Some(key));
         assert_eq!(client.srv_commit, Some(make_srv_commitment(&key)));
@@ -372,7 +378,7 @@ mod tests {
 
     #[test]
     fn request_without_key_omits_srv() {
-        let client = Client::builder(test_addr()).build();
+        let client = Client::builder(test_addr()).build().unwrap();
         let request = client.create_request(&Nonce::from([0u8; 32]));
 
         assert!(request.srv().is_none());
@@ -381,7 +387,10 @@ mod tests {
     #[test]
     fn request_with_key_carries_srv_commitment() {
         let key = test_key();
-        let client = Client::builder(test_addr()).public_key(key).build();
+        let client = Client::builder(test_addr())
+            .public_key(key)
+            .build()
+            .unwrap();
 
         let request = client.create_request(&Nonce::from([0u8; 32]));
         assert_eq!(request.srv(), Some(&make_srv_commitment(&key)));
@@ -390,7 +399,10 @@ mod tests {
     #[test]
     fn request_carries_configured_versions() {
         let versions = [ProtocolVersion::RFC];
-        let client = Client::builder(test_addr()).versions(&versions).build();
+        let client = Client::builder(test_addr())
+            .versions(&versions)
+            .build()
+            .unwrap();
 
         let request = client.create_request(&Nonce::from([0u8; 32]));
         assert_eq!(request.ver().versions(), &versions[..]);
@@ -398,7 +410,7 @@ mod tests {
 
     #[test]
     fn request_uses_provided_nonce() {
-        let client = Client::builder(test_addr()).build();
+        let client = Client::builder(test_addr()).build().unwrap();
         let nonce = Nonce::from([0x77u8; 32]);
 
         let request = client.create_request(&nonce);
@@ -410,17 +422,18 @@ mod tests {
         // Transport that never receives anything
         struct DeafTransport;
         impl ClientTransport for DeafTransport {
-            fn send(&self, data: &[u8], _addr: SocketAddr) -> Result<usize, ClientError> {
-                Ok(data.len())
+            fn send(&self, _data: &[u8]) -> Result<(), ClientError> {
+                Ok(())
             }
-            fn recv(&self, _buf: &mut [u8]) -> Result<(usize, SocketAddr), ClientError> {
+            fn recv(&self, _buf: &mut [u8]) -> Result<usize, ClientError> {
                 Err(ClientError::ServerTimeout)
             }
         }
 
         let client = Client::builder(test_addr())
             .transport(Box::new(DeafTransport))
-            .build();
+            .build()
+            .unwrap();
 
         match client.query() {
             Err(ClientError::ServerTimeout) => {}
