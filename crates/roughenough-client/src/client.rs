@@ -12,13 +12,13 @@
 //!
 //! // Query with authentication. The client verifies the server's signature.
 //! let pub_key = Some("AW5uAoTSTDfG5NfY1bTh08GUnOqlRb+HVhbJ3ODJvsE=");
-//! let measurement = query("roughtime.int08h.com", 2003, pub_key).unwrap();
+//! let measurement = query("roughtime.int08h.com", 5319, pub_key).unwrap();
 //! if let Some(utc) = measurement.midpoint_datetime() {
 //!     println!("Server time: {utc}");
 //! }
 //!
 //! // Unauthenticated query, not recommended.
-//! let measurement = query("roughtime.int08h.com", 2003, None).unwrap();
+//! let measurement = query("roughtime.int08h.com", 5319, None).unwrap();
 //! if let Some(utc) = measurement.midpoint_datetime() {
 //!     println!("Server time: {utc}");
 //! }
@@ -33,7 +33,7 @@
 //! use std::time::Duration;
 //! use std::net::SocketAddr;
 //!
-//! let server: SocketAddr = "roughtime.int08h.com:2003".parse().unwrap();
+//! let server: SocketAddr = "roughtime.int08h.com:5319".parse().unwrap();
 //! let client = Client::builder(server)
 //!     .timeout(Duration::from_secs(5))
 //!     .build()
@@ -81,7 +81,7 @@ const MAX_DISCARDED_DATAGRAMS: usize = 8;
 /// let pub_key = Some("AW5uAoTSTDfG5NfY1bTh08GUnOqlRb+HVhbJ3ODJvsE=");
 ///
 /// // Query the server
-/// let measurement = roughenough_client::query("roughtime.int08h.com", 2003, pub_key).unwrap();
+/// let measurement = roughenough_client::query("roughtime.int08h.com", 5319, pub_key).unwrap();
 ///
 /// // The returned time in Unix epoch seconds
 /// println!("Server's time, epoch: {}", measurement.midpoint());

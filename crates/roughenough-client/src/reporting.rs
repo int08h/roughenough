@@ -369,7 +369,7 @@ mod tests {
         assert_eq!(*draft_response.srep().ver(), ProtocolVersion::DRAFT);
 
         let draft_measurement = Measurement::new(
-            "127.0.0.1:2002".parse().unwrap(),
+            "127.0.0.1:5320".parse().unwrap(),
             "draft".to_string(),
             Some(PublicKey::try_from(draft_key.as_slice()).unwrap()),
             draft_request,

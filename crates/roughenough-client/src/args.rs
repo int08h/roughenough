@@ -16,7 +16,7 @@ pub struct Args {
     )]
     pub hostname: Option<String>,
 
-    #[clap(requires = "hostname", help = "Server port (e.g. 2003)")]
+    #[clap(requires = "hostname", help = "Server port (e.g. 5319)")]
     pub port: Option<u16>,
 
     #[clap(long, help = "Display the time as seconds since the epoch (UTC)")]
@@ -181,13 +181,13 @@ mod tests {
 
     #[test]
     fn set_clock_without_pub_key_is_rejected() {
-        let err = Args::try_parse_from(["prog", "host", "2003", "-s"]).unwrap_err();
+        let err = Args::try_parse_from(["prog", "host", "5319", "-s"]).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
     }
 
     #[test]
     fn hostname_and_server_list_conflict() {
-        let err = Args::try_parse_from(["prog", "host", "2003", "-l", "servers.json"]).unwrap_err();
+        let err = Args::try_parse_from(["prog", "host", "5319", "-l", "servers.json"]).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::ArgumentConflict);
     }
 
@@ -219,7 +219,7 @@ mod tests {
     #[test]
     fn list_only_counts_with_hostname_are_rejected() {
         for flag in ["-u", "-r"] {
-            let err = Args::try_parse_from(["prog", "host", "2003", flag, "2"]).unwrap_err();
+            let err = Args::try_parse_from(["prog", "host", "5319", flag, "2"]).unwrap_err();
             assert_eq!(err.kind(), ErrorKind::ArgumentConflict, "{flag}");
         }
     }
@@ -230,7 +230,7 @@ mod tests {
         let err = Args::try_parse_from(["prog", "--report"]).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
 
-        let err = Args::try_parse_from(["prog", "host", "2003", "--report"]).unwrap_err();
+        let err = Args::try_parse_from(["prog", "host", "5319", "--report"]).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::ArgumentConflict);
 
         let args = Args::try_parse_from(["prog", "-l", "servers.json", "--report"]).unwrap();
@@ -239,20 +239,20 @@ mod tests {
 
     #[test]
     fn set_clock_with_pub_key_parses() {
-        let args = Args::try_parse_from(["prog", "host", "2003", "-s", "-k", "abc123"]).unwrap();
+        let args = Args::try_parse_from(["prog", "host", "5319", "-s", "-k", "abc123"]).unwrap();
         assert!(args.set_clock);
         assert_eq!(args.pub_key.as_deref(), Some("abc123"));
     }
 
     #[test]
     fn zero_num_requests_is_rejected() {
-        let err = Args::try_parse_from(["prog", "host", "2003", "-n", "0"]).unwrap_err();
+        let err = Args::try_parse_from(["prog", "host", "5319", "-n", "0"]).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::ValueValidation);
     }
 
     #[test]
     fn zero_timeout_is_rejected() {
-        let err = Args::try_parse_from(["prog", "host", "2003", "-t", "0"]).unwrap_err();
+        let err = Args::try_parse_from(["prog", "host", "5319", "-t", "0"]).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::ValueValidation);
     }
 
@@ -305,7 +305,7 @@ mod tests {
 
     #[test]
     fn nonzero_counts_parse() {
-        let args = Args::try_parse_from(["prog", "host", "2003", "-n", "1"]).unwrap();
+        let args = Args::try_parse_from(["prog", "host", "5319", "-n", "1"]).unwrap();
         assert_eq!(args.num_requests, 1);
 
         let args =

@@ -76,7 +76,7 @@ pub fn chained_measurements(midpoints: &[u64], first_rand: Option<[u8; 32]>) -> 
         let response_bytes = response.as_frame_bytes().unwrap();
 
         let measurement = Measurement::new(
-            "127.0.0.1:2003".parse().unwrap(),
+            "127.0.0.1:5319".parse().unwrap(),
             "test".to_string(),
             Some(ctx.key_source.public_key()),
             request,

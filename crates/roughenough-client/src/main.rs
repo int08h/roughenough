@@ -360,18 +360,18 @@ mod tests {
 
     #[test]
     fn ipv6_host_resolves_with_or_without_brackets() {
-        let args = Args::try_parse_from(["prog", "::1", "2002"]).unwrap();
-        let expected: std::net::SocketAddr = "[::1]:2002".parse().unwrap();
+        let args = Args::try_parse_from(["prog", "::1", "5319"]).unwrap();
+        let expected: std::net::SocketAddr = "[::1]:5319".parse().unwrap();
 
         for host in ["::1", "[::1]"] {
-            let client = build_client(&args, host, 2002, host, None)
+            let client = build_client(&args, host, 5319, host, None)
                 .unwrap_or_else(|e| panic!("{host}: {e}"));
             assert_eq!(client.server(), expected, "{host}");
         }
     }
 
     fn parse(extra: &[&str]) -> Args {
-        let mut argv = vec!["prog", "host", "2003"];
+        let mut argv = vec!["prog", "host", "5319"];
         argv.extend_from_slice(extra);
         Args::try_parse_from(argv).unwrap()
     }

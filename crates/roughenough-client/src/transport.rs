@@ -225,7 +225,7 @@ pub(crate) mod testing {
     use crate::{Client, ClientError};
 
     pub(crate) fn test_addr() -> SocketAddr {
-        "127.0.0.1:2003".parse().unwrap()
+        "127.0.0.1:5319".parse().unwrap()
     }
 
     // Fixed seeds keep the long-term key stable across calls, so a client can be built with it

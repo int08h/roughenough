@@ -114,7 +114,7 @@ cargo run --bin roughenough_client -- roughtime.int08h.com 5319 --zulu   # ISO 8
 Offer draft version 0x8000000c as well as version 1 (see [Protocol Versions](#protocol-versions)):
 
 ```bash
-cargo run --bin roughenough_client -- roughtime.example.com 2002 -P both
+cargo run --bin roughenough_client -- roughtime.example.com 5319 -P both
 ```
 
 Query multiple servers from an RFC compliant JSON list:

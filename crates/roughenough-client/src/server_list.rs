@@ -318,14 +318,14 @@ mod tests {
                     "version": 1,
                     "publicKeyType": "ed25519",
                     "publicKey": "base64encodedkey==",
-                    "addresses": [{"protocol": "udp", "address": "roughtime.example.com:2002"}]
+                    "addresses": [{"protocol": "udp", "address": "roughtime.example.com:5319"}]
                 },
                 {
                     "name": "Other Server",
                     "version": 1,
                     "publicKeyType": "ed25519",
                     "publicKey": "anotherkeyhere==",
-                    "addresses": [{"protocol": "tcp", "address": "other.example.com:2003"}]
+                    "addresses": [{"protocol": "tcp", "address": "other.example.com:5320"}]
                 }
             ],
             "reports": "https://example.com/reports"
@@ -353,9 +353,9 @@ mod tests {
 
     #[test]
     fn test_address_parsing() {
-        let address = parse_address("example.com:2002").unwrap();
+        let address = parse_address("example.com:5319").unwrap();
         assert_eq!(address.host(), "example.com");
-        assert_eq!(address.port(), 2002);
+        assert_eq!(address.port(), 5319);
     }
 
     #[test]
@@ -366,46 +366,46 @@ mod tests {
             "example.com:not_a_port",
         );
         assert_invalid_address(parse_address("example.com:65536"), "example.com:65536");
-        assert_invalid_address(parse_address(":2002"), ":2002");
-        assert_invalid_address(parse_address("[]:2002"), "[]:2002");
+        assert_invalid_address(parse_address(":5319"), ":5319");
+        assert_invalid_address(parse_address("[]:5319"), "[]:5319");
     }
 
     #[test]
     fn test_ipv6_address_parses() {
         // A bracketed IPv6 literal must not poison the whole list
-        let address = parse_address("[2001:db8::1]:2003").unwrap();
+        let address = parse_address("[2001:db8::1]:5319").unwrap();
         assert_eq!(address.host(), "2001:db8::1");
-        assert_eq!(address.port(), 2003);
+        assert_eq!(address.port(), 5319);
     }
 
     #[test]
     fn unbracketed_ipv6_splits_on_last_colon() {
-        let address = parse_address("2001:db8::1:2003").unwrap();
+        let address = parse_address("2001:db8::1:5319").unwrap();
         assert_eq!(address.host(), "2001:db8::1");
-        assert_eq!(address.port(), 2003);
+        assert_eq!(address.port(), 5319);
     }
 
     #[test]
     fn ipv6_zone_id_is_kept() {
-        let address = parse_address("[fe80::1%eth0]:2003").unwrap();
+        let address = parse_address("[fe80::1%eth0]:5319").unwrap();
         assert_eq!(address.host(), "fe80::1%eth0");
-        assert_eq!(address.port(), 2003);
+        assert_eq!(address.port(), 5319);
     }
 
     #[test]
     fn test_ipv4_and_hostname_addresses_still_parse() {
-        let v4 = parse_address("192.0.2.7:2003").unwrap();
+        let v4 = parse_address("192.0.2.7:5319").unwrap();
         assert_eq!(v4.host(), "192.0.2.7");
-        assert_eq!(v4.port(), 2003);
+        assert_eq!(v4.port(), 5319);
 
-        let hostname = parse_address("roughtime.example.com:2002").unwrap();
+        let hostname = parse_address("roughtime.example.com:5319").unwrap();
         assert_eq!(hostname.host(), "roughtime.example.com");
-        assert_eq!(hostname.port(), 2002);
+        assert_eq!(hostname.port(), 5319);
     }
 
     #[test]
     fn test_tcp_only_server_has_no_udp_address() {
-        let json = list_with_addresses(r#"{"protocol": "tcp", "address": "example.com:2003"}"#);
+        let json = list_with_addresses(r#"{"protocol": "tcp", "address": "example.com:5319"}"#);
         let server_list = ServerList::from_json(&json).unwrap();
 
         assert!(server_list.servers()[0].first_udp_address().is_none());
@@ -414,14 +414,14 @@ mod tests {
     #[test]
     fn test_mixed_addresses_select_udp() {
         let addresses = format!(
-            r#"{{"protocol": "tcp", "address": "example.com:2003"}}, {}"#,
-            udp("example.com:2004")
+            r#"{{"protocol": "tcp", "address": "example.com:5319"}}, {}"#,
+            udp("example.com:5320")
         );
         let server_list = ServerList::from_json(&list_with_addresses(&addresses)).unwrap();
 
         let selected = server_list.servers()[0].first_udp_address().unwrap();
         assert_eq!(selected.protocol, Protocol::Udp);
-        assert_eq!(selected.port(), 2004);
+        assert_eq!(selected.port(), 5320);
     }
 
     #[test]
@@ -440,7 +440,7 @@ mod tests {
                     "version": "IETF-Roughtime",
                     "publicKeyType": "ed25519",
                     "publicKey": "key==",
-                    "addresses": [{"protocol": "udp", "address": "example.com:2002"}]
+                    "addresses": [{"protocol": "udp", "address": "example.com:5320"}]
                 }
             ]
         }"#;
@@ -495,7 +495,7 @@ mod tests {
                 "version": 1,
                 "publicKeyType": "ed25519",
                 "publicKey": "key==",
-                "addresses": [{"protocol": "udp", "address": "example.com:2002"}]
+                "addresses": [{"protocol": "udp", "address": "example.com:5319"}]
             }]
         }"#;
         match ServerList::from_json(json) {
@@ -517,7 +517,7 @@ mod tests {
                 "version": 1,
                 "publicKeyType": "ed25519",
                 "publicKey": "key==",
-                "addresses": [{"protocol": "udp", "address": "example.com:2002"}]
+                "addresses": [{"protocol": "udp", "address": "example.com:5319"}]
             }],
             "sources": ["http://example.com"]
         }"#;
@@ -537,7 +537,7 @@ mod tests {
                 "version": 1,
                 "publicKeyType": "ed25519",
                 "publicKey": "key==",
-                "addresses": [{"protocol": "udp", "address": "example.com:2002"}]
+                "addresses": [{"protocol": "udp", "address": "example.com:5319"}]
             }]
         }"#;
         match ServerList::from_json(json) {
@@ -564,7 +564,7 @@ mod tests {
                         "version": 1,
                         "publicKeyType": "ed25519",
                         "publicKey": "key==",
-                        "addresses": [{{"protocol": "udp", "address": "example.com:2002"}}]
+                        "addresses": [{{"protocol": "udp", "address": "example.com:5319"}}]
                     }}],
                     "sources": ["{url}"]
                 }}"#
