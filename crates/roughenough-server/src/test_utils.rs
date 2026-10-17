@@ -2,19 +2,24 @@
 //! Provides "glue" needed for complex testing scenarios
 //!
 
-use std::net::SocketAddr;
+use std::net::{SocketAddr, UdpSocket};
+use std::sync::mpsc::SyncSender;
 use std::time::Duration;
 
+use mio::net::UdpSocket as MioUdpSocket;
 use roughenough_common::clocksource::ClockSource;
 use roughenough_keys::seed::MemoryBackend;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::response::Response;
-use roughenough_protocol::tags::{Nonce, ProtocolVersion};
+use roughenough_protocol::tags::{Nonce, ProtocolVersion, PublicKey};
 use roughenough_protocol::{FromFrame, ToFrame};
 
+use crate::args::Args;
 use crate::keysource::KeySource;
+use crate::metrics::aggregator::WorkerMetrics;
 use crate::requests::RequestValidator;
 use crate::responses::ResponseHandler;
+use crate::worker::Worker;
 
 #[allow(dead_code)]
 pub struct TestContext {
@@ -61,6 +66,43 @@ impl RequestPipeline {
         self.responder
             .process_responses(|addr, bytes| responses.push((addr, bytes.to_vec())));
         responses
+    }
+}
+
+/// A worker bound to a loopback socket, not yet running.
+pub struct TestWorker {
+    pub worker: Worker,
+    pub sock: MioUdpSocket,
+    pub addr: SocketAddr,
+    /// The responder's online key before the worker first runs
+    pub initial_key: PublicKey,
+}
+
+/// Builds a worker from `args` whose key source uses `clock` and that
+/// publishes metrics to `metrics`, bound to 127.0.0.1 on an ephemeral port.
+pub fn test_worker(
+    args: &Args,
+    clock: ClockSource,
+    metrics: SyncSender<WorkerMetrics>,
+) -> TestWorker {
+    let seed = Box::new(MemoryBackend::from_value(&[42u8; 32]));
+    let key_source = KeySource::new(seed, clock, args.rotation_interval());
+    let responder = ResponseHandler::new(args.batch_size, key_source);
+    let initial_key = responder.public_key();
+    let metrics_interval = Duration::from_secs(args.metrics_interval);
+    let worker = Worker::new(0, responder, metrics, metrics_interval);
+
+    let sock = UdpSocket::bind("127.0.0.1:0").expect("bind server socket");
+    // production bind_socket sets nonblocking; a blocking socket behind
+    // MioUdpSocket::from_std would hang collect_requests instead of failing
+    sock.set_nonblocking(true).expect("set_nonblocking");
+    let addr = sock.local_addr().unwrap();
+
+    TestWorker {
+        worker,
+        sock: MioUdpSocket::from_std(sock),
+        addr,
+        initial_key,
     }
 }
 

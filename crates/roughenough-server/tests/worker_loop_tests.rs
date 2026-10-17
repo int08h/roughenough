@@ -7,58 +7,26 @@
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::{Acquire, Release};
-use std::sync::mpsc::{SyncSender, channel, sync_channel};
+use std::sync::mpsc::{channel, sync_channel};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use clap::Parser;
-use mio::net::UdpSocket as MioUdpSocket;
 use roughenough_common::clocksource::ClockSource;
-use roughenough_keys::seed::MemoryBackend;
 use roughenough_protocol::cursor::ParseCursor;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::response::Response;
 use roughenough_protocol::tags::{Nonce, PublicKey};
 use roughenough_protocol::{FromFrame, ToFrame};
 use roughenough_server::args::Args;
-use roughenough_server::keysource::KeySource;
 use roughenough_server::metrics::aggregator::WorkerMetrics;
-use roughenough_server::responses::ResponseHandler;
-use roughenough_server::worker::{ExitGuard, Worker};
+use roughenough_server::test_utils::{TestWorker, test_worker};
+use roughenough_server::worker::ExitGuard;
 
 // parsed rather than a struct literal so future Args fields don't break this
 fn test_args() -> Args {
     Args::try_parse_from(["roughenough_server", "--insecure-zero-seed"])
         .expect("default args parse")
-}
-
-fn new_worker(args: Args, tx: SyncSender<WorkerMetrics>) -> (Worker, MioUdpSocket, SocketAddr) {
-    let (worker, sock, addr, _) = new_worker_with_key(args, tx, ClockSource::System);
-    (worker, sock, addr)
-}
-
-/// Like `new_worker`, with `clock` shared by the worker and its key source,
-/// also returning the responder's initial online key
-fn new_worker_with_key(
-    args: Args,
-    tx: SyncSender<WorkerMetrics>,
-    clock: ClockSource,
-) -> (Worker, MioUdpSocket, SocketAddr, PublicKey) {
-    let seed = Box::new(MemoryBackend::from_value(&[42u8; 32]));
-    let key_source = KeySource::new(seed, clock, args.rotation_interval());
-    let responder = ResponseHandler::new(args.batch_size, key_source);
-    let online_key = responder.public_key();
-    let metrics_interval = Duration::from_secs(args.metrics_interval);
-
-    let worker = Worker::new(0, responder, tx, metrics_interval);
-
-    let sock = UdpSocket::bind("127.0.0.1:0").expect("bind server socket");
-    // production bind_socket sets nonblocking; a blocking socket behind
-    // MioUdpSocket::from_std would hang collect_requests instead of failing
-    sock.set_nonblocking(true).expect("set_nonblocking");
-    let addr = sock.local_addr().unwrap();
-
-    (worker, MioUdpSocket::from_std(sock), addr, online_key)
 }
 
 fn request_bytes(nonce_value: u8) -> Vec<u8> {
@@ -109,7 +77,12 @@ fn signing_key(reply: Option<Vec<u8>>) -> PublicKey {
 fn worker_answers_request_end_to_end() {
     let keep_running = AtomicBool::new(true);
     let (tx, _rx) = sync_channel(4);
-    let (mut worker, sock, server_addr) = new_worker(test_args(), tx);
+    let TestWorker {
+        mut worker,
+        sock,
+        addr: server_addr,
+        ..
+    } = test_worker(&test_args(), ClockSource::System, tx);
 
     thread::scope(|s| {
         let worker_thread = s.spawn(|| worker.run(sock, &keep_running));
@@ -130,8 +103,13 @@ fn worker_does_not_replace_online_key_at_startup() {
     // or remote KMS call; the responder's initial key must be used as-is
     let keep_running = AtomicBool::new(true);
     let (tx, _rx) = sync_channel(4);
-    let (mut worker, sock, server_addr, initial_key) =
-        new_worker_with_key(test_args(), tx, ClockSource::System);
+    let TestWorker {
+        mut worker,
+        sock,
+        addr: server_addr,
+        initial_key,
+        ..
+    } = test_worker(&test_args(), ClockSource::System, tx);
 
     let reply = thread::scope(|s| {
         let worker_thread = s.spawn(|| worker.run(sock, &keep_running));
@@ -150,11 +128,16 @@ fn worker_rotates_online_key_after_backward_clock_step() {
     // A key minted before the step has MINT after the new time, so clients
     // reject its responses until the worker rotates
     let keep_running = AtomicBool::new(true);
-    let (tx, _rx) = sync_channel(4);
     let start = ClockSource::System.epoch_seconds();
     let mut clock = ClockSource::new_mock(start);
-    let (mut worker, sock, server_addr, initial_key) =
-        new_worker_with_key(test_args(), tx, clock.clone());
+    let (tx, _rx) = sync_channel(4);
+    let TestWorker {
+        mut worker,
+        sock,
+        addr: server_addr,
+        initial_key,
+        ..
+    } = test_worker(&test_args(), clock.clone(), tx);
 
     let [before, after] = thread::scope(|s| {
         let worker_thread = s.spawn(|| worker.run(sock, &keep_running));
@@ -178,11 +161,16 @@ fn worker_rotates_once_after_forward_clock_jump() {
     // A jump of many rotation intervals needs one new key, not one per
     // interval skipped
     let keep_running = AtomicBool::new(true);
-    let (tx, _rx) = sync_channel(4);
     let start = ClockSource::System.epoch_seconds();
     let mut clock = ClockSource::new_mock(start);
-    let (mut worker, sock, server_addr, initial_key) =
-        new_worker_with_key(test_args(), tx, clock.clone());
+    let (tx, _rx) = sync_channel(4);
+    let TestWorker {
+        mut worker,
+        sock,
+        addr: server_addr,
+        initial_key,
+        ..
+    } = test_worker(&test_args(), clock.clone(), tx);
 
     let [first, second] = thread::scope(|s| {
         let worker_thread = s.spawn(|| worker.run(sock, &keep_running));
@@ -207,7 +195,9 @@ fn worker_rotates_once_after_forward_clock_jump() {
 fn worker_shuts_down_promptly() {
     let keep_running = AtomicBool::new(true);
     let (tx, _rx) = sync_channel(4);
-    let (mut worker, sock, _server_addr) = new_worker(test_args(), tx);
+    let TestWorker {
+        mut worker, sock, ..
+    } = test_worker(&test_args(), ClockSource::System, tx);
 
     thread::scope(|s| {
         let worker_thread = s.spawn(|| worker.run(sock, &keep_running));
@@ -233,7 +223,12 @@ fn worker_shuts_down_under_load() {
     let keep_running = AtomicBool::new(true);
     let stop_senders = AtomicBool::new(false);
     let (tx, _rx) = sync_channel(4);
-    let (mut worker, sock, server_addr) = new_worker(test_args(), tx);
+    let TestWorker {
+        mut worker,
+        sock,
+        addr: server_addr,
+        ..
+    } = test_worker(&test_args(), ClockSource::System, tx);
 
     thread::scope(|s| {
         let worker_thread = s.spawn(|| worker.run(sock, &keep_running));
@@ -307,10 +302,15 @@ fn exit_guard_reports_normal_exit() {
 #[test]
 fn worker_publishes_metrics() {
     let keep_running = AtomicBool::new(true);
-    let (tx, rx) = sync_channel::<WorkerMetrics>(4);
     let mut args = test_args();
     args.metrics_interval = 1;
-    let (mut worker, sock, server_addr) = new_worker(args, tx);
+    let (tx, rx) = sync_channel(4);
+    let TestWorker {
+        mut worker,
+        sock,
+        addr: server_addr,
+        ..
+    } = test_worker(&args, ClockSource::System, tx);
 
     thread::scope(|s| {
         let worker_thread = s.spawn(|| worker.run(sock, &keep_running));
@@ -353,7 +353,12 @@ fn worker_metrics_survive_full_channel() {
     })
     .unwrap();
 
-    let (mut worker, sock, server_addr) = new_worker(args, tx.clone());
+    let TestWorker {
+        mut worker,
+        sock,
+        addr: server_addr,
+        ..
+    } = test_worker(&args, ClockSource::System, tx.clone());
 
     let snapshots: Vec<WorkerMetrics> = thread::scope(|s| {
         let worker_thread = s.spawn(|| worker.run(sock, &keep_running));

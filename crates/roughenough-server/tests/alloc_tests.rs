@@ -19,16 +19,12 @@ use std::thread;
 use std::time::Duration;
 
 use clap::Parser;
-use mio::net::UdpSocket as MioUdpSocket;
 use roughenough_common::clocksource::ClockSource;
-use roughenough_keys::seed::MemoryBackend;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::tags::Nonce;
 use roughenough_protocol::wire::ToFrame;
 use roughenough_server::args::Args;
-use roughenough_server::keysource::KeySource;
-use roughenough_server::responses::ResponseHandler;
-use roughenough_server::worker::Worker;
+use roughenough_server::test_utils::{TestWorker, test_worker};
 
 static WINDOW_ALLOCS: AtomicUsize = AtomicUsize::new(0);
 static WINDOW_OPEN: AtomicBool = AtomicBool::new(false);
@@ -105,16 +101,12 @@ fn mio_loop_steady_state_is_allocation_free() {
     args.rotation_interval = 24;
     args.batch_size = 1;
 
-    let seed = Box::new(MemoryBackend::from_value(&[42u8; 32]));
-    let key_source = KeySource::new(seed, ClockSource::System, args.rotation_interval());
-    let responder = ResponseHandler::new(args.batch_size, key_source);
-    let metrics_interval = Duration::from_secs(args.metrics_interval);
-    let mut worker = Worker::new(0, responder, tx, metrics_interval);
-
-    let sock = UdpSocket::bind("127.0.0.1:0").expect("bind server socket");
-    sock.set_nonblocking(true).expect("set_nonblocking");
-    let server_addr = sock.local_addr().unwrap();
-    let sock = MioUdpSocket::from_std(sock);
+    let TestWorker {
+        mut worker,
+        sock,
+        addr: server_addr,
+        ..
+    } = test_worker(&args, ClockSource::System, tx);
 
     // prebuilt before the window so request construction is never counted
     let request = Request::new(&Nonce::from([9u8; 32]))

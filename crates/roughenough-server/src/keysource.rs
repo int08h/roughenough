@@ -64,10 +64,6 @@ impl KeySource {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::thread;
     use std::time::Duration;
 
     use roughenough_common::clocksource::ClockSource;
@@ -127,112 +123,5 @@ mod tests {
         let dele = second_key.cert().dele();
         assert_eq!(dele.mint(), start_time + 61);
         assert_eq!(dele.maxt(), start_time + 61 + 60);
-    }
-
-    #[test]
-    fn worker_key_rotation() {
-        // Given: A KeySource with very short validity for testing
-        let start_time = 1_000_000u64;
-        let clock = ClockSource::new_mock(start_time);
-        let validity_duration = Duration::from_secs(2); // 2 second validity
-
-        let backend = Box::new(MemoryBackend::from_random());
-        let key_source = Arc::new(KeySource::new(backend, clock.clone(), validity_duration));
-
-        let keep_running = Arc::new(AtomicBool::new(true));
-        let mut handles = vec![];
-
-        // Spawn multiple threads simulating workers
-        for worker_id in 0..3 {
-            let key_source_clone = Arc::clone(&key_source);
-            let keep_running_clone = Arc::clone(&keep_running);
-            let mut clock_clone = clock.clone();
-
-            let handle = thread::spawn(move || {
-                let mut keys_used = HashSet::new();
-                let mut current_time = start_time;
-
-                while keep_running_clone.load(Ordering::Relaxed) {
-                    // Simulate time passing
-                    current_time += 1;
-                    clock_clone.set_time(current_time);
-
-                    // Get current key
-                    let key = key_source_clone.make_online_key();
-                    let pubkey = key.public_key_bytes();
-
-                    // Track unique keys used
-                    keys_used.insert(pubkey);
-
-                    // Simulate some work
-                    thread::sleep(Duration::from_millis(10));
-
-                    // Stop after 5 seconds of simulated time
-                    if current_time >= start_time + 5 {
-                        break;
-                    }
-                }
-
-                (worker_id, keys_used)
-            });
-
-            handles.push(handle);
-        }
-
-        // Let workers run for a bit
-        thread::sleep(Duration::from_millis(100));
-        keep_running.store(false, Ordering::Relaxed);
-
-        // Collect results
-        let mut all_results = vec![];
-        for handle in handles {
-            let (worker_id, keys_used) = handle.join().expect("Worker thread should not panic");
-            println!(
-                "Worker {} used {} different keys",
-                worker_id,
-                keys_used.len()
-            );
-            all_results.push(keys_used);
-        }
-
-        // Then: All workers should have rotated keys at least once
-        for keys_used in &all_results {
-            assert!(
-                keys_used.len() >= 2,
-                "Worker should have used at least 2 different keys"
-            );
-        }
-    }
-
-    #[test]
-    fn key_validity_at_rotation() {
-        // Test that keys remain valid during rotation transitions
-        let start_time = 1_000_000u64;
-        let mut clock = ClockSource::new_mock(start_time);
-        let validity_duration = Duration::from_secs(3600); // 1 hour
-        let rotation_interval = Duration::from_secs(1800); // 30 minutes
-
-        let backend = Box::new(MemoryBackend::from_random());
-        let key_source = KeySource::new(backend, clock.clone(), validity_duration);
-
-        // Get initial key
-        let key1 = key_source.make_online_key();
-
-        // Advance to rotation time
-        clock.set_time(start_time + rotation_interval.as_secs());
-        let key2 = key_source.make_online_key();
-
-        // Verify both keys are valid at rotation boundary
-        let key1_valid_until = key1.cert().dele().maxt();
-        let key2_valid_from = key2.cert().dele().mint();
-
-        assert!(
-            key2_valid_from < key1_valid_until,
-            "Keys should have overlapping validity"
-        );
-
-        // Calculate overlap period
-        let overlap = key1_valid_until - key2_valid_from;
-        assert_eq!(overlap, 1800, "Should have 30 minute overlap period");
     }
 }

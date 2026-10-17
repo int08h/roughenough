@@ -78,7 +78,9 @@ mod tests {
     use std::net::SocketAddr;
 
     use roughenough_protocol::request::MAX_REQUEST_SIZE;
+    use roughenough_protocol::response::Response;
     use roughenough_protocol::tags::Nonce;
+    use roughenough_protocol::util::test_utils::{build_msg, frame};
     use roughenough_protocol::wire::ToFrame;
 
     use super::*;
@@ -91,6 +93,43 @@ mod tests {
         let bytes = request.as_frame_bytes().unwrap();
         assert_eq!(bytes.len(), REQUEST_SIZE);
         bytes
+    }
+
+    /// A framed `REQUEST_SIZE` request built from raw tags, so tests can offer
+    /// versions and tags that `Request` cannot express.
+    fn raw_request(versions: &[u32], nonce: u8, extra: &[(&[u8; 4], Vec<u8>)]) -> Vec<u8> {
+        sized_raw_request(REQUEST_SIZE, versions, nonce, extra)
+    }
+
+    /// VER, NONC, TYPE, then `extra` (which must sort between TYPE and ZZZZ),
+    /// with ZZZZ padding the frame to exactly `size` bytes
+    fn sized_raw_request(
+        size: usize,
+        versions: &[u32],
+        nonce: u8,
+        extra: &[(&[u8; 4], Vec<u8>)],
+    ) -> Vec<u8> {
+        let mut entries = vec![
+            (
+                *b"VER\x00",
+                versions.iter().flat_map(|v| v.to_le_bytes()).collect(),
+            ),
+            (*b"NONC", vec![nonce; 32]),
+            (*b"TYPE", 0u32.to_le_bytes().to_vec()),
+        ];
+        entries.extend(extra.iter().map(|(tag, value)| (**tag, value.clone())));
+        entries.push((*b"ZZZZ", Vec::new()));
+
+        let unpadded_len = frame(&build_msg(&entries)).len();
+        entries.last_mut().unwrap().1 = vec![0; size - unpadded_len];
+
+        let bytes = frame(&build_msg(&entries));
+        assert_eq!(bytes.len(), size);
+        bytes
+    }
+
+    fn parse(bytes: &[u8]) -> Response {
+        Response::from_frame_bytes(bytes).unwrap()
     }
 
     #[test]
@@ -160,15 +199,7 @@ mod tests {
     fn full_mtu_request_is_answered() {
         // A well-formed request occupying the full MTU payload: the frame's
         // declared length covers all 1472 bytes via a larger ZZZZ value
-        let zzzz_len = MAX_REQUEST_SIZE - 84; // 84 = framing + header + VER/NONC/TYPE
-        let entries: &[(&[u8; 4], Vec<u8>)] = &[
-            (b"VER\x00", 0x00000001u32.to_le_bytes().to_vec()),
-            (b"NONC", vec![0x42; 32]),
-            (b"TYPE", 0u32.to_le_bytes().to_vec()),
-            (b"ZZZZ", vec![0; zzzz_len]),
-        ];
-        let mut request_bytes = build_raw_request(entries);
-        assert_eq!(request_bytes.len(), MAX_REQUEST_SIZE);
+        let mut request_bytes = sized_raw_request(MAX_REQUEST_SIZE, &[0x00000001], 0x42, &[]);
 
         let mut pipeline = RequestPipeline::new(64);
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
@@ -226,47 +257,8 @@ mod tests {
         assert_eq!(responses.len(), 1, "matching SRV must be answered");
     }
 
-    /// Build a framed request from raw (tag, value) entries. Caller is
-    /// responsible for tag ordering and sizing values to total 1024 bytes.
-    fn build_raw_request(entries: &[(&[u8; 4], Vec<u8>)]) -> Vec<u8> {
-        use roughenough_protocol::util::test_utils::{build_msg, frame};
-
-        let entries: Vec<([u8; 4], Vec<u8>)> =
-            entries.iter().map(|(t, v)| (**t, v.clone())).collect();
-        frame(&build_msg(&entries))
-    }
-
-    #[test]
-    fn request_with_no_common_version_is_dropped() {
-        // RFC 5.1.1: if the VER list contains no version supported by the
-        // server, it MAY ignore the request (this implementation's choice)
-        let entries: &[(&[u8; 4], Vec<u8>)] = &[
-            (b"VER\x00", 0x00000005u32.to_le_bytes().to_vec()),
-            (b"NONC", vec![0x42; 32]),
-            (b"TYPE", 0u32.to_le_bytes().to_vec()),
-            (b"ZZZZ", vec![0; 940]),
-        ];
-        let mut request_bytes = build_raw_request(entries);
-        assert_eq!(request_bytes.len(), REQUEST_SIZE);
-
-        let mut pipeline = RequestPipeline::new(64);
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-        pipeline.collect(&mut request_bytes, addr);
-
-        let metrics = pipeline.validator.metrics();
-        assert_eq!(metrics.num_ok_requests, 0);
-        assert_eq!(metrics.num_no_common_version, 1);
-
-        let responses = pipeline.drain();
-        assert!(responses.is_empty(), "no common version: not answered");
-    }
-
     #[test]
     fn response_version_is_negotiated() {
-        use roughenough_protocol::response::Response;
-        use roughenough_protocol::tags::ProtocolVersion;
-        use roughenough_protocol::wire::FromFrame;
-
         // Any offer that includes version 1 is answered with version 1
         let cases = [
             vec![0x00000001u32],
@@ -276,30 +268,17 @@ mod tests {
         ];
 
         for offered in cases {
-            let mut ver_value = Vec::new();
-            for v in &offered {
-                ver_value.extend_from_slice(&v.to_le_bytes());
-            }
-            let pad = 940 - (ver_value.len() - 4);
-            let entries: &[(&[u8; 4], Vec<u8>)] = &[
-                (b"VER\x00", ver_value),
-                (b"NONC", vec![0x42; 32]),
-                (b"TYPE", 0u32.to_le_bytes().to_vec()),
-                (b"ZZZZ", vec![0; pad]),
-            ];
-            let mut request_bytes = build_raw_request(entries);
-            assert_eq!(request_bytes.len(), REQUEST_SIZE);
+            let mut request_bytes = raw_request(&offered, 0x42, &[]);
 
             let mut pipeline = RequestPipeline::new(64);
             let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
             pipeline.collect(&mut request_bytes, addr);
             assert_eq!(pipeline.validator.metrics().num_ok_requests, 1);
 
-            let mut responses = pipeline.drain();
+            let responses = pipeline.drain();
             assert_eq!(responses.len(), 1);
 
-            let mut cursor = ParseCursor::new(&mut responses[0].1);
-            let response = Response::from_frame(&mut cursor).unwrap();
+            let response = parse(&responses[0].1);
 
             assert_eq!(
                 *response.srep().ver(),
@@ -316,95 +295,49 @@ mod tests {
 
     #[test]
     fn only_version_one_requests_are_answered() {
-        use roughenough_protocol::response::Response;
-        use roughenough_protocol::wire::FromFrame;
-
         let mut pipeline = RequestPipeline::new(64);
 
         // The pre-RFC draft version parses but is not negotiated; other
         // experimental-range versions are unknown. Neither is answered.
+        // RFC 5.1.1: if the VER list contains no version supported by the
+        // server, it MAY ignore the request (this implementation's choice).
         for (port, wire_ver, nonce_byte) in [
             (8001u16, 0x8000000cu32, 0x41u8),
             (8002, 0x00000001, 0x42),
             (8003, 0x8000000b, 0x43),
             (8004, 0xbfffffff, 0x44),
+            (8005, 0x00000005, 0x45),
+            // RFC 12.2: 0xc0000000-0xffffffff is private use
+            (8006, 0xc0000001, 0x46),
         ] {
-            collect_one_version(&mut pipeline, wire_ver, nonce_byte, port);
+            let mut request_bytes = raw_request(&[wire_ver], nonce_byte, &[]);
+            let addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+            pipeline.collect(&mut request_bytes, addr);
         }
 
         let metrics = pipeline.validator.metrics();
         assert_eq!(metrics.num_ok_requests, 1);
-        assert_eq!(metrics.num_no_common_version, 3);
-
-        let mut responses = pipeline.drain();
-        assert_eq!(responses.len(), 1);
-
-        let (addr, bytes) = &mut responses[0];
-        assert_eq!(addr.port(), 8002);
-        let mut cursor = ParseCursor::new(bytes);
-        let response = Response::from_frame(&mut cursor).unwrap();
-        assert_eq!(*response.srep().ver(), ProtocolVersion::RFC);
-        assert_eq!(response.nonc(), &Nonce::from([0x42; 32]));
-    }
-
-    #[test]
-    fn private_use_version_gets_no_response() {
-        // RFC 12.2: 0xc0000000-0xffffffff is private use.
-        let entries: &[(&[u8; 4], Vec<u8>)] = &[
-            (b"VER\x00", 0xc0000001u32.to_le_bytes().to_vec()),
-            (b"NONC", vec![0x42; 32]),
-            (b"TYPE", 0u32.to_le_bytes().to_vec()),
-            (b"ZZZZ", vec![0; 940]),
-        ];
-        let mut request_bytes = build_raw_request(entries);
-        assert_eq!(request_bytes.len(), REQUEST_SIZE);
-
-        let mut pipeline = RequestPipeline::new(64);
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-        pipeline.collect(&mut request_bytes, addr);
-
-        let metrics = pipeline.validator.metrics();
-        assert_eq!(metrics.num_ok_requests, 0);
-        assert_eq!(metrics.num_no_common_version, 1);
+        assert_eq!(metrics.num_no_common_version, 5);
 
         let responses = pipeline.drain();
-        assert!(responses.is_empty(), "private-use version: not answered");
-    }
+        assert_eq!(responses.len(), 1);
 
-    fn collect_one_version(
-        pipeline: &mut RequestPipeline,
-        wire_ver: u32,
-        nonce_byte: u8,
-        port: u16,
-    ) {
-        let entries: &[(&[u8; 4], Vec<u8>)] = &[
-            (b"VER\x00", wire_ver.to_le_bytes().to_vec()),
-            (b"NONC", vec![nonce_byte; 32]),
-            (b"TYPE", 0u32.to_le_bytes().to_vec()),
-            (b"ZZZZ", vec![0; 940]),
-        ];
-        let mut request_bytes = build_raw_request(entries);
-        let addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
-        pipeline.collect(&mut request_bytes, addr);
+        let (addr, bytes) = &responses[0];
+        assert_eq!(addr.port(), 8002);
+        let response = parse(bytes);
+        assert_eq!(*response.srep().ver(), ProtocolVersion::RFC);
+        assert_eq!(response.nonc(), &Nonce::from([0x42; 32]));
     }
 
     #[test]
     fn request_with_unknown_tag_is_answered() {
         // RFC 5.1: "Unknown tags MUST be ignored by the server."
         // Tag order by little-endian value: VER < NONC < TYPE < GREZ < ZZZZ
-        let entries: &[(&[u8; 4], Vec<u8>)] = &[
-            (
-                b"VER\x00",
-                ProtocolVersion::RFC.as_u32().to_le_bytes().to_vec(),
-            ),
-            (b"NONC", vec![0x42; 32]),
-            (b"TYPE", 0u32.to_le_bytes().to_vec()),
-            (b"GREZ", vec![0xaa; 4]),
-            (b"ZZZZ", vec![0; 928]),
-        ];
-
-        let mut request_bytes = build_raw_request(entries);
-        assert_eq!(request_bytes.len(), REQUEST_SIZE);
+        let mut request_bytes = raw_request(
+            &[ProtocolVersion::RFC.as_u32()],
+            0x42,
+            &[(b"GREZ", vec![0xaa; 4])],
+        );
 
         let mut pipeline = RequestPipeline::new(64);
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();

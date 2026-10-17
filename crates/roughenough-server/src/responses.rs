@@ -227,14 +227,26 @@ mod tests {
     use roughenough_protocol::request::Request;
     use roughenough_protocol::response::Response;
     use roughenough_protocol::tags::Nonce;
-    use roughenough_protocol::wire::{FromFrame, ToWire};
+    use roughenough_protocol::wire::FromFrame;
 
     use super::*;
     use crate::test_utils::new_response_handler;
 
-    fn create_test_request(nonce_value: u8) -> Request {
-        let nonce = Nonce::from([nonce_value; 32]);
-        Request::new(&nonce)
+    /// Adds a version-1 request, hashing its framed bytes as the server does
+    fn add(responder: &mut ResponseHandler, nonce: u8, addr: SocketAddr) {
+        let nonce = Nonce::from([nonce; 32]);
+        let request = Request::new(&nonce);
+        let request_bytes = request.as_frame_bytes().unwrap();
+        responder.add_request(&request_bytes, request, ProtocolVersion::RFC, addr);
+    }
+
+    fn drain(responder: &mut ResponseHandler) -> Vec<(SocketAddr, Response)> {
+        let mut responses = Vec::new();
+        responder.process_responses(|addr, bytes| {
+            let response = Response::from_frame_bytes(bytes).unwrap();
+            responses.push((addr, response));
+        });
+        responses
     }
 
     #[test]
@@ -251,14 +263,7 @@ mod tests {
         let mut responder = new_response_handler();
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
 
-        // Add a request
-        let request = create_test_request(42);
-        responder.add_request(
-            &request.as_bytes().unwrap(),
-            request,
-            ProtocolVersion::RFC,
-            addr,
-        );
+        add(&mut responder, 42, addr);
 
         assert_eq!(responder.num_pending(), 1);
         assert!(!responder.merkle_tree().is_empty());
@@ -277,26 +282,14 @@ mod tests {
 
         // Add requests up to batch size
         for i in 0..64 {
-            let request = create_test_request(i as u8);
-            responder.add_request(
-                &request.as_bytes().unwrap(),
-                request,
-                ProtocolVersion::RFC,
-                addr,
-            );
+            add(&mut responder, i, addr);
         }
 
         assert_eq!(responder.num_pending(), 64);
 
         // This should trigger the batch size limit debug assertion in add_request
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let request = create_test_request(100);
-            responder.add_request(
-                &request.as_bytes().unwrap(),
-                request,
-                ProtocolVersion::RFC,
-                addr,
-            );
+            add(&mut responder, 100, addr);
         }));
 
         assert!(result.is_err(), "Should panic when batch size is exceeded");
@@ -307,26 +300,13 @@ mod tests {
         let mut responder = new_response_handler();
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
 
-        let request = create_test_request(42);
-        let expected_nonce = *request.nonc();
-        responder.add_request(
-            &request.as_bytes().unwrap(),
-            request,
-            ProtocolVersion::RFC,
-            addr,
-        );
+        add(&mut responder, 42, addr);
 
-        let mut responses = Vec::new();
-        responder.process_responses(|addr, bytes| {
-            responses.push((addr, bytes.to_vec()));
-        });
-
+        let responses = drain(&mut responder);
         assert_eq!(responses.len(), 1);
-        let (response_addr, response_bytes) = &responses[0];
+        let (response_addr, response) = &responses[0];
         assert_eq!(*response_addr, addr);
-
-        let resp = Response::from_frame_bytes(response_bytes).unwrap();
-        assert_eq!(resp.nonc(), &expected_nonce);
+        assert_eq!(response.nonc(), &Nonce::from([42; 32]));
     }
 
     #[test]
@@ -335,36 +315,20 @@ mod tests {
 
         let num_requests = 5;
         let mut expected_addrs = Vec::new();
-        let mut expected_nonces = Vec::new();
 
-        // Add multiple requests
         for i in 0..num_requests {
             let addr: SocketAddr = format!("127.0.0.1:{}", 8080 + i).parse().unwrap();
-            let request = create_test_request(i as u8);
-
             expected_addrs.push(addr);
-            expected_nonces.push(*request.nonc());
-            responder.add_request(
-                &request.as_bytes().unwrap(),
-                request,
-                ProtocolVersion::RFC,
-                addr,
-            );
+            add(&mut responder, i as u8, addr);
         }
 
-        let mut responses = Vec::new();
-        responder.process_responses(|addr, bytes| {
-            responses.push((addr, bytes.to_vec()));
-        });
-
+        let responses = drain(&mut responder);
         assert_eq!(responses.len(), num_requests);
 
-        for (idx, (response_addr, response_bytes)) in responses.iter().enumerate() {
+        for (idx, (response_addr, response)) in responses.iter().enumerate() {
             assert_eq!(*response_addr, expected_addrs[idx]);
-
-            let resp = Response::from_frame_bytes(response_bytes).unwrap();
-            assert_eq!(resp.nonc(), &expected_nonces[idx]);
-            assert_eq!(resp.indx(), idx as u32);
+            assert_eq!(response.nonc(), &Nonce::from([idx as u8; 32]));
+            assert_eq!(response.indx(), idx as u32);
         }
     }
 
@@ -376,14 +340,13 @@ mod tests {
         for version in ProtocolVersion::ADVERTISED {
             let mut responder = new_response_handler();
             let request = Request::new_with_versions(&Nonce::from([7; 32]), &[version]);
-            responder.add_request(&request.as_bytes().unwrap(), request, version, addr);
+            let request_bytes = request.as_frame_bytes().unwrap();
+            responder.add_request(&request_bytes, request, version, addr);
 
-            let mut responses = Vec::new();
-            responder.process_responses(|_addr, bytes| responses.push(bytes.to_vec()));
+            let responses = drain(&mut responder);
             assert_eq!(responses.len(), 1);
 
-            let response = Response::from_frame_bytes(&responses[0]).unwrap();
-            let srep = response.srep();
+            let srep = responses[0].1.srep();
             assert_eq!(*srep.ver(), version);
             assert!(
                 srep.vers().versions().contains(srep.ver()),
@@ -398,25 +361,11 @@ mod tests {
         let mut responder = new_response_handler();
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
 
-        let run_batch = |responder: &mut ResponseHandler,
-                         requests: &[(u8, ProtocolVersion)]|
-         -> Vec<Response> {
-            for (nonce_byte, version) in requests {
-                let request = create_test_request(*nonce_byte);
-                responder.add_request(&request.as_bytes().unwrap(), request, *version, addr);
-            }
-            let mut responses = Vec::new();
-            responder.process_responses(|_, bytes| {
-                responses.push(Response::from_frame_bytes(bytes).unwrap());
-            });
-            responses
-        };
-
-        let batch1 = run_batch(&mut responder, &[(1, ProtocolVersion::RFC)]);
-        let batch2 = run_batch(
-            &mut responder,
-            &[(2, ProtocolVersion::RFC), (3, ProtocolVersion::RFC)],
-        );
+        add(&mut responder, 1, addr);
+        let batch1: Vec<Response> = drain(&mut responder).into_iter().map(|(_, r)| r).collect();
+        add(&mut responder, 2, addr);
+        add(&mut responder, 3, addr);
+        let batch2: Vec<Response> = drain(&mut responder).into_iter().map(|(_, r)| r).collect();
 
         assert_eq!(batch1.len(), 1);
         assert_eq!(batch2.len(), 2);
@@ -448,24 +397,11 @@ mod tests {
         let mut responder = new_response_handler();
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
 
-        let one_response = |responder: &mut ResponseHandler, nonce_byte: u8| -> Response {
-            let request = create_test_request(nonce_byte);
-            responder.add_request(
-                &request.as_bytes().unwrap(),
-                request,
-                ProtocolVersion::RFC,
-                addr,
-            );
-            let mut responses = Vec::new();
-            responder.process_responses(|_, bytes| {
-                responses.push(Response::from_frame_bytes(bytes).unwrap());
-            });
-            responses.pop().unwrap()
-        };
-
-        let before = one_response(&mut responder, 1);
+        add(&mut responder, 1, addr);
+        let (_, before) = drain(&mut responder).pop().unwrap();
         responder.replace_online_key();
-        let after = one_response(&mut responder, 2);
+        add(&mut responder, 2, addr);
+        let (_, after) = drain(&mut responder).pop().unwrap();
 
         assert_ne!(
             before.cert().dele().pubk(),
