@@ -41,6 +41,16 @@ pub enum StorageError {
     InvalidResource(String),
 }
 
+impl StorageError {
+    #[cfg(any(test, feature = "longterm-aws", feature = "longterm-gcp"))]
+    pub(crate) fn cloud(backend: &'static str, detail: impl Into<String>) -> Self {
+        StorageError::CloudBackend {
+            backend,
+            detail: detail.into(),
+        }
+    }
+}
+
 /// Decode a hex or base64 seed value
 pub fn decode_seed(encoded: &str) -> Result<Seed, StorageError> {
     let bytes = encoding::try_decode(encoded)?;
@@ -178,6 +188,18 @@ impl Protection {
             Protection::GcpKms => "gcp-kms://",
             Protection::AwsSecretManager => "aws-secret://",
             Protection::GcpSecretManager => "gcp-secret://",
+        }
+    }
+
+    /// Human-readable backend name used in error messages
+    #[cfg(any(feature = "longterm-aws", feature = "longterm-gcp"))]
+    pub(crate) fn name(&self) -> &'static str {
+        match self {
+            Protection::Plain => "seed",
+            Protection::AwsKms => "AWS KMS",
+            Protection::GcpKms => "GCP KMS",
+            Protection::AwsSecretManager => "AWS Secret Manager",
+            Protection::GcpSecretManager => "GCP Secret Manager",
         }
     }
 
@@ -438,10 +460,7 @@ mod tests {
 
     #[test]
     fn storage_error_display_formats() {
-        let err = StorageError::CloudBackend {
-            backend: "AWS KMS",
-            detail: "call failed".to_string(),
-        };
+        let err = StorageError::cloud("AWS KMS", "call failed");
         assert_eq!(err.to_string(), "AWS KMS error: call failed");
 
         let err = StorageError::IntegrityCheckFailed("crc32c mismatch".to_string());

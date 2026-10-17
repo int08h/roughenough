@@ -98,6 +98,7 @@
 
 - Keys, Common: decode buffers for seed values are zeroized, including
   failed decoding attempts
+- Keys: the KMS data-encryption key is zeroized after use
 
 ### Fixed
 

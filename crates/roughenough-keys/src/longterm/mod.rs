@@ -1,4 +1,6 @@
 #[cfg(feature = "longterm-aws")]
+mod aws;
+#[cfg(feature = "longterm-aws")]
 pub mod awskms;
 #[cfg(feature = "longterm-aws")]
 pub mod awssecret;
