@@ -19,7 +19,6 @@
 //!
 use std::io;
 use std::net::{SocketAddr, UdpSocket as StdUdpSocket};
-use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::{Acquire, Release};
 use std::sync::mpsc::{SyncSender, channel, sync_channel};
@@ -252,7 +251,7 @@ fn enable_logging(args: &Args) {
 }
 
 /// Creates metrics collection infrastructure and spawns collector thread
-pub fn start_metrics_thread(
+fn start_metrics_thread(
     args: &Args,
     clock: ClockSource,
     keep_running: &'static AtomicBool,
@@ -260,15 +259,13 @@ pub fn start_metrics_thread(
     let num_workers = args.num_threads as usize;
     let metrics_interval = Duration::from_secs(args.metrics_interval);
 
-    let metrics_path = args.metrics_output.as_ref().map(|metrics_path_arg| {
-        let path = Path::new(metrics_path_arg);
+    if let Some(path) = args.metrics_output.as_deref() {
         if let Err(e) = validate_metrics_directory(path) {
             error!("metrics path: {e}");
             std::process::exit(1);
         }
         info!("Metrics will be written to: {}", path.display());
-        path.to_path_buf()
-    });
+    }
 
     // Each worker pushes at most once per interval, so num_workers * 2 should be plenty
     let (sender, receiver) = sync_channel(num_workers * 2);
@@ -279,7 +276,7 @@ pub fn start_metrics_thread(
         metrics_interval,
         keep_running,
         clock,
-        metrics_path,
+        args.metrics_output.clone(),
     );
 
     let thread = std::thread::Builder::new()

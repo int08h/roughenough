@@ -4,6 +4,8 @@ use std::ops::AddAssign;
 
 use serde::{Deserialize, Serialize};
 
+use crate::MAX_BATCH_SIZE;
+
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
 pub struct NetworkMetrics {
     pub num_recv_wouldblock: usize,
@@ -70,7 +72,7 @@ pub struct ResponseMetrics {
     /// allocates nothing; serde's derive only covers arrays up to 32 elements,
     /// hence the `with` module
     #[serde(with = "batch_sizes_serde")]
-    pub batch_sizes: [u32; ResponseMetrics::MAX_BATCH_SIZE],
+    pub batch_sizes: [u32; MAX_BATCH_SIZE],
 }
 
 impl Default for ResponseMetrics {
@@ -78,7 +80,7 @@ impl Default for ResponseMetrics {
         Self {
             num_responses: 0,
             num_bytes_sent: 0,
-            batch_sizes: [0; ResponseMetrics::MAX_BATCH_SIZE],
+            batch_sizes: [0; MAX_BATCH_SIZE],
         }
     }
 }
@@ -89,10 +91,10 @@ mod batch_sizes_serde {
     use serde::de::Error;
     use serde::{Deserialize, Deserializer, Serializer};
 
-    use super::ResponseMetrics;
+    use crate::MAX_BATCH_SIZE;
 
     pub fn serialize<S: Serializer>(
-        value: &[u32; ResponseMetrics::MAX_BATCH_SIZE],
+        value: &[u32; MAX_BATCH_SIZE],
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
         serializer.collect_seq(value.iter())
@@ -100,20 +102,18 @@ mod batch_sizes_serde {
 
     pub fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
-    ) -> Result<[u32; ResponseMetrics::MAX_BATCH_SIZE], D::Error> {
+    ) -> Result<[u32; MAX_BATCH_SIZE], D::Error> {
         let values: Vec<u32> = Vec::deserialize(deserializer)?;
         values
             .try_into()
-            .map_err(|v: Vec<u32>| D::Error::invalid_length(v.len(), &"64 batch size counters"))
+            .map_err(|v: Vec<u32>| D::Error::invalid_length(v.len(), &"one counter per batch size"))
     }
 }
 
 impl ResponseMetrics {
-    pub const MAX_BATCH_SIZE: usize = 64;
-
     pub fn add_batch_size(&mut self, batch_size: u8) {
         debug_assert!(
-            batch_size > 0 && batch_size <= Self::MAX_BATCH_SIZE as u8,
+            batch_size > 0 && batch_size <= MAX_BATCH_SIZE as u8,
             "Invalid batch size: {batch_size}"
         );
 
@@ -232,7 +232,7 @@ mod tests {
         assert_eq!(metrics1.num_responses, 65);
         assert_eq!(metrics1.num_bytes_sent, 2048);
         let counts = &metrics1.batch_sizes;
-        assert_eq!(counts.len(), ResponseMetrics::MAX_BATCH_SIZE);
+        assert_eq!(counts.len(), MAX_BATCH_SIZE);
         assert_eq!(counts[5 - 1], 1);
         assert_eq!(counts[10 - 1], 2);
         assert_eq!(counts[20 - 1], 2);

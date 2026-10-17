@@ -1,5 +1,8 @@
 #![deny(unsafe_code)]
 
+/// Upper bound for `--batch-size`: the most requests one signature covers
+pub const MAX_BATCH_SIZE: usize = 64;
+
 #[doc(hidden)]
 pub mod args;
 #[doc(hidden)]

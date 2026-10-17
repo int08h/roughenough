@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use roughenough_common::clocksource::ClockSource;
 use serde::{Deserialize, Serialize};
@@ -126,7 +126,7 @@ impl MetricsAggregator {
 
     /// Report aggregated metrics
     fn report_metrics(&mut self, elapsed_secs: f64) {
-        let now = SystemTime::now();
+        let now = self.clock.epoch_seconds() as i64;
 
         let aggregated = self.take_interval_report(elapsed_secs);
 

@@ -55,11 +55,6 @@ impl KeySource {
     pub fn public_key(&self) -> PublicKey {
         self.identity.lock().unwrap().public_key()
     }
-
-    #[allow(dead_code)] // it's used by tests
-    pub fn public_key_bytes(&self) -> [u8; 32] {
-        self.identity.lock().unwrap().public_key_bytes()
-    }
 }
 
 #[cfg(test)]

@@ -2980,7 +2980,6 @@ dependencies = [
 name = "roughenough-server"
 version = "2.2.0"
 dependencies = [
- "aws-lc-rs",
  "clap",
  "divan",
  "libc",

@@ -13,6 +13,15 @@
 - Server library: `Worker::new(worker_id, responder, metrics_channel,
   metrics_interval)` takes its batch size and clock from the responder;
   `Worker::set_test_panic_flag` was removed
+- Server library: `KeySource::public_key_bytes` removed (use
+  `public_key()`)
+- Server library: `TestContext.batch_size` removed
+- Server library: `ResponseMetrics::MAX_BATCH_SIZE` moved to
+  `roughenough_server::MAX_BATCH_SIZE`
+- Server library: `Args::metrics_output` is a `PathBuf`
+- Server library: `MetricsSnapshot::new` takes an epoch timestamp and
+  `write_to_file` returns `()`
+- Server library: `PendingRequest` is private
 - Merkle: `MerkleTree::reserve` was replaced by `MerkleTree::with_capacity`
 - Keys: cargo features `longterm-aws-kms` and
   `longterm-aws-secret-manager` are replaced by `longterm-aws`;
@@ -192,6 +201,10 @@
   loads the seed it describes
 - Keys: `logging::sdk_targets` builds the log filter that gives cloud
   SDK and HTTP crates their own level
+
+### Changed
+
+- Server: metrics timestamps follow `--fixed-offset`
 
 ## [2.2.0] - 2026-10-11
 

@@ -7,6 +7,8 @@ use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser};
 use roughenough_keys::seed::BackendKind;
 
+use crate::MAX_BATCH_SIZE;
+
 #[derive(Parser, Debug)]
 #[command(version, about = "Roughenough roughtime server")]
 pub struct Args {
@@ -16,8 +18,8 @@ pub struct Args {
         long,
         value_name = "N",
         env = "ROUGHENOUGH_BATCH_SIZE",
-        default_value_t = 64,
-        value_parser = clap::value_parser!(u8).range(1..=64)
+        default_value_t = MAX_BATCH_SIZE as u8,
+        value_parser = clap::value_parser!(u8).range(1..=MAX_BATCH_SIZE as i64)
     )]
     pub batch_size: u8,
 
@@ -88,7 +90,7 @@ pub struct Args {
     pub seed_file: Option<PathBuf>,
 
     /// For testing only; never use in production.
-    #[clap(long, conflicts_with = "seed_file", default_value_t = false)]
+    #[clap(long, default_value_t = false)]
     pub insecure_zero_seed: bool,
 
     /// How to store the server's long-term identity while it's running
@@ -101,22 +103,12 @@ pub struct Args {
     )]
     pub seed_backend: BackendKind,
 
-    /// Directory path where metrics JSON files will be written
-    #[clap(
-        long,
-        value_name = "PATH",
-        env = "ROUGHENOUGH_METRICS_OUTPUT",
-        help = "Directory where JSON metrics files will be written (e.g., /var/log/roughenough)"
-    )]
-    pub metrics_output: Option<String>,
+    /// Directory where JSON metrics files will be written (e.g., /var/log/roughenough)
+    #[clap(long, value_name = "PATH", env = "ROUGHENOUGH_METRICS_OUTPUT")]
+    pub metrics_output: Option<PathBuf>,
 
-    #[clap(
-        short = 'v',
-        long,
-        conflicts_with = "quiet",
-        action = clap::ArgAction::Count,
-        help = "Output details about requests and responses; specify multiple times for more detail"
-    )]
+    /// Output details about requests and responses; specify multiple times for more detail
+    #[clap(short = 'v', long, action = clap::ArgAction::Count)]
     pub verbose: u8,
 }
 
@@ -240,6 +232,11 @@ mod tests {
             Args::try_parse_from(["prog", "--seed-file", "/tmp/seed", "--insecure-zero-seed",])
                 .is_err()
         );
+    }
+
+    #[test]
+    fn quiet_and_verbose_conflict() {
+        assert!(Args::try_parse_from(["prog", "--insecure-zero-seed", "-q", "-v"]).is_err());
     }
 
     #[test]

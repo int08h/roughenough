@@ -2,7 +2,7 @@
 
 use roughenough_common::crypto::{calculate_chained_nonce, random_bytes};
 use roughenough_protocol::ToFrame;
-use roughenough_protocol::tags::{Nonce, PublicKey};
+use roughenough_protocol::tags::Nonce;
 use roughenough_server::test_utils::TestContext;
 
 use crate::measurement::Measurement;
@@ -14,7 +14,7 @@ pub fn measurement(midpoint: u64) -> Measurement {
     let mut ctx = TestContext::new(64);
     let (req, resp) = ctx.create_interaction_pair(midpoint);
     let resp_bytes = resp.as_frame_bytes().unwrap();
-    let pubkey = PublicKey::from(ctx.key_source.public_key_bytes());
+    let pubkey = ctx.key_source.public_key();
 
     Measurement::new(
         "127.0.0.1:8000".parse().unwrap(),
@@ -39,7 +39,7 @@ pub fn hostile_measurement(midpoint: u64, radius: u32) -> Measurement {
     resp.set_srep(srep);
 
     let resp_bytes = resp.as_frame_bytes().unwrap();
-    let pubkey = PublicKey::from(ctx.key_source.public_key_bytes());
+    let pubkey = ctx.key_source.public_key();
 
     Measurement::new(
         "127.0.0.1:8000".parse().unwrap(),

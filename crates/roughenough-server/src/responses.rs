@@ -22,7 +22,7 @@ const MAX_FRAMED_RESPONSE_SIZE: usize = 700;
 const _: () = assert!(RESPONSE_BUF_SIZE >= MAX_FRAMED_RESPONSE_SIZE);
 
 #[derive(Debug)]
-pub struct PendingRequest {
+struct PendingRequest {
     nonce: Nonce,
     src_addr: SocketAddr,
     negotiated_version: ProtocolVersion,
@@ -201,12 +201,10 @@ impl ResponseHandler {
         self.key_source.public_key()
     }
 
-    #[allow(dead_code)] // used in worker metrics collection
     pub fn metrics(&self) -> ResponseMetrics {
         self.response_metrics
     }
 
-    #[allow(dead_code)] // used in worker metrics collection
     pub fn reset_metrics(&mut self) {
         self.response_metrics.reset_metrics();
     }

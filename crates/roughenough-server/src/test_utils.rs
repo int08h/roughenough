@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use mio::net::UdpSocket as MioUdpSocket;
 use roughenough_common::clocksource::ClockSource;
+use roughenough_common::crypto::random_bytes;
 use roughenough_keys::seed::MemoryBackend;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::response::Response;
@@ -21,9 +22,7 @@ use crate::requests::RequestValidator;
 use crate::responses::ResponseHandler;
 use crate::worker::Worker;
 
-#[allow(dead_code)]
 pub struct TestContext {
-    pub batch_size: u8,
     pub clock: ClockSource,
     pub response_handler: ResponseHandler,
     pub key_source: KeySource,
@@ -121,23 +120,17 @@ impl TestContext {
         let response_handler = ResponseHandler::new(batch_size, key_source.clone());
 
         TestContext {
-            batch_size,
             clock,
             response_handler,
             key_source,
         }
     }
 
-    #[allow(dead_code)]
     pub fn create_interaction_pair(&mut self, midpoint: u64) -> (Request, Response) {
-        let mut val = [0u8; 32];
-        aws_lc_rs::rand::fill(&mut val).expect("should be infallible");
-        let nonce = Nonce::from(val);
-
+        let nonce = Nonce::from(random_bytes::<32>());
         self.create_interaction_pair_with_nonce(midpoint, &nonce)
     }
 
-    #[allow(dead_code)]
     pub fn create_interaction_pair_with_nonce(
         &mut self,
         midpoint: u64,

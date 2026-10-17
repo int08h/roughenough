@@ -35,7 +35,6 @@ roughenough-common = { workspace = true }
 roughenough-keys = { workspace = true }
 roughenough-merkle = { workspace = true }
 roughenough-protocol = { workspace = true }
-aws-lc-rs = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 mio = { workspace = true, features = ["net", "os-poll"] }
 serde = { workspace = true, features = ["derive"] }
