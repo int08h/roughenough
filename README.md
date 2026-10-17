@@ -138,7 +138,7 @@ Roughtime is structured as a Cargo workspace with multiple crates:
 - **merkle** - Merkle tree implementation with Roughtime-specific tweaks
 - **server** - High-performance UDP server with async I/O and batching
 - **client** - Command-line client for querying Roughtime servers
-- **common** - Shared cryptography and encoding utilities
+- **common** - Shared cryptography and encoding utilities, and the clock source
 - **keys** - Key material handling with multiple secure storage backends
 - **reporting-server** - Web server for collecting malfeasance reports
 - **integration** - End-to-end integration tests

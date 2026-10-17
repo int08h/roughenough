@@ -28,9 +28,9 @@ use std::time::Duration;
 
 use clap::Parser;
 use mio::net::UdpSocket as MioUdpSocket;
+use roughenough_common::clocksource::ClockSource;
 use roughenough_keys::seed::{Seed, SeedBackend, try_choose_backend};
 use roughenough_keys::storage::try_load_seed_sync;
-use roughenough_protocol::util::ClockSource;
 use roughenough_server::args::{Args, SeedBackendArg};
 use roughenough_server::keysource::KeySource;
 use roughenough_server::metrics::aggregator::{MetricsAggregator, WorkerMetrics};

@@ -14,12 +14,12 @@ use std::time::{Duration, Instant};
 
 use clap::Parser;
 use mio::net::UdpSocket as MioUdpSocket;
+use roughenough_common::clocksource::ClockSource;
 use roughenough_keys::seed::MemoryBackend;
 use roughenough_protocol::cursor::ParseCursor;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::response::Response;
 use roughenough_protocol::tags::{Nonce, PublicKey};
-use roughenough_protocol::util::ClockSource;
 use roughenough_protocol::{FromFrame, ToFrame};
 use roughenough_server::args::Args;
 use roughenough_server::keysource::KeySource;

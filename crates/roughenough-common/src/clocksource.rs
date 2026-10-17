@@ -1,8 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::SeqCst;
-#[cfg(test)]
-use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ClockSource::{FixedOffset, Mock, System};
@@ -45,13 +43,6 @@ impl ClockSource {
         }
     }
 
-    /// Returns the number of seconds since the UNIX epoch.
-    /// For test use only
-    #[cfg(test)]
-    pub fn now(&self) -> u64 {
-        self.epoch_seconds()
-    }
-
     /// Sets the current time of this Mock clock.
     /// For test use only.
     pub fn set_time(&mut self, now: u64) {
@@ -61,28 +52,6 @@ impl ClockSource {
             Mock(n) => n.store(now, SeqCst),
         }
     }
-
-    /// Increases the current time of this Mock clock by the given duration.
-    /// For test use only.
-    #[cfg(test)]
-    pub fn advance(&mut self, delta: Duration) {
-        match self {
-            System => unreachable!(),
-            FixedOffset(_) => unreachable!(),
-            Mock(n) => n.store(n.load(SeqCst) + delta.as_secs(), SeqCst),
-        }
-    }
-
-    /// Decreases the current time of this Mock clock by the given duration.
-    /// For test use only.
-    #[cfg(test)]
-    pub fn decrease(&mut self, delta: Duration) {
-        match self {
-            System => unreachable!(),
-            FixedOffset(_) => unreachable!(),
-            Mock(n) => n.store(n.load(SeqCst) - delta.as_secs(), SeqCst),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -90,59 +59,53 @@ mod tests {
     use super::*;
 
     #[test]
-    fn now() {
-        let timestamp = System.now();
+    fn epoch_seconds_by_source() {
+        let timestamp = System.epoch_seconds();
 
         let clock = ClockSource::new_mock(timestamp);
-        assert_eq!(clock.now(), timestamp);
         assert_eq!(clock.epoch_seconds(), timestamp);
 
         let clock = System;
-        assert!(clock.now() >= timestamp);
         assert!(clock.epoch_seconds() >= timestamp);
 
         let clock = FixedOffset(10);
-        assert!(clock.now() >= timestamp + 10);
         assert!(clock.epoch_seconds() >= timestamp + 10);
     }
 
     #[test]
     fn time_manipulation() {
-        let now = System.now();
+        let now = System.epoch_seconds();
         let mut clock = ClockSource::new_mock(now - 1);
-        assert_eq!(clock.now(), now - 1);
+        assert_eq!(clock.epoch_seconds(), now - 1);
 
-        // set_time should override the initial time value
-        clock.set_time(now);
+        clock.set_time(now + 10);
+        assert_eq!(clock.epoch_seconds(), now + 10);
 
-        clock.advance(Duration::from_secs(10));
-        assert_eq!(clock.now(), now + 10);
-
-        clock.decrease(Duration::from_secs(5));
-        assert_eq!(clock.now(), now + 10 - 5);
+        clock.set_time(now + 5);
+        assert_eq!(clock.epoch_seconds(), now + 5);
     }
 
     #[test]
     fn cloned_clocks_share_underlying_time() {
-        let now = System.now();
+        let now = System.epoch_seconds();
         let mut clock1 = ClockSource::new_mock(now - 1);
 
         let mut clock2 = clock1.clone();
         let clock3 = clock2.clone();
-        assert_eq!(clock2.now(), now - 1);
-        assert_eq!(clock3.now(), now - 1);
+        assert_eq!(clock2.epoch_seconds(), now - 1);
+        assert_eq!(clock3.epoch_seconds(), now - 1);
 
         clock1.set_time(now);
 
-        assert_eq!(clock1.now(), now); // All three clocks
-        assert_eq!(clock2.now(), now); // see the same
-        assert_eq!(clock3.now(), now); // time value.
+        assert_eq!(clock1.epoch_seconds(), now); // All three clocks
+        assert_eq!(clock2.epoch_seconds(), now); // see the same
+        assert_eq!(clock3.epoch_seconds(), now); // time value.
 
         clock2.set_time(now + 1);
 
-        assert_eq!(clock1.now(), now + 1);
-        assert_eq!(clock2.now(), now + 1);
-        assert_eq!(clock3.now(), now + 1);
+        assert_eq!(clock1.epoch_seconds(), now + 1);
+        assert_eq!(clock2.epoch_seconds(), now + 1);
+        assert_eq!(clock3.epoch_seconds(), now + 1);
     }
 
     #[test]
@@ -150,8 +113,8 @@ mod tests {
         {
             let clock = FixedOffset(-10217);
 
-            let fixed_time = clock.now();
-            let system_time = System.now();
+            let fixed_time = clock.epoch_seconds();
+            let system_time = System.epoch_seconds();
 
             assert_eq!(fixed_time, system_time - 10217);
         }
@@ -159,8 +122,8 @@ mod tests {
         {
             let clock = FixedOffset(1337);
 
-            let system_time = System.now();
-            let fixed_time = clock.now();
+            let system_time = System.epoch_seconds();
+            let fixed_time = clock.epoch_seconds();
 
             assert_eq!(fixed_time, system_time + 1337);
         }

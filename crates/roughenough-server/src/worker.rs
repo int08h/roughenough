@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use mio::net::UdpSocket as MioUdpSocket;
 use mio::{Events, Poll, Token};
+use roughenough_common::clocksource::ClockSource;
 use roughenough_common::crypto::random_bytes;
-use roughenough_protocol::util::ClockSource;
 use tracing::info;
 
 use crate::metrics::ReportSchedule;

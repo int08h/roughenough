@@ -3,11 +3,11 @@ use std::time::Duration;
 
 use divan::counter::BytesCount;
 use divan::{AllocProfiler, Bencher};
+use roughenough_common::clocksource::ClockSource;
 use roughenough_keys::seed::MemoryBackend;
 use roughenough_protocol::ToFrame;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::tags::Nonce;
-use roughenough_protocol::util::ClockSource;
 use roughenough_server::keysource::KeySource;
 use roughenough_server::requests::RequestHandler;
 use roughenough_server::responses::ResponseHandler;

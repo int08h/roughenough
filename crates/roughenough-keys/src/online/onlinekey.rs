@@ -1,10 +1,10 @@
+use roughenough_common::clocksource::ClockSource;
 use roughenough_protocol::ToWire;
 use roughenough_protocol::cursor::ParseCursor;
 use roughenough_protocol::tags::{
     Certificate, MerkleRoot, ProtocolVersion, PublicKey, Signature, SignedResponse,
     SupportedVersions,
 };
-use roughenough_protocol::util::ClockSource;
 use zeroize::Zeroizing;
 
 use super::aws_lc_ed25519;

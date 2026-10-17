@@ -12,8 +12,8 @@ mod tests {
     use std::time::Duration;
 
     use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
+    use roughenough_common::clocksource::ClockSource;
     use roughenough_protocol::tags::{MerkleRoot, ProtocolVersion, PublicKey, SupportedVersions};
-    use roughenough_protocol::util::ClockSource;
     use roughenough_protocol::wire::ToWire;
 
     use crate::longterm::identity::LongTermIdentity;

@@ -1,11 +1,11 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use roughenough_common::clocksource::ClockSource;
 use roughenough_keys::longterm::LongTermIdentity;
 use roughenough_keys::online::onlinekey::OnlineKey;
 use roughenough_keys::seed::SeedBackend;
 use roughenough_protocol::tags::PublicKey;
-use roughenough_protocol::util::ClockSource;
 
 /// A thread-safe source of `OnlineKey`s for Workers. All generated `OnlineKey`s share a clock,
 /// validity length, and long-term identity.
@@ -66,8 +66,8 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
+    use roughenough_common::clocksource::ClockSource;
     use roughenough_keys::seed::MemoryBackend;
-    use roughenough_protocol::util::ClockSource;
 
     use crate::keysource::KeySource;
 

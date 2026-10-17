@@ -13,7 +13,7 @@ Cargo workspace with eight crates under `crates/roughenough-*`:
 - **protocol**: Core wire format, request/response types, tag definitions, TLV encoding
 - **server**: UDP server using mio for async I/O, with batching and Merkle tree signatures
 - **client**: CLI client with output formatting, validation, optional malfeasance reporting (`reporting` feature)
-- **common**: Shared cryptography and encoding utilities
+- **common**: Shared cryptography and encoding utilities, and the clock source
 - **merkle**: Merkle tree with Roughtime-specific leaf/node tweaks (SHA-512, first 32 bytes)
 - **keys**: Key material handling. Online seed backends: in-memory (default), Linux KRS, SSH agent, PKCS#11. Long-term seed protection via the `roughenough_keys` tool: AWS KMS/Secrets Manager, GCP KMS/Secret Manager
 - **reporting-server**: Web server for malfeasance reports 

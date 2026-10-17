@@ -2,8 +2,8 @@
 mod tests {
     use std::time::Duration;
 
+    use roughenough_common::clocksource::ClockSource;
     use roughenough_protocol::tags::ProtocolVersion;
-    use roughenough_protocol::util::ClockSource;
 
     use crate::longterm::LongTermIdentity;
     use crate::online::OnlineKey;

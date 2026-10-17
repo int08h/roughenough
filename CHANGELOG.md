@@ -33,6 +33,9 @@
 - Protocol: `FromWireN` is merged into `FromWire`, which now requires
   `from_wire_n(cursor, n)` and provides `from_wire(cursor)`. `from_wire`
   on a fixed-size tag now requires exactly that many remaining bytes
+- Protocol, Common: `ClockSource` moved from `roughenough_protocol::util`
+  to `roughenough_common::clocksource`; the test-only `now`, `advance`,
+  and `decrease` methods were removed
 
 ### Fixed
 

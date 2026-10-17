@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, SystemTime};
 
-use roughenough_protocol::util::ClockSource;
+use roughenough_common::clocksource::ClockSource;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
 

@@ -4,11 +4,11 @@
 
 use std::time::Duration;
 
+use roughenough_common::clocksource::ClockSource;
 use roughenough_keys::seed::MemoryBackend;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::response::Response;
 use roughenough_protocol::tags::{Nonce, ProtocolVersion};
-use roughenough_protocol::util::ClockSource;
 use roughenough_protocol::{FromFrame, ToFrame};
 
 use crate::keysource::KeySource;

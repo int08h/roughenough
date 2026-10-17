@@ -126,9 +126,9 @@ pub(crate) mod testing {
     use std::collections::VecDeque;
     use std::net::SocketAddr;
 
+    use roughenough_common::clocksource::ClockSource;
     use roughenough_protocol::request::Request;
     use roughenough_protocol::tags::ProtocolVersion;
-    use roughenough_protocol::util::ClockSource;
     use roughenough_protocol::{FromFrame, ToFrame};
     use roughenough_server::test_utils::TestContext;
 

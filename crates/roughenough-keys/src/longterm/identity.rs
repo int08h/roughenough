@@ -1,8 +1,8 @@
 use std::time::Duration;
 
+use roughenough_common::clocksource::ClockSource;
 use roughenough_protocol::ToWire;
 use roughenough_protocol::tags::{Certificate, Delegation, ProtocolVersion, PublicKey, Signature};
-use roughenough_protocol::util::ClockSource;
 
 use crate::online::onlinekey::OnlineKey;
 use crate::seed::SeedBackend;
