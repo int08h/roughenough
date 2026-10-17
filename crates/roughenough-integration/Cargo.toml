@@ -13,9 +13,8 @@ categories = ["development-tools"]
 publish = false
 
 [dependencies]
+roughenough-common = { workspace = true }
 roughenough-protocol = { workspace = true }
-aws-lc-rs = { workspace = true }
-data-encoding = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 tracing-subscriber = { workspace = true }
 tracing = { workspace = true }

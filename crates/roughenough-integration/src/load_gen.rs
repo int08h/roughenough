@@ -10,13 +10,11 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
-use data_encoding::{
-    BASE64, BASE64_NOPAD, BASE64URL, BASE64URL_NOPAD, DecodeError, DecodeKind, HEXLOWER, HEXUPPER,
-};
+use roughenough_common::crypto::random_bytes;
 use roughenough_protocol::cursor::ParseCursor;
 use roughenough_protocol::request::Request;
 use roughenough_protocol::response::Response;
-use roughenough_protocol::tags::{Nonce, PublicKey};
+use roughenough_protocol::tags::Nonce;
 use roughenough_protocol::{FromFrame, ToFrame};
 use tracing::{debug, info, warn};
 
@@ -30,67 +28,28 @@ use tracing::{debug, info, warn};
 // samples. The final report gives percentiles, not averages.
 
 #[derive(Parser, Debug, Clone)]
-#[command(version = "2.0.0", about = "Roughenough load generator")]
+#[command(version, about = "Roughenough load generator")]
 pub struct Args {
-    #[clap(
-        required = true,
-        requires = "port",
-        help = "Target hostname (e.g. roughtime.int08h.com)"
-    )]
+    /// Target hostname (e.g. roughtime.int08h.com)
     pub hostname: String,
 
-    #[clap(
-        required = true,
-        requires = "hostname",
-        help = "Target port (e.g. 5319)"
-    )]
+    /// Target port (e.g. 5319)
     pub port: u16,
 
-    #[clap(
-        short = 'n',
-        long,
-        value_name = "N",
-        required = false,
-        help = "Number of requests to send per worker",
-        default_value_t = 1
-    )]
+    /// Number of requests to send per worker
+    #[clap(short = 'n', long, value_name = "N", default_value_t = 1)]
     pub num_requests: usize,
 
-    #[clap(
-        short = 'w',
-        long,
-        value_name = "N",
-        required = false,
-        help = "Number of load generation tasks to run in parallel",
-        default_value_t = 1
-    )]
+    /// Number of load generation tasks to run in parallel
+    #[clap(short = 'w', long, value_name = "N", default_value_t = 1)]
     pub num_workers: usize,
 
-    #[clap(
-        short = 'f',
-        long,
-        value_name = "N",
-        required = false,
-        help = "Maximum requests in flight per worker",
-        default_value_t = 1
-    )]
+    /// Maximum requests in flight per worker
+    #[clap(short = 'f', long, value_name = "N", default_value_t = 1)]
     pub in_flight: usize,
 
-    #[clap(
-        short = 'k',
-        long,
-        value_name = "KEY",
-        required = false,
-        help = "Server's public key"
-    )]
-    pub public_key: Option<String>,
-
-    #[clap(
-        short = 'v',
-        long,
-        action = clap::ArgAction::Count,
-        help = "Log more details; specify multiple times for more detail"
-    )]
+    /// Log more details; specify multiple times for more detail
+    #[clap(short = 'v', long, action = clap::ArgAction::Count)]
     pub verbose: u8,
 }
 
@@ -100,7 +59,7 @@ pub struct Stats {
     pub bytes_sent: AtomicUsize,
     pub num_responses: AtomicUsize,
     pub bytes_received: AtomicUsize,
-    pub num_timeouts: AtomicUsize,
+    pub num_lost: AtomicUsize,
     pub num_errors: AtomicUsize,
     pub last_update: AtomicU64,
 }
@@ -125,7 +84,7 @@ impl Stats {
             let bytes_sent = stats.bytes_sent.load(Relaxed);
             let num_responses = stats.num_responses.load(Relaxed);
             let bytes_received = stats.bytes_received.load(Relaxed);
-            let num_timeouts = stats.num_timeouts.load(Relaxed);
+            let num_lost = stats.num_lost.load(Relaxed);
             let num_errors = stats.num_errors.load(Relaxed);
             let last_update = stats.last_update.load(Relaxed);
             stats.reset();
@@ -139,7 +98,7 @@ impl Stats {
             let resp_ps = num_responses as f64 / elapsed_secs;
             let brecv_ps = bytes_received as f64 / elapsed_secs;
             let err_ps = num_errors as f64 / elapsed_secs;
-            let to_ps = num_timeouts as f64 / elapsed_secs;
+            let lost_ps = num_lost as f64 / elapsed_secs;
 
             info!(
                 "sent: {} reqs, {:.2} reqs/s, {:.2} MiB/s",
@@ -154,8 +113,8 @@ impl Stats {
                 brecv_ps / 1024.0 / 1024.0
             );
             info!(
-                "errs: {} errs, {:.2} errs/s  to: {} timeouts, {:.2} to/s",
-                num_errors, err_ps, num_timeouts, to_ps
+                "errs: {} errs, {:.2} errs/s  lost: {} reqs, {:.2} lost/s",
+                num_errors, err_ps, num_lost, lost_ps
             );
         }
     }
@@ -165,7 +124,7 @@ impl Stats {
         self.bytes_sent.store(0, Relaxed);
         self.num_responses.store(0, Relaxed);
         self.bytes_received.store(0, Relaxed);
-        self.num_timeouts.store(0, Relaxed);
+        self.num_lost.store(0, Relaxed);
         self.num_errors.store(0, Relaxed);
         self.last_update.store(0, Relaxed);
     }
@@ -184,11 +143,6 @@ fn main() {
     let args = Args::parse();
     enable_logging(&args);
     debug!("command line: {:?}", args);
-
-    let _pub_key = args
-        .public_key
-        .as_ref()
-        .map(|key| try_decode_key(key).unwrap());
 
     let stats = Arc::new(Stats::default());
     let done = Arc::new(AtomicBool::new(false));
@@ -350,13 +304,13 @@ fn run_worker(idx: usize, args: Args, stats: Arc<Stats>) -> WorkerReport {
                 // it was (or will be) accounted through the expiry sweep
             }
             Err(e) if e.kind() == ErrorKind::TimedOut || e.kind() == ErrorKind::WouldBlock => {
-                stats.num_timeouts.fetch_add(1, Relaxed);
                 // expire the window so losses never wedge it; timeouts are
                 // losses, never RTT samples
                 let now = Instant::now();
                 let before = outstanding.len();
                 outstanding.retain(|_, sent_at| now.duration_since(*sent_at) < EXPIRY);
                 let expired = before - outstanding.len();
+                stats.num_lost.fetch_add(expired, Relaxed);
                 report.lost += expired;
                 completed += expired as u64;
             }
@@ -388,34 +342,4 @@ fn enable_logging(args: &Args) {
     }
 
     builder.init();
-}
-
-pub fn try_decode_key(encoded_key: &str) -> Result<PublicKey, DecodeError> {
-    let key = try_decode(encoded_key)?;
-
-    PublicKey::try_from(key.as_slice()).map_err(|_| DecodeError {
-        position: key.len(),
-        kind: DecodeKind::Length,
-    })
-}
-
-/// Attempt to decode `encoded_value` into a `Vec<u8>` using multiple encoding formats until
-/// one succeeds.
-pub fn try_decode(encoded_value: &str) -> Result<Vec<u8>, DecodeError> {
-    // Try all supported encodings
-    let value = HEXLOWER
-        .decode(encoded_value.as_bytes())
-        .or_else(|_| HEXUPPER.decode(encoded_value.as_bytes()))
-        .or_else(|_| BASE64.decode(encoded_value.as_bytes()))
-        .or_else(|_| BASE64_NOPAD.decode(encoded_value.as_bytes()))
-        .or_else(|_| BASE64URL.decode(encoded_value.as_bytes()))
-        .or_else(|_| BASE64URL_NOPAD.decode(encoded_value.as_bytes()))?;
-
-    Ok(value)
-}
-
-pub fn random_bytes<const N: usize>() -> [u8; N] {
-    let mut val = [0u8; N];
-    aws_lc_rs::rand::fill(&mut val).expect("should be infallible");
-    val
 }

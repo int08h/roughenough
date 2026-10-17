@@ -2894,9 +2894,8 @@ dependencies = [
 name = "roughenough-integration-test"
 version = "2.2.0"
 dependencies = [
- "aws-lc-rs",
  "clap",
- "data-encoding",
+ "roughenough-common",
  "roughenough-protocol",
  "tracing",
  "tracing-subscriber",
