@@ -9,15 +9,49 @@ use cryptoki::types::AuthPin;
 use roughenough_protocol::tags::PublicKey;
 use tracing::{debug, warn};
 
-use crate::seed::{BackendError, Seed, SeedBackend};
+use crate::seed::{BackendError, SeedBackend};
+
+/// Environment variable choosing which PKCS#11 module library to load.
+pub const PKCS11_LIBRARY_ENV: &str = "ROUGHENOUGH_PKCS11_LIBRARY";
+/// Environment variable selecting the token slot index; defaults to 0 when unset.
+pub const PKCS11_SLOT_ENV: &str = "ROUGHENOUGH_PKCS11_SLOT";
+/// Environment variable holding the user PIN for the token.
+pub const PKCS11_PIN_ENV: &str = "ROUGHENOUGH_PKCS11_PIN";
 
 pub struct Pkcs11Backend {
     session: Session,
     key_handle: ObjectHandle,
-    public_key: [u8; 32],
+    public_key: PublicKey,
 }
 
 impl Pkcs11Backend {
+    // The module path, slot, and PIN come from the environment so the server can open this
+    // backend from `--seed-backend pkcs11` alone, without backend-specific arguments.
+    pub fn from_env() -> Result<Pkcs11Backend, BackendError> {
+        let lib_path = std::env::var(PKCS11_LIBRARY_ENV).map_err(|_| {
+            BackendError::NotFound(format!(
+                "{PKCS11_LIBRARY_ENV} is not set (path to the PKCS#11 module library)"
+            ))
+        })?;
+
+        let slot_index = match std::env::var(PKCS11_SLOT_ENV) {
+            Ok(value) => value.parse::<usize>().map_err(|_| {
+                BackendError::NotSupported(format!(
+                    "{PKCS11_SLOT_ENV} must be a non-negative integer, found '{value}'"
+                ))
+            })?,
+            Err(_) => 0,
+        };
+
+        let pin = std::env::var(PKCS11_PIN_ENV).map_err(|_| {
+            BackendError::NotFound(format!(
+                "{PKCS11_PIN_ENV} is not set (user PIN for the token)"
+            ))
+        })?;
+
+        Self::new(&lib_path, slot_index, &pin)
+    }
+
     pub fn new(
         lib_path: &str,
         slot_index: usize,
@@ -42,7 +76,8 @@ impl Pkcs11Backend {
         session.login(UserType::User, Some(&pin))?;
 
         let key_handle = Self::get_key_handle(&session)?;
-        let public_key = Self::get_public_key(&session, key_handle)?;
+        let public_key_bytes = Self::get_public_key(&session, key_handle)?;
+        let public_key = PublicKey::from(public_key_bytes);
 
         Ok(Self {
             session,
@@ -133,16 +168,6 @@ fn ed25519_from_ec_point(point: &[u8]) -> Result<[u8; 32], BackendError> {
 }
 
 impl SeedBackend for Pkcs11Backend {
-    fn store_seed(&mut self, _seed: Seed) -> Result<(), BackendError> {
-        let msg = "store_seed is not supported by the SeedPkcs11 backend".to_string();
-        Err(BackendError::NotSupported(msg))
-    }
-
-    fn get_seed(&self) -> Result<Seed, BackendError> {
-        let msg = "get_seed is not supported by the SeedPkcs11 backend".to_string();
-        Err(BackendError::NotSupported(msg))
-    }
-
     fn sign(&mut self, data: &[u8]) -> Result<[u8; 64], BackendError> {
         debug!("signing {} bytes", data.len());
 
@@ -159,15 +184,7 @@ impl SeedBackend for Pkcs11Backend {
         })
     }
 
-    fn seed_len(&self) -> usize {
-        32
-    }
-
     fn public_key(&self) -> PublicKey {
-        PublicKey::from(self.public_key_bytes())
-    }
-
-    fn public_key_bytes(&self) -> [u8; 32] {
         self.public_key
     }
 }
@@ -239,6 +256,6 @@ mod test {
 
         let library_path = guess_library_path();
         let p = Pkcs11Backend::new(library_path, DEFAULT_SLOT_INDEX, DEFAULT_PIN).unwrap();
-        println!("{}", as_hex(&p.public_key_bytes()));
+        println!("{}", as_hex(p.public_key().as_ref()));
     }
 }

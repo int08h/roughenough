@@ -96,6 +96,21 @@
 - Server library: the hidden `seed_file` module moved to
   `roughenough_keys::seed_file`. Keys: `StorageError` has a new
   `SeedFile` variant for seed-file I/O and validation errors
+- Keys: `SeedBackend` now has only `sign` and `public_key`; backends take
+  the seed at construction (`MemoryBackend::new(seed)`,
+  `LinuxKrsBackend::new(seed)`, `SshAgentBackend::new(seed)`,
+  `Pkcs11Backend::from_env()`)
+- Keys: `try_choose_backend(&str)` is replaced by
+  `seed::open(BackendKind, Option<Seed>)`
+- Keys: `BackendError::Ssh` is removed; `BackendNotAvailable` carries a
+  `BackendKind`, and the new `SeedMismatch` reports a seed given to a
+  backend that takes none, or missing for one that needs it
+- Keys: the `PKCS11_*_ENV` constants exist only with the `online-pkcs11`
+  feature
+- Server: `--seed-backend` values are unchanged, and `sshagent` is
+  accepted as an alias for `ssh-agent`. Server library: `SeedBackendArg`
+  is removed; `Args::seed_backend` is a
+  `roughenough_keys::seed::BackendKind`
 
 ### Security
 

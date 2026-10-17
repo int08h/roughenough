@@ -1,8 +1,10 @@
 use std::env;
 use std::path::Path;
 
+use roughenough_protocol::tags::PublicKey;
 use ssh_agent_client_rs::Client;
-use ssh_key::{PrivateKey, PublicKey};
+use ssh_key::PrivateKey;
+use ssh_key::private::Ed25519Keypair;
 use tracing::{debug, info};
 
 use crate::seed::{BackendError, Seed, SeedBackend};
@@ -10,27 +12,37 @@ use crate::seed::{BackendError, Seed, SeedBackend};
 /// Uses `ssh-agent` to hold the private key and perform signing operations on our behalf
 pub struct SshAgentBackend {
     connection: Client,
-    public_key: Option<PublicKey>,
-    seed_len: usize,
+    agent_key: ssh_key::PublicKey,
+    public_key: PublicKey,
 }
 
 impl SshAgentBackend {
-    pub fn new(sock_path: Option<String>) -> Result<SshAgentBackend, BackendError> {
-        let path = sock_path
-            .or_else(|| env::var("SSH_AUTH_SOCK").ok())
-            .ok_or_else(|| {
-                BackendError::Ssh("no path provided and SSH_AUTH_SOCK not set".to_string())
-            })?;
+    /// Connects to the agent at `SSH_AUTH_SOCK` and adds the key derived from `seed` to it
+    pub fn new(seed: Seed) -> Result<SshAgentBackend, BackendError> {
+        let path = env::var("SSH_AUTH_SOCK").map_err(|_| {
+            BackendError::NotFound("SSH_AUTH_SOCK environment variable".to_string())
+        })?;
 
-        let client = Client::connect(Path::new(&path))
-            .map_err(|e| BackendError::Ssh(format!("failed connecting to ssh-agent: {e}")))?;
+        let mut connection = Client::connect(Path::new(&path)).map_err(|e| {
+            BackendError::NotSupported(format!("failed connecting to ssh-agent at {path}: {e}"))
+        })?;
 
         debug!("ssh-agent connected to agent: {}", path);
 
+        let keypair = Ed25519Keypair::from_seed(seed.expose());
+        let public_key = PublicKey::from(keypair.public.0);
+
+        let mut private_key = PrivateKey::from(keypair);
+        private_key.set_comment("roughenough-seed");
+
+        connection.add_identity(&private_key)?;
+
+        debug!("added {}-byte seed as private key to ssh-agent", Seed::LEN);
+
         Ok(SshAgentBackend {
-            connection: client,
-            public_key: None,
-            seed_len: 0,
+            connection,
+            agent_key: private_key.public_key().clone(),
+            public_key,
         })
     }
 }
@@ -59,66 +71,21 @@ impl Drop for SshAgentBackend {
 unsafe impl Send for SshAgentBackend {}
 
 impl SeedBackend for SshAgentBackend {
-    fn store_seed(&mut self, seed: Seed) -> Result<(), BackendError> {
-        let private_key = key_from_seed(seed.expose());
-
-        self.connection.add_identity(&private_key)?;
-        self.public_key = Some(private_key.public_key().clone());
-        self.seed_len = Seed::LEN;
-
-        debug!(
-            "added {}-byte seed as private key to ssh-agent",
-            self.seed_len
-        );
-        Ok(())
-    }
-
-    fn get_seed(&self) -> Result<Seed, BackendError> {
-        let msg = "get_seed is not supported for ssh-agent backend".to_string();
-        Err(BackendError::NotSupported(msg))
-    }
-
     fn sign(&mut self, data: &[u8]) -> Result<[u8; 64], BackendError> {
-        let key: &PublicKey = self.public_key.as_ref().expect("bug: no public key?");
-
-        let sig = self.connection.sign(key, data)?;
+        let sig = self.connection.sign(&self.agent_key, data)?;
         let sig_bytes: [u8; 64] = sig.as_bytes().try_into().expect("infallible");
 
         Ok(sig_bytes)
     }
 
-    fn seed_len(&self) -> usize {
-        self.seed_len
+    fn public_key(&self) -> PublicKey {
+        self.public_key
     }
-
-    fn public_key(&self) -> roughenough_protocol::tags::PublicKey {
-        roughenough_protocol::tags::PublicKey::from(self.public_key_bytes())
-    }
-
-    fn public_key_bytes(&self) -> [u8; 32] {
-        let edkey = self
-            .public_key
-            .as_ref()
-            .unwrap()
-            .key_data()
-            .ed25519()
-            .unwrap();
-        edkey.0.to_vec().try_into().expect("infallible")
-    }
-}
-
-fn key_from_seed(seed: &[u8; 32]) -> PrivateKey {
-    let key = ssh_key::private::Ed25519Keypair::from_seed(seed);
-
-    let mut private_key = ssh_key::PrivateKey::from(key);
-    private_key.set_comment("roughenough-seed");
-
-    private_key
 }
 
 #[cfg(test)]
 mod tests {
-    use aws_lc_rs::signature::ED25519;
+    use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
 
     use super::*;
     use crate::online::test_util::enable_logging;
@@ -129,17 +96,15 @@ mod tests {
         enable_logging();
 
         // Given an SshAgentBackend
-        let mut agent = SshAgentBackend::new(None).unwrap();
-        let seed = Seed::new_random();
-        agent.store_seed(seed).unwrap();
+        let mut agent = SshAgentBackend::new(Seed::new_random()).unwrap();
 
         // When the ssh-agent signs something
         let data = b"hello world";
         let signature = agent.sign(data).unwrap();
 
         // Then that signature validates with aws-lc-rs
-        let key = agent.public_key_bytes();
-        let pub_key = aws_lc_rs::signature::UnparsedPublicKey::new(&ED25519, key);
-        pub_key.verify(data, &signature).unwrap();
+        let public_key = agent.public_key();
+        let verifier = UnparsedPublicKey::new(&ED25519, public_key.as_array());
+        verifier.verify(data, &signature).unwrap();
     }
 }

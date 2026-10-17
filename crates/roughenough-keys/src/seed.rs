@@ -1,5 +1,6 @@
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 
+use clap::ValueEnum;
 #[cfg(all(target_os = "linux", feature = "online-linux-krs"))]
 use linux_keyutils::KeyError;
 use roughenough_protocol::tags::PublicKey;
@@ -8,19 +9,74 @@ use zeroize::Zeroize;
 #[cfg(all(target_os = "linux", feature = "online-linux-krs"))]
 pub use crate::online::linuxkrs::*;
 pub use crate::online::memory::*;
+#[cfg(feature = "online-pkcs11")]
+pub use crate::online::pkcs11::*;
 #[cfg(feature = "online-ssh-agent")]
 pub use crate::online::sshagent::*;
 
 /// Seed backends keep the seed/long-term key available for on-line use while protecting it from
-/// unauthorized access.
-#[allow(clippy::len_without_is_empty)]
+/// unauthorized access. A backend receives its seed when it is constructed and never hands it
+/// back.
 pub trait SeedBackend: Send {
-    fn store_seed(&mut self, seed: Seed) -> Result<(), BackendError>;
-    fn get_seed(&self) -> Result<Seed, BackendError>;
     fn sign(&mut self, data: &[u8]) -> Result<[u8; 64], BackendError>;
-    fn seed_len(&self) -> usize;
     fn public_key(&self) -> PublicKey;
-    fn public_key_bytes(&self) -> [u8; 32];
+}
+
+/// The seed backends a build can offer; [`open`] reports the ones compiled out.
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackendKind {
+    #[value(name = "memory")]
+    Memory,
+    #[value(name = "krs")]
+    Krs,
+    #[value(name = "ssh-agent", alias = "sshagent")]
+    SshAgent,
+    #[value(name = "pkcs11")]
+    Pkcs11,
+}
+
+impl BackendKind {
+    /// Backends that keep a key on a device generate it there and take no seed
+    pub fn takes_seed(self) -> bool {
+        !matches!(self, BackendKind::Pkcs11)
+    }
+
+    fn feature(self) -> &'static str {
+        match self {
+            // Always compiled in, so `open` never reports it unavailable
+            BackendKind::Memory => "none",
+            BackendKind::Krs => "online-linux-krs (Linux only)",
+            BackendKind::SshAgent => "online-ssh-agent",
+            BackendKind::Pkcs11 => "online-pkcs11",
+        }
+    }
+}
+
+impl Display for BackendKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let value = self
+            .to_possible_value()
+            .expect("no BackendKind variant is skipped");
+        f.write_str(value.get_name())
+    }
+}
+
+/// Construct the `kind` backend holding `seed`. Backends that keep their key on a device take
+/// `None` (see [`BackendKind::takes_seed`]); the others require `Some`.
+pub fn open(kind: BackendKind, seed: Option<Seed>) -> Result<Box<dyn SeedBackend>, BackendError> {
+    match (kind, seed) {
+        (BackendKind::Memory, Some(seed)) => Ok(Box::new(MemoryBackend::new(seed))),
+        #[cfg(all(target_os = "linux", feature = "online-linux-krs"))]
+        (BackendKind::Krs, Some(seed)) => Ok(Box::new(LinuxKrsBackend::new(seed)?)),
+        #[cfg(feature = "online-ssh-agent")]
+        (BackendKind::SshAgent, Some(seed)) => Ok(Box::new(SshAgentBackend::new(seed)?)),
+        #[cfg(feature = "online-pkcs11")]
+        (BackendKind::Pkcs11, None) => Ok(Box::new(Pkcs11Backend::from_env()?)),
+        (kind, seed) if kind.takes_seed() != seed.is_some() => {
+            Err(BackendError::SeedMismatch(kind))
+        }
+        (kind, _) => Err(BackendError::BackendNotAvailable(kind, kind.feature())),
+    }
 }
 
 /// Secret value used to derive the keypair of a LongTermIdentity.
@@ -85,8 +141,11 @@ pub enum BackendError {
     #[error("'{0}'")]
     NotSupported(String),
 
-    #[error("Seed backend '{0}' is not available (requires compile-time feature '{1}')")]
-    BackendNotAvailable(String, String),
+    #[error("Seed backend '{0}' is not available (requires compile-time feature {1})")]
+    BackendNotAvailable(BackendKind, &'static str),
+
+    #[error("Seed backend '{0}' {expects}", expects = if .0.takes_seed() { "requires a seed" } else { "does not take a seed" })]
+    SeedMismatch(BackendKind),
 
     #[cfg(all(target_os = "linux", feature = "online-linux-krs"))]
     #[error("{0}")]
@@ -96,104 +155,13 @@ pub enum BackendError {
     #[error("{0}")]
     SshAgent(#[from] ssh_agent_client_rs::Error),
 
-    #[cfg(feature = "online-ssh-agent")]
-    #[error("{0}")]
-    Ssh(String),
-
     #[cfg(feature = "online-pkcs11")]
     #[error("{0}")]
     Pkcs11(#[from] cryptoki::error::Error),
 
+    #[cfg(all(target_os = "linux", feature = "online-linux-krs"))]
     #[error("KRS worker thread disconnected unexpectedly")]
     WorkerDisconnect,
-}
-
-/// Select a backend based on a text value. Can return `BackendError` if the requested backend
-/// is not supported (feature wasn't enabled at compile-time), or a backend corresponding to
-/// the provided value doesn't exist.
-pub fn try_choose_backend(backend: &str) -> Result<Box<dyn SeedBackend>, BackendError> {
-    match backend.to_ascii_lowercase().as_str() {
-        "memory" => Ok(Box::new(MemoryBackend::new()?)),
-        "krs" => {
-            #[cfg(all(target_os = "linux", feature = "online-linux-krs"))]
-            {
-                return Ok(Box::new(LinuxKrsBackend::new()?));
-            }
-
-            #[allow(unreachable_code)] // conditional compilation
-            Err(BackendError::BackendNotAvailable(
-                "krs".to_string(),
-                "online-linux-krs".to_string(),
-            ))
-        }
-        "sshagent" | "ssh-agent" => {
-            #[cfg(feature = "online-ssh-agent")]
-            {
-                return Ok(Box::new(SshAgentBackend::new(None)?));
-            }
-
-            #[allow(unreachable_code)] // conditional compilation
-            Err(BackendError::BackendNotAvailable(
-                "ssh-agent".to_string(),
-                "online-ssh-agent".to_string(),
-            ))
-        }
-        "pkcs11" => {
-            #[cfg(feature = "online-pkcs11")]
-            {
-                return pkcs11_from_env();
-            }
-
-            #[allow(unreachable_code)] // conditional compilation
-            Err(BackendError::BackendNotAvailable(
-                "pkcs11".to_string(),
-                "online-pkcs11".to_string(),
-            ))
-        }
-        "tpm" | "yubikey" => Err(BackendError::NotSupported(format!(
-            "seed backend '{backend}' is not implemented"
-        ))),
-        other => Err(BackendError::NotSupported(format!(
-            "unknown seed backend '{other}'"
-        ))),
-    }
-}
-
-/// Environment variable choosing which PKCS#11 module library to load.
-pub const PKCS11_LIBRARY_ENV: &str = "ROUGHENOUGH_PKCS11_LIBRARY";
-/// Environment variable selecting the token slot index; defaults to 0 when unset.
-pub const PKCS11_SLOT_ENV: &str = "ROUGHENOUGH_PKCS11_SLOT";
-/// Environment variable holding the user PIN for the token.
-pub const PKCS11_PIN_ENV: &str = "ROUGHENOUGH_PKCS11_PIN";
-
-// The module path, slot, and PIN come from the environment (rather than positional
-// arguments) so backend selection stays a single string everywhere.
-#[cfg(feature = "online-pkcs11")]
-fn pkcs11_from_env() -> Result<Box<dyn SeedBackend>, BackendError> {
-    use crate::online::pkcs11::Pkcs11Backend;
-
-    let lib_path = std::env::var(PKCS11_LIBRARY_ENV).map_err(|_| {
-        BackendError::NotFound(format!(
-            "{PKCS11_LIBRARY_ENV} is not set (path to the PKCS#11 module library)"
-        ))
-    })?;
-
-    let slot_index = match std::env::var(PKCS11_SLOT_ENV) {
-        Ok(value) => value.parse::<usize>().map_err(|_| {
-            BackendError::NotSupported(format!(
-                "{PKCS11_SLOT_ENV} must be a non-negative integer, found '{value}'"
-            ))
-        })?,
-        Err(_) => 0,
-    };
-
-    let pin = std::env::var(PKCS11_PIN_ENV).map_err(|_| {
-        BackendError::NotFound(format!(
-            "{PKCS11_PIN_ENV} is not set (user PIN for the token)"
-        ))
-    })?;
-
-    Ok(Box::new(Pkcs11Backend::new(&lib_path, slot_index, &pin)?))
 }
 
 // In the future, take a look at memfd_secret  https://man.archlinux.org/man/memfd_secret.2.en
@@ -201,6 +169,8 @@ fn pkcs11_from_env() -> Result<Box<dyn SeedBackend>, BackendError> {
 
 #[cfg(test)]
 mod tests {
+    use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
+
     use super::*;
 
     #[test]
@@ -228,31 +198,32 @@ mod tests {
         assert!(!debug.contains("171"), "{debug}");
     }
 
-    // Regression: these arms were todo!()/unreachable!() panics in a pub fn
-    // taking an arbitrary &str
     #[test]
-    fn unimplemented_and_unknown_backends_return_err_not_panic() {
-        for name in ["tpm", "yubikey", "garbage", "TPM", ""] {
-            match try_choose_backend(name) {
-                Err(BackendError::NotSupported(_)) => {}
-                Ok(_) => panic!("backend '{name}' should not construct"),
-                Err(other) => panic!("backend '{name}': unexpected error {other:?}"),
-            }
+    fn open_memory_requires_seed() {
+        match open(BackendKind::Memory, None) {
+            Err(BackendError::SeedMismatch(BackendKind::Memory)) => {}
+            Ok(_) => panic!("memory backend opened without a seed"),
+            Err(other) => panic!("expected SeedMismatch, got {other:?}"),
         }
     }
 
     #[test]
-    fn memory_backend_is_always_available() {
-        assert!(try_choose_backend("memory").is_ok());
-        assert!(try_choose_backend("MEMORY").is_ok());
+    fn open_memory_signs() {
+        let mut backend = open(BackendKind::Memory, Some(Seed::new_random())).unwrap();
+
+        let data = b"hello world";
+        let signature = backend.sign(data).unwrap();
+
+        let public_key = backend.public_key();
+        let verifier = UnparsedPublicKey::new(&ED25519, public_key.as_array());
+        verifier.verify(data, &signature).unwrap();
     }
 
     #[cfg(not(feature = "online-pkcs11"))]
     #[test]
-    fn pkcs11_without_feature_is_backend_not_available() {
-        match try_choose_backend("pkcs11") {
-            Err(BackendError::BackendNotAvailable(backend, feature)) => {
-                assert_eq!(backend, "pkcs11");
+    fn open_pkcs11_without_feature_is_not_available() {
+        match open(BackendKind::Pkcs11, None) {
+            Err(BackendError::BackendNotAvailable(BackendKind::Pkcs11, feature)) => {
                 assert_eq!(feature, "online-pkcs11");
             }
             Ok(_) => panic!("expected BackendNotAvailable, got Ok"),
@@ -262,15 +233,38 @@ mod tests {
 
     #[cfg(feature = "online-pkcs11")]
     #[test]
-    fn pkcs11_with_feature_proceeds_past_selection() {
-        // Construction may fail without a token/library configured, but the
-        // selection itself must succeed: any error is NOT BackendNotAvailable
-        match try_choose_backend("pkcs11") {
-            Ok(_) => {}
-            Err(BackendError::BackendNotAvailable(backend, feature)) => {
-                panic!("pkcs11 selection failed with feature enabled: {backend} {feature}")
-            }
-            Err(_) => {}
+    fn open_pkcs11_with_feature_is_available() {
+        // Without a configured token or library construction fails, but never as unavailable
+        if let Err(BackendError::BackendNotAvailable(kind, feature)) =
+            open(BackendKind::Pkcs11, None)
+        {
+            panic!("{kind} unavailable with its feature enabled: {feature}");
         }
+    }
+
+    #[test]
+    fn open_pkcs11_with_seed_is_rejected() {
+        match open(BackendKind::Pkcs11, Some(Seed::new_random())) {
+            Err(e @ BackendError::SeedMismatch(BackendKind::Pkcs11)) => {
+                assert_eq!(e.to_string(), "Seed backend 'pkcs11' does not take a seed");
+            }
+            Ok(_) => panic!("pkcs11 backend accepted a seed"),
+            Err(other) => panic!("expected SeedMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn backend_kind_parses_names() {
+        for (name, kind) in [
+            ("memory", BackendKind::Memory),
+            ("krs", BackendKind::Krs),
+            ("ssh-agent", BackendKind::SshAgent),
+            ("sshagent", BackendKind::SshAgent),
+            ("pkcs11", BackendKind::Pkcs11),
+        ] {
+            assert_eq!(BackendKind::from_str(name, true), Ok(kind), "{name}");
+        }
+        assert!(BackendKind::from_str("tpm", true).is_err());
+        assert_eq!(BackendKind::SshAgent.to_string(), "ssh-agent");
     }
 }

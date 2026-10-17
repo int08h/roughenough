@@ -3,102 +3,64 @@ use roughenough_protocol::tags::PublicKey;
 
 use crate::seed::{BackendError, Seed, SeedBackend};
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct MemoryBackend {
-    seed: Option<Seed>,
-    public_key: Option<PublicKey>,
+    seed: Seed,
+    public_key: PublicKey,
 }
 
 impl MemoryBackend {
-    pub fn new() -> Result<MemoryBackend, BackendError> {
-        Ok(Self {
-            seed: None,
-            public_key: None,
-        })
+    pub fn new(seed: Seed) -> MemoryBackend {
+        let public_key = PublicKey::try_from(keypair(&seed).public_key().as_ref())
+            .expect("Ed25519 public keys are 32 bytes");
+
+        MemoryBackend { seed, public_key }
     }
 
     pub fn from_value(value: &[u8; 32]) -> MemoryBackend {
         let seed = Seed::from_bytes(value);
-        let mut backend = MemoryBackend::default();
-        backend.store_seed(seed).expect("bug: seed is valid");
-
-        backend
+        MemoryBackend::new(seed)
     }
 
     pub fn from_random() -> MemoryBackend {
         let seed = Seed::new_random();
-        let mut backend = MemoryBackend::default();
-        backend.store_seed(seed).expect("bug: seed is valid");
-
-        backend
+        MemoryBackend::new(seed)
     }
 }
 
+fn keypair(seed: &Seed) -> Ed25519KeyPair {
+    Ed25519KeyPair::from_seed_unchecked(seed.expose()).expect("any 32-byte seed is valid")
+}
+
 impl SeedBackend for MemoryBackend {
-    fn store_seed(&mut self, seed: Seed) -> Result<(), BackendError> {
-        let keypair = Ed25519KeyPair::from_seed_unchecked(seed.expose()).unwrap();
-        let public_key = PublicKey::try_from(keypair.public_key().as_ref())
-            .expect("Ed25519 public keys are 32 bytes");
-
-        self.public_key = Some(public_key);
-        self.seed = Some(seed);
-
-        Ok(())
-    }
-
-    fn get_seed(&self) -> Result<Seed, BackendError> {
-        let seed = self
-            .seed
-            .as_ref()
-            .unwrap_or_else(|| panic!("bug: no seed?"));
-        Ok(Seed::from_bytes(seed.expose()))
-    }
-
     fn sign(&mut self, data: &[u8]) -> Result<[u8; 64], BackendError> {
-        let signature = {
-            let seed = self.get_seed()?;
-            let keypair = Ed25519KeyPair::from_seed_unchecked(seed.expose()).unwrap();
-            keypair.sign(data)
-        };
+        let signature = keypair(&self.seed).sign(data);
         Ok(signature.as_ref().try_into().expect("infallible"))
     }
 
-    fn seed_len(&self) -> usize {
-        match &self.seed {
-            Some(_) => Seed::LEN,
-            None => 0,
-        }
-    }
-
     fn public_key(&self) -> PublicKey {
-        *self.public_key.as_ref().unwrap()
-    }
-
-    fn public_key_bytes(&self) -> [u8; 32] {
-        self.public_key().as_ref().try_into().expect("infallible")
+        self.public_key
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use aws_lc_rs::signature::ED25519;
+    use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
 
     use super::*;
 
     #[test]
     fn sign_verify_roundtrip() {
         // Given a MemoryBackend
-        let mut backend = MemoryBackend::new().unwrap();
-        let seed = Seed::new_random();
-        backend.store_seed(seed).unwrap();
+        let mut backend = MemoryBackend::new(Seed::new_random());
 
         // When the backend signs something
         let data = b"hello world";
         let signature = backend.sign(data).unwrap();
 
         // Then that signature validates with aws-lc-rs
-        let key_bytes = backend.public_key_bytes();
-        let pub_key = aws_lc_rs::signature::UnparsedPublicKey::new(&ED25519, key_bytes);
-        pub_key.verify(data, &signature).unwrap();
+        let public_key = backend.public_key();
+        let verifier = UnparsedPublicKey::new(&ED25519, public_key.as_array());
+        verifier.verify(data, &signature).unwrap();
     }
 }

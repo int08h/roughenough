@@ -50,8 +50,9 @@ pub mod krs_backend {
     enum Request {
         StoreSeed {
             seed: Seed,
-            response_tx: Sender<Result<StoreSeedResponse, BackendError>>,
+            response_tx: Sender<Result<(), BackendError>>,
         },
+        #[cfg(test)]
         GetSeed {
             response_tx: Sender<Result<Seed, BackendError>>,
         },
@@ -62,12 +63,6 @@ pub mod krs_backend {
         Shutdown,
     }
 
-    /// Response for store_seed operation
-    struct StoreSeedResponse {
-        public_key: PublicKey,
-        seed_len: usize,
-    }
-
     /// Linux Key Retention Service (KRS) backend that stores Ed25519 seed material in the kernel's
     /// thread-specific keyring. Since KeyRing is inherently thread-local, this implementation uses
     /// a dedicated worker thread that owns the KeyRing and processes all operations via mpsc channels.
@@ -76,28 +71,61 @@ pub mod krs_backend {
     pub struct LinuxKrsBackend {
         request_tx: Sender<Request>,
         worker_handle: Option<thread::JoinHandle<()>>,
-        public_key: Option<PublicKey>,
-        seed_len: usize,
+        public_key: PublicKey,
     }
 
     impl LinuxKrsBackend {
         const KEY_NAME: &'static str = "roughenough-seed";
 
-        pub fn new() -> Result<LinuxKrsBackend, BackendError> {
+        /// Spawns the worker thread and stores `seed` in its keyring
+        pub fn new(seed: Seed) -> Result<LinuxKrsBackend, BackendError> {
+            let public_key = PublicKey::try_from(
+                Ed25519KeyPair::from_seed_unchecked(seed.expose())
+                    .expect("any 32-byte seed is valid")
+                    .public_key()
+                    .as_ref(),
+            )
+            .expect("Ed25519 public keys are 32 bytes");
+
             let (request_tx, request_rx) = mpsc::channel();
 
             let worker_handle = thread::spawn(move || {
                 Self::worker_thread(request_rx);
             });
 
-            debug!("initialized linux KRS backend");
-
-            Ok(LinuxKrsBackend {
+            // Built before storing the seed so that a failed store still shuts down and joins
+            // the worker thread through Drop
+            let backend = LinuxKrsBackend {
                 request_tx,
                 worker_handle: Some(worker_handle),
-                public_key: None,
-                seed_len: 0,
-            })
+                public_key,
+            };
+
+            let (response_tx, response_rx) = mpsc::channel();
+            backend
+                .request_tx
+                .send(Request::StoreSeed { seed, response_tx })
+                .map_err(|_| BackendError::WorkerDisconnect)?;
+
+            response_rx
+                .recv()
+                .map_err(|_| BackendError::WorkerDisconnect)??;
+
+            debug!("initialized linux KRS backend");
+
+            Ok(backend)
+        }
+
+        #[cfg(test)]
+        fn read_seed(&self) -> Result<Seed, BackendError> {
+            let (response_tx, response_rx) = mpsc::channel();
+            self.request_tx
+                .send(Request::GetSeed { response_tx })
+                .map_err(|_| BackendError::WorkerDisconnect)?;
+
+            response_rx
+                .recv()
+                .map_err(|_| BackendError::WorkerDisconnect)?
         }
 
         /// Worker thread that owns the KeyRing and processes requests
@@ -135,6 +163,7 @@ pub mod krs_backend {
                         let result = Self::handle_store_seed(&thread_key_ring, seed);
                         let _ = response_tx.send(result);
                     }
+                    #[cfg(test)]
                     Request::GetSeed { response_tx } => {
                         let result = Self::handle_get_seed(&thread_key_ring);
                         let _ = response_tx.send(result);
@@ -158,16 +187,12 @@ pub mod krs_backend {
             }
         }
 
-        fn handle_store_seed(
-            thread_key_ring: &KeyRing,
-            seed: Seed,
-        ) -> Result<StoreSeedResponse, BackendError> {
+        fn handle_store_seed(thread_key_ring: &KeyRing, seed: Seed) -> Result<(), BackendError> {
             // Check if key already exists
             if thread_key_ring.search(Self::KEY_NAME).is_ok() {
                 panic!("{} already exists somehow?", Self::KEY_NAME);
             }
 
-            let seed_len = Seed::LEN;
             let krs_key = thread_key_ring.add_key(Self::KEY_NAME, seed.expose())?;
 
             // Set restrictive permissions
@@ -177,17 +202,9 @@ pub mod krs_backend {
                 .build();
             krs_key.set_perms(permissions)?;
 
-            // Derive public key
-            let keypair = Ed25519KeyPair::from_seed_unchecked(seed.expose()).unwrap();
-            let public_key = PublicKey::try_from(keypair.public_key().as_ref())
-                .expect("Ed25519 public keys are 32 bytes");
+            debug!("stored {}-byte seed as {:?}", Seed::LEN, krs_key.get_id());
 
-            debug!("stored {}-byte seed as {:?}", seed_len, krs_key.get_id());
-
-            Ok(StoreSeedResponse {
-                public_key,
-                seed_len,
-            })
+            Ok(())
         }
 
         fn handle_get_seed(thread_key_ring: &KeyRing) -> Result<Seed, BackendError> {
@@ -230,34 +247,6 @@ pub mod krs_backend {
     }
 
     impl SeedBackend for LinuxKrsBackend {
-        fn store_seed(&mut self, seed: Seed) -> Result<(), BackendError> {
-            let (response_tx, response_rx) = mpsc::channel();
-            self.request_tx
-                .send(Request::StoreSeed { seed, response_tx })
-                .map_err(|_| BackendError::WorkerDisconnect)?;
-
-            let response = response_rx
-                .recv()
-                .map_err(|_| BackendError::WorkerDisconnect)??;
-
-            // Update local state
-            self.public_key = Some(response.public_key);
-            self.seed_len = response.seed_len;
-
-            Ok(())
-        }
-
-        fn get_seed(&self) -> Result<Seed, BackendError> {
-            let (response_tx, response_rx) = mpsc::channel();
-            self.request_tx
-                .send(Request::GetSeed { response_tx })
-                .map_err(|_| BackendError::WorkerDisconnect)?;
-
-            response_rx
-                .recv()
-                .map_err(|_| BackendError::WorkerDisconnect)?
-        }
-
         fn sign(&mut self, data: &[u8]) -> Result<[u8; 64], BackendError> {
             let (response_tx, response_rx) = mpsc::channel();
             self.request_tx
@@ -272,16 +261,8 @@ pub mod krs_backend {
                 .map_err(|_| BackendError::WorkerDisconnect)?
         }
 
-        fn seed_len(&self) -> usize {
-            self.seed_len
-        }
-
         fn public_key(&self) -> PublicKey {
-            *self.public_key.as_ref().unwrap()
-        }
-
-        fn public_key_bytes(&self) -> [u8; 32] {
-            self.public_key().as_ref().try_into().expect("infallible")
+            self.public_key
         }
     }
 
@@ -305,7 +286,7 @@ pub mod krs_backend {
 
     #[cfg(test)]
     mod tests {
-        use aws_lc_rs::signature::ED25519;
+        use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
 
         use super::*;
         use crate::online::test_util::enable_logging;
@@ -316,23 +297,19 @@ pub mod krs_backend {
             enable_logging();
 
             // Should succeed
-            LinuxKrsBackend::new().unwrap();
+            LinuxKrsBackend::new(Seed::new_random()).unwrap();
         }
 
         #[test]
         fn read_what_we_stored_roundtrip() {
             enable_logging();
 
-            // given a LinuxKrsBackend instance
-            let mut backend = LinuxKrsBackend::new().unwrap();
-            assert!(backend.get_seed().is_err());
-
-            // when we store a seed
+            // given a LinuxKrsBackend instance created with a seed
             let value = [99u8; 32];
-            backend.store_seed(Seed::from_bytes(&value)).unwrap();
+            let backend = LinuxKrsBackend::new(Seed::from_bytes(&value)).unwrap();
 
             // then we can read it back
-            let read = backend.get_seed().unwrap();
+            let read = backend.read_seed().unwrap();
             assert_eq!(read.expose(), value.as_slice());
         }
 
@@ -340,53 +317,37 @@ pub mod krs_backend {
         fn confirm_drop_clears_the_seed_key() {
             enable_logging();
 
-            // given a LinuxKrsBackend instance
-            let mut backend = LinuxKrsBackend::new().unwrap();
-
-            // when we store a seed
+            // given a LinuxKrsBackend instance created with a seed
             let value = [123u8; 32];
-            backend.store_seed(Seed::from_bytes(&value)).unwrap();
+            let backend = LinuxKrsBackend::new(Seed::from_bytes(&value)).unwrap();
 
             // and we confirmed it's there
-            let read = backend.get_seed().unwrap();
+            let read = backend.read_seed().unwrap();
             assert_eq!(read.expose(), value.as_slice());
 
             // When we drop the backend, it should clear the keyring
             drop(backend);
 
-            // Create a new backend - it should succeed because the previous
-            // backend cleared the key on drop
-            let mut new_backend = LinuxKrsBackend::new().unwrap();
-
-            // The new backend should not have any seed stored
-            match new_backend.get_seed() {
-                Err(BackendError::NotFound(_)) => {} // success, no seed stored
-                Ok(_) => panic!("seed still exists after drop"),
-                Err(e) => panic!("unexpected error: {e}"),
-            }
-
-            // And we should be able to store a new seed
+            // A new backend with a different seed reads back its own seed, not the old one
             let new_value = [99u8; 32];
-            new_backend
-                .store_seed(Seed::from_bytes(&new_value))
-                .unwrap();
+            let new_backend = LinuxKrsBackend::new(Seed::from_bytes(&new_value)).unwrap();
+            let read = new_backend.read_seed().unwrap();
+            assert_eq!(read.expose(), new_value.as_slice());
         }
 
         #[test]
         fn sign_verify_roundtrip() {
             // Given a LinuxKrsBackend
-            let mut backend = LinuxKrsBackend::new().unwrap();
-            let seed = Seed::new_random();
-            backend.store_seed(seed).unwrap();
+            let mut backend = LinuxKrsBackend::new(Seed::new_random()).unwrap();
 
             // When the backend signs something
             let data = b"hello world";
             let signature = backend.sign(data).unwrap();
 
             // Then that signature validates with aws-lc-rs
-            let key_bytes = backend.public_key_bytes();
-            let pub_key = aws_lc_rs::signature::UnparsedPublicKey::new(&ED25519, key_bytes);
-            pub_key.verify(data, &signature).unwrap();
+            let public_key = backend.public_key();
+            let verifier = UnparsedPublicKey::new(&ED25519, public_key.as_array());
+            verifier.verify(data, &signature).unwrap();
         }
 
         #[test]
@@ -394,10 +355,10 @@ pub mod krs_backend {
             enable_logging();
             use std::sync::{Arc, Mutex};
 
-            // Create a backend and store a seed
-            let backend = Arc::new(Mutex::new(LinuxKrsBackend::new().unwrap()));
-            let seed = Seed::new_random();
-            backend.lock().unwrap().store_seed(seed).unwrap();
+            // Create a backend holding a seed
+            let backend = Arc::new(Mutex::new(
+                LinuxKrsBackend::new(Seed::new_random()).unwrap(),
+            ));
 
             // Test concurrent access from multiple threads
             let mut handles = vec![];
@@ -408,9 +369,6 @@ pub mod krs_backend {
                 let handle = thread::spawn(move || {
                     // Each thread performs multiple operations
                     for j in 0..3 {
-                        // Get seed
-                        backend_clone.lock().unwrap().get_seed().unwrap();
-
                         // Sign data
                         let data = format!("thread {i} iteration {j}");
                         let signature =
@@ -418,10 +376,9 @@ pub mod krs_backend {
                         assert_eq!(signature.len(), 64);
 
                         // Verify signature
-                        let key_bytes = backend_clone.lock().unwrap().public_key_bytes();
-                        let pub_key =
-                            aws_lc_rs::signature::UnparsedPublicKey::new(&ED25519, key_bytes);
-                        pub_key.verify(data.as_bytes(), &signature).unwrap();
+                        let public_key = backend_clone.lock().unwrap().public_key();
+                        let verifier = UnparsedPublicKey::new(&ED25519, public_key.as_array());
+                        verifier.verify(data.as_bytes(), &signature).unwrap();
                     }
                 });
                 handles.push(handle);
@@ -438,14 +395,12 @@ pub mod krs_backend {
             enable_logging();
 
             // Create backend on main thread
-            let mut backend = LinuxKrsBackend::new().unwrap();
-            let seed = Seed::new_random();
-            backend.store_seed(seed).unwrap();
+            let mut backend = LinuxKrsBackend::new(Seed::new_random()).unwrap();
 
             // Move backend to another thread and perform operations
             let handle = thread::spawn(move || {
                 // These operations should work even though we're on a different thread
-                backend.get_seed().unwrap();
+                backend.read_seed().unwrap();
 
                 let data = b"cross-thread test";
                 let signature = backend.sign(data).unwrap();
@@ -456,7 +411,7 @@ pub mod krs_backend {
 
             // Get backend back and verify it still works
             let backend = handle.join().unwrap();
-            backend.get_seed().unwrap();
+            backend.read_seed().unwrap();
         }
     }
 }

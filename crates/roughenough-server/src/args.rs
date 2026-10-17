@@ -1,10 +1,11 @@
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::Debug;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::error::ErrorKind;
-use clap::{CommandFactory, Parser, ValueEnum};
+use clap::{CommandFactory, Parser};
+use roughenough_keys::seed::BackendKind;
 
 #[derive(Parser, Debug)]
 #[command(version, about = "Roughenough roughtime server")]
@@ -96,9 +97,9 @@ pub struct Args {
         long,
         value_name = "TYPE",
         env = "ROUGHENOUGH_SEED_BACKEND",
-        default_value_t = SeedBackendArg::Memory
+        default_value_t = BackendKind::Memory
     )]
-    pub seed_backend: SeedBackendArg,
+    pub seed_backend: BackendKind,
 
     /// Directory path where metrics JSON files will be written
     #[clap(
@@ -119,25 +120,6 @@ pub struct Args {
     pub verbose: u8,
 }
 
-#[derive(ValueEnum, Debug, Clone, Copy)]
-pub enum SeedBackendArg {
-    #[value(name = "memory")]
-    Memory,
-    #[value(name = "krs")]
-    Krs,
-    #[value(name = "ssh-agent")]
-    SshAgent,
-    #[value(name = "pkcs11")]
-    Pkcs11,
-}
-
-impl Display for SeedBackendArg {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let value = self.to_possible_value().unwrap();
-        f.write_str(value.get_name())
-    }
-}
-
 impl Args {
     pub fn udp_socket_addr(&self) -> SocketAddr {
         SocketAddr::new(self.interface, self.port)
@@ -152,15 +134,17 @@ impl Args {
     /// needs one. clap cannot express "required unless --seed-backend is pkcs11" declaratively.
     pub fn validate_seed_source(&self) -> Result<(), clap::Error> {
         let has_seed = self.seed_file.is_some() || self.insecure_zero_seed;
-        let takes_seed = !matches!(self.seed_backend, SeedBackendArg::Pkcs11);
-        match (takes_seed, has_seed) {
+        match (self.seed_backend.takes_seed(), has_seed) {
             (true, false) => Err(Args::command().error(
                 ErrorKind::MissingRequiredArgument,
                 "a seed is required: pass --seed-file <PATH> (or --insecure-zero-seed for testing)",
             )),
             (false, true) => Err(Args::command().error(
                 ErrorKind::ArgumentConflict,
-                "--seed-file and --insecure-zero-seed are not used with --seed-backend pkcs11; the token holds the long-term key",
+                format!(
+                    "--seed-file and --insecure-zero-seed are not used with --seed-backend {}; the token holds the long-term key",
+                    self.seed_backend
+                ),
             )),
             _ => Ok(()),
         }
@@ -269,12 +253,43 @@ mod tests {
         let args = Args::try_parse_from(["prog", "--seed-backend", "pkcs11"]).unwrap();
         assert!(args.validate_seed_source().is_ok());
 
-        let args =
-            Args::try_parse_from(["prog", "--seed-backend", "pkcs11", "--insecure-zero-seed"])
-                .unwrap();
-        assert_eq!(
-            args.validate_seed_source().unwrap_err().kind(),
-            ErrorKind::ArgumentConflict
+        for seed_source in [
+            &["--insecure-zero-seed"][..],
+            &["--seed-file", "/tmp/seed"][..],
+        ] {
+            let mut argv = vec!["prog", "--seed-backend", "pkcs11"];
+            argv.extend(seed_source);
+            let args = Args::try_parse_from(&argv).unwrap();
+            assert_eq!(args.seed_backend, BackendKind::Pkcs11);
+            assert_eq!(
+                args.validate_seed_source().unwrap_err().kind(),
+                ErrorKind::ArgumentConflict,
+                "{seed_source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn seed_backend_names_and_alias_parse() {
+        let args = Args::try_parse_from(["prog", "--insecure-zero-seed"]).unwrap();
+        assert_eq!(args.seed_backend, BackendKind::Memory);
+
+        for (name, kind) in [
+            ("memory", BackendKind::Memory),
+            ("krs", BackendKind::Krs),
+            ("ssh-agent", BackendKind::SshAgent),
+            ("sshagent", BackendKind::SshAgent),
+            ("pkcs11", BackendKind::Pkcs11),
+        ] {
+            let args =
+                Args::try_parse_from(["prog", "--insecure-zero-seed", "--seed-backend", name])
+                    .unwrap();
+            assert_eq!(args.seed_backend, kind, "{name}");
+        }
+
+        assert!(
+            Args::try_parse_from(["prog", "--insecure-zero-seed", "--seed-backend", "tpm"])
+                .is_err()
         );
     }
 

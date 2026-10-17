@@ -9,24 +9,22 @@ use crate::seed::SeedBackend;
 
 /// The server's long-term Ed25519 identity.
 pub struct LongTermIdentity {
-    seed: Box<dyn SeedBackend>,
+    backend: Box<dyn SeedBackend>,
 }
 
 impl LongTermIdentity {
-    pub fn new(seed: Box<dyn SeedBackend>) -> LongTermIdentity {
-        assert_eq!(seed.seed_len(), 32, "seed must be 32 bytes long");
-
-        LongTermIdentity { seed }
+    pub fn new(backend: Box<dyn SeedBackend>) -> LongTermIdentity {
+        LongTermIdentity { backend }
     }
 
     /// Retrieves the raw public key bytes associated with this LongTermIdentity.
     pub fn public_key_bytes(&self) -> [u8; 32] {
-        self.seed.public_key_bytes()
+        *self.backend.public_key().as_array()
     }
 
     /// Retrieves the public key associated with this LongTermIdentity.
     pub fn public_key(&self) -> PublicKey {
-        self.seed.public_key()
+        self.backend.public_key()
     }
 
     /// Creates a new [`OnlineKey`] and delegation certificate (CERT) signed by the long-term key.
@@ -42,15 +40,14 @@ impl LongTermIdentity {
     pub fn make_online_key(&mut self, clock: &ClockSource, validity_length: Duration) -> OnlineKey {
         let now = clock.epoch_seconds();
         let mut olk = OnlineKey::new(clock.clone());
-        let pubkey = PublicKey::from(olk.public_key_bytes());
-        let dele = Delegation::new(pubkey, now, validity_length);
+        let dele = Delegation::new(olk.public_key(), now, validity_length);
 
         let dele_prefix = ProtocolVersion::RFC.dele_prefix();
         let mut to_sign = dele_prefix.to_vec();
         to_sign.extend_from_slice(&dele.as_bytes().expect("DELE serialization should not fail"));
 
         let dele_sig: [u8; 64] = self
-            .seed
+            .backend
             .sign(&to_sign)
             .expect("should not fail; can't continue if it does");
         let sig = Signature::from(dele_sig);

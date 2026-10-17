@@ -29,9 +29,9 @@ use std::time::Duration;
 use clap::Parser;
 use mio::net::UdpSocket as MioUdpSocket;
 use roughenough_common::clocksource::ClockSource;
-use roughenough_keys::seed::{Seed, SeedBackend, try_choose_backend};
+use roughenough_keys::seed::{self, Seed, SeedBackend};
 use roughenough_keys::storage::load_seed_file;
-use roughenough_server::args::{Args, SeedBackendArg};
+use roughenough_server::args::Args;
 use roughenough_server::keysource::KeySource;
 use roughenough_server::metrics::aggregator::{MetricsAggregator, WorkerMetrics};
 use roughenough_server::metrics::snapshot::validate_metrics_directory;
@@ -73,8 +73,8 @@ fn main() {
     );
 
     let clock = choose_clock(&args);
-    let seed = load_seed(&args);
-    let key_source = KeySource::new(seed, clock.clone(), args.rotation_interval());
+    let backend = open_seed_backend(&args);
+    let key_source = KeySource::new(backend, clock.clone(), args.rotation_interval());
     let worker_config = WorkerConfig {
         socket_addr: args.udp_socket_addr(),
         batch_size: args.batch_size as usize,
@@ -139,50 +139,33 @@ fn main() {
     info!("Server finished");
 }
 
-fn load_seed(args: &Args) -> Box<dyn SeedBackend> {
-    if matches!(args.seed_backend, SeedBackendArg::Pkcs11) {
-        return match try_choose_backend(&args.seed_backend.to_string()) {
-            Ok(backend) => backend,
-            Err(e) => {
-                error!("choosing seed backend: {e}");
-                std::process::exit(1);
-            }
-        };
-    }
-
-    let seed = match &args.seed_file {
-        None => {
-            warn!("Using all-zero seed because --insecure-zero-seed was specified");
-            Seed::from_bytes(&[0u8; 32])
-        }
-        Some(path) => match load_seed_file(path) {
-            Ok(seed) => seed,
+fn open_seed_backend(args: &Args) -> Box<dyn SeedBackend> {
+    // validate_seed_source already ran, so a backend that takes a seed has exactly one source
+    let seed = if !args.seed_backend.takes_seed() {
+        None
+    } else if let Some(path) = &args.seed_file {
+        match load_seed_file(path) {
+            Ok(seed) => Some(seed),
             Err(e) => {
                 error!("loading seed from '{}': {e}", path.display());
                 std::process::exit(1);
             }
-        },
+        }
+    } else {
+        warn!("Using all-zero seed because --insecure-zero-seed was specified");
+        Some(Seed::from_bytes(&[0u8; 32]))
     };
 
-    let mut backend = match try_choose_backend(&args.seed_backend.to_string()) {
-        Ok(backend) => backend,
+    match seed::open(args.seed_backend, seed) {
+        Ok(backend) => {
+            info!("Opened '{}' seed backend", args.seed_backend);
+            backend
+        }
         Err(e) => {
-            error!("choosing seed backend: {e}");
+            error!("opening '{}' seed backend: {e}", args.seed_backend);
             std::process::exit(1);
         }
-    };
-
-    info!(
-        "Loaded {}-byte seed into '{}' backend",
-        Seed::LEN,
-        &args.seed_backend
-    );
-
-    if let Err(e) = backend.store_seed(seed) {
-        error!("storing seed in '{}' backend: {e}", &args.seed_backend);
-        std::process::exit(1);
     }
-    backend
 }
 
 fn choose_clock(args: &Args) -> ClockSource {
