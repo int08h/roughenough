@@ -18,7 +18,7 @@ use crate::{Client, ClientError};
 /// confirmed to be less than or equal to `MIDP_j+RADI_j`. If all checks pass, the times are
 /// consistent with causal ordering.
 ///
-/// See also [`validate_causality`](crate::validation::ResponseValidator::validate_causality).
+/// See also [`CausalityViolation::find`](crate::validation::CausalityViolation::find).
 pub struct MeasurementSequence {
     clients: Vec<Client>,
 }
@@ -31,7 +31,7 @@ impl MeasurementSequence {
     /// Run chained measurements across all servers for the specified number of rounds, returning
     /// all measurements collected during the run.
     ///
-    /// The returned [`Measurement`]s can be validated using [`validate_causality`](crate::validation::ResponseValidator::validate_causality).
+    /// The returned [`Measurement`]s can be validated using [`CausalityViolation::find`](crate::validation::CausalityViolation::find).
     pub fn run(&self, rounds: usize) -> Result<Vec<Measurement>, ClientError> {
         for client in &self.clients {
             if client.public_key().is_none() {

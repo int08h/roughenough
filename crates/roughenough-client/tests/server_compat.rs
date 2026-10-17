@@ -15,10 +15,8 @@ fn validate_response(
     response_bytes: &[u8],
     pub_key: PublicKey,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let response = Response::from_frame_bytes(response_bytes)?;
-
-    let validator = ResponseValidator::new_with_key(pub_key);
-    validator.validate(request_bytes, response_bytes, &response)?;
+    let validator = ResponseValidator::new(Some(pub_key));
+    validator.validate(request_bytes, response_bytes)?;
     Ok(())
 }
 

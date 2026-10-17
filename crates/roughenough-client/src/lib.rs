@@ -16,6 +16,6 @@ pub mod transport;
 pub mod validation;
 
 pub use reporting::{MalfeasanceReport, REPORT_MEDIA_TYPE, ReportEntry};
-pub use validation::*;
+pub use validation::{CausalityViolation, ResponseValidator, ValidationError};
 
 pub use crate::client::*;

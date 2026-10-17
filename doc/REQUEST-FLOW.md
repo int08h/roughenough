@@ -77,7 +77,7 @@ sequenceDiagram
     C->>C: check_midpoint<br/>(MINT <= MIDP <= MAXT)
     C->>C: check_merkle_proof<br/>(root_from_paths(INDX, my_request, PATH) == ROOT)
     C->>C: check_srep_signature<br/>(DELE.PUBK signed SREP)
-    Note over C: returns authenticated MIDP<br/>paired with RADI -> Measurement
+    Note over C: returns the Response parsed from<br/>the signed bytes -> Measurement
 ```
 
 ## Trust chain verified by the client

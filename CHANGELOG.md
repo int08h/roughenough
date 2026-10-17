@@ -36,6 +36,16 @@
 - Protocol, Common: `ClockSource` moved from `roughenough_protocol::util`
   to `roughenough_common::clocksource`; the test-only `now`, `advance`,
   and `decrease` methods were removed
+- Client API: `ResponseValidator::validate` takes `(request_bytes,
+  response_bytes)` and returns the parsed `Response`, so the checked
+  fields always come from the signed bytes
+- Client API: `ResponseValidator::new` takes `Option<PublicKey>`;
+  `new_with_key` is removed
+- Client API: `ResponseValidator::validate_causality` is now
+  `CausalityViolation::find`
+- Client API: malformed responses surface as
+  `ClientError::ValidationFailed(InvalidMessage)` instead of
+  `ClientError::BadResponse`
 
 ### Fixed
 
@@ -70,6 +80,8 @@
 - Client: `test-utils` feature exposing shared test fixtures
   (`roughenough_client::test_utils`) for other crates' tests
 - Protocol: all fixed-size tags gain `as_array()`
+- Common: `crypto::verify_with_context` verifies an Ed25519 signature over
+  a context prefix and message
 
 ## [2.2.0] - 2026-10-11
 

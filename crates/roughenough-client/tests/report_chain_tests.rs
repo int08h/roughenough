@@ -1,10 +1,10 @@
 //! check that the client's malfeasance report construction agrees with
-//! the reporting server's validation: every violation `validate_causality`
+//! the reporting server's validation: every violation `CausalityViolation::find`
 //! must produce a report `validate_report` accepts.
 
 use data_encoding::BASE64;
 use roughenough_client::test_utils::{BASE_TIME, chained_measurements};
-use roughenough_client::{MalfeasanceReport, ResponseValidator};
+use roughenough_client::{CausalityViolation, MalfeasanceReport};
 use roughenough_reporting_server::validate_report;
 
 #[test]
@@ -15,7 +15,7 @@ fn client_reports_are_accepted_by_reporting_server_validator() {
     // pair -- (0,1), (0,2), and (1,2) -- violates causality
     let measurements = chained_measurements(&[base + 2_000_000, base + 1_000_000, base], None);
 
-    let violations = ResponseValidator::validate_causality(&measurements);
+    let violations = CausalityViolation::find(&measurements);
     assert_eq!(violations.len(), 3, "all three pairs violate causality");
 
     for violation in &violations {
@@ -42,7 +42,7 @@ fn client_report_for_violation_spanning_intermediate_measurement_is_accepted() {
     // neighbors
     let measurements = chained_measurements(&[base + 15, base + 8, base], None);
 
-    let violations = ResponseValidator::validate_causality(&measurements);
+    let violations = CausalityViolation::find(&measurements);
     assert_eq!(violations.len(), 1, "only the (0, 2) pair violates");
     assert_eq!(violations[0].index_i(), 0);
     assert_eq!(violations[0].index_j(), 2);

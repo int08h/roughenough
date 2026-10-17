@@ -1,4 +1,5 @@
 use data_encoding::BASE64;
+use roughenough_client::validation::{interval, violating_pairs};
 use roughenough_client::{MalfeasanceReport, ReportEntry, ResponseValidator};
 use roughenough_common::crypto::calculate_chained_nonce;
 use roughenough_protocol::request::Request;
@@ -60,35 +61,19 @@ fn decode_entry_base64(entry: &ReportEntry, index: usize) -> Result<DecodedEntry
     })
 }
 
-/// Parse request and response from their wire format
-fn parse_interaction_pair(
-    decoded: &DecodedEntry,
-    index: usize,
-) -> Result<(Request, Response), String> {
-    let request = Request::from_frame_bytes(&decoded.request_bytes)
-        .map_err(|e| format!("Entry {index}: invalid request: {e}"))?;
-
-    let response = Response::from_frame_bytes(&decoded.response_bytes)
-        .map_err(|e| format!("Entry {index}: invalid response: {e}"))?;
-
-    Ok((request, response))
+/// Parse the request from its wire format
+fn parse_request(decoded: &DecodedEntry, index: usize) -> Result<Request, String> {
+    Request::from_frame_bytes(&decoded.request_bytes)
+        .map_err(|e| format!("Entry {index}: invalid request: {e}"))
 }
 
-/// Validate a single request/response pair.
-fn validate_entry(
-    request_bytes: &[u8],
-    response_bytes: &[u8],
-    response: &Response,
-    public_key_bytes: &[u8],
-    index: usize,
-) -> Result<(), String> {
-    let public_key = PublicKey::try_from(public_key_bytes)
+/// Validate a single request/response pair, returning the parsed response.
+fn validate_entry(decoded: &DecodedEntry, index: usize) -> Result<Response, String> {
+    let public_key = PublicKey::try_from(decoded.public_key_bytes.as_slice())
         .map_err(|e| format!("Entry {index}: invalid public key: {e}"))?;
-    let validator = ResponseValidator::new_with_key(public_key);
 
-    validator
-        .validate(request_bytes, response_bytes, response)
-        .map(|_| ()) // Discard the midpoint value
+    ResponseValidator::new(Some(public_key))
+        .validate(&decoded.request_bytes, &decoded.response_bytes)
         .map_err(|e| format!("Entry {index}: validation failed: {e}"))
 }
 
@@ -125,43 +110,28 @@ fn validate_chaining(
     Ok(())
 }
 
-fn demonstrates_violation(bounds: &[(u64, u32)]) -> bool {
-    bounds.iter().enumerate().any(|(i, &(midp_i, radi_i))| {
-        bounds[i + 1..].iter().any(|&(midp_j, radi_j)| {
-            midp_i.saturating_sub(radi_i as u64) > midp_j.saturating_add(radi_j as u64)
-        })
-    })
-}
-
 pub fn validate_report(report: &MalfeasanceReport) -> Result<(), String> {
     if report.responses().len() < 2 {
         return Err("Need at least 2 entries for causality violation".into());
     }
 
     let mut previous_response: Option<Vec<u8>> = None;
-    let mut bounds: Vec<(u64, u32)> = Vec::with_capacity(report.responses().len());
+    let mut bounds: Vec<(u64, u64)> = Vec::with_capacity(report.responses().len());
 
     for (i, entry) in report.responses().iter().enumerate() {
         let decoded = decode_entry_base64(entry, i)?;
 
-        let (request, response) = parse_interaction_pair(&decoded, i)?;
-
-        validate_entry(
-            &decoded.request_bytes,
-            &decoded.response_bytes,
-            &response,
-            &decoded.public_key_bytes,
-            i,
-        )?;
+        let request = parse_request(&decoded, i)?;
+        let response = validate_entry(&decoded, i)?;
 
         validate_chaining(&request, &decoded, previous_response.as_deref(), i)?;
 
-        bounds.push((response.srep().midp(), response.srep().radi()));
+        bounds.push(interval(response.srep().midp(), response.srep().radi()));
 
         previous_response = Some(decoded.response_bytes.clone());
     }
 
-    if !demonstrates_violation(&bounds) {
+    if violating_pairs(&bounds).is_empty() {
         return Err("no causality violation demonstrated".into());
     }
 
@@ -271,24 +241,5 @@ mod tests {
         let report = MalfeasanceReport::from_violation(&violation);
 
         validate_report(&report).expect("draft and version 1 entries must validate");
-    }
-
-    #[test]
-    fn boundary_is_not_a_violation() {
-        // lower_i == upper_j is causally consistent; only strictly greater
-        // demonstrates a violation
-        assert!(!demonstrates_violation(&[(1000, 5), (990, 5)]));
-        assert!(demonstrates_violation(&[(1001, 5), (990, 5)]));
-    }
-
-    #[test]
-    fn hostile_bounds_saturate() {
-        // MIDP < RADI saturates to zero instead of wrapping
-        assert!(!demonstrates_violation(&[(10, 100), (1000, 5)]));
-        // MIDP near u64::MAX saturates the upper bound
-        assert!(!demonstrates_violation(&[
-            (u64::MAX, 5),
-            (u64::MAX - 1, 100)
-        ]));
     }
 }

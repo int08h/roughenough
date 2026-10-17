@@ -53,11 +53,9 @@ use std::time::Duration;
 
 use roughenough_common::crypto::{make_srv_commitment, random_bytes};
 use roughenough_common::encoding::try_decode_key;
-use roughenough_protocol::cursor::ParseCursor;
+use roughenough_protocol::ToFrame;
 use roughenough_protocol::request::{MAX_RESPONSE_SIZE, Request};
-use roughenough_protocol::response::Response;
 use roughenough_protocol::tags::{Nonce, ProtocolVersion, PublicKey, SrvCommitment};
-use roughenough_protocol::{FromFrame, ToFrame};
 
 use crate::measurement::Measurement;
 use crate::transport::{ClientTransport, UdpTransport};
@@ -182,10 +180,7 @@ impl ClientBuilder {
             .public_key
             .map(|public_key| make_srv_commitment(&public_key));
 
-        let validator = match self.public_key {
-            Some(public_key) => ResponseValidator::new_with_key(public_key),
-            None => ResponseValidator::new(),
-        };
+        let validator = ResponseValidator::new(self.public_key);
 
         Client {
             transport,
@@ -311,14 +306,10 @@ impl Client {
             let mut buf = [0u8; MAX_RESPONSE_SIZE];
             let (nbytes, _addr) = self.transport.recv(&mut buf)?;
             let response_bytes = buf[..nbytes].to_vec();
-            let response = Response::from_frame(&mut ParseCursor::new(&mut buf[..nbytes]))?;
 
-            // validate() verifies signatures over the bytes as received
-            match self
-                .validator
-                .validate(&request_bytes, &response_bytes, &response)
-            {
-                Ok(_midpoint) => break (response, response_bytes),
+            let result = self.validator.validate(&request_bytes, &response_bytes);
+            match result {
+                Ok(response) => break (response, response_bytes),
                 // A late or duplicated response to an earlier request fails only the proof
                 Err(ValidationError::FailedProof(_)) if discarded < MAX_DISCARDED_DATAGRAMS => {
                     discarded += 1;

@@ -11,7 +11,7 @@ use roughenough_client::measurement::Measurement;
 use roughenough_client::reporting::MalfeasanceReport;
 use roughenough_client::sequence::MeasurementSequence;
 use roughenough_client::server_list::ServerList;
-use roughenough_client::{CausalityViolation, Client, ClientError, ResponseValidator};
+use roughenough_client::{CausalityViolation, Client, ClientError};
 use roughenough_common::encoding::try_decode_key;
 use tracing::{debug, error, info};
 
@@ -87,7 +87,7 @@ fn query_multiple_servers(args: &Args, list_file: &String) -> u64 {
             std::process::exit(-1);
         });
 
-    let violations = ResponseValidator::validate_causality(&measurements);
+    let violations = CausalityViolation::find(&measurements);
 
     if !violations.is_empty() {
         for violation in &violations {

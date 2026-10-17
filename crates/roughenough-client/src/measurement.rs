@@ -9,6 +9,7 @@ use roughenough_protocol::response::Response;
 use roughenough_protocol::tags::PublicKey;
 
 use crate::ClientError;
+use crate::validation::interval;
 
 /// `Measurement` is the validated result and associated metadata of a Request/Response
 /// exchange with a server.
@@ -152,13 +153,13 @@ impl Measurement {
     /// Earliest time consistent with this measurement (`MIDP - RADI`),
     /// saturating at zero.
     pub fn lower_bound(&self) -> u64 {
-        self.midpoint().saturating_sub(self.radius() as u64)
+        interval(self.midpoint(), self.radius()).0
     }
 
     /// Latest time consistent with this measurement (`MIDP + RADI`),
     /// saturating at `u64::MAX`.
     pub fn upper_bound(&self) -> u64 {
-        self.midpoint().saturating_add(self.radius() as u64)
+        interval(self.midpoint(), self.radius()).1
     }
 
     /// The servers estimate of uncertainty, in seconds. The radius value represents the
