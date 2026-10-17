@@ -90,6 +90,9 @@
   `Seed::expose()` returns `&[u8; 32]`. `MemoryBackend::from_value` takes
   `&[u8; 32]`. Common: `encoding::try_decode` returns
   `Zeroizing<Vec<u8>>` and accepts mixed-case hex
+- Keys: `storage::try_load_seed` and `storage::try_store_seed` are
+  synchronous; `storage::try_load_seed_sync` and the `runtime` module are
+  removed; `Protection::from_prefix` is replaced by `Protection::split`
 
 ### Security
 
@@ -137,6 +140,8 @@
   supplies the public keys
 - Keys: `storage::decode_seed` decodes a hex or base64 seed value;
   `Seed::LEN` and `seed::InvalidSeedLength` are new
+- Keys: `storage::parse_envelope` decodes a prefixed seed envelope, and
+  `storage::load_envelope` recovers the seed an envelope refers to
 
 ## [2.2.0] - 2026-10-11
 

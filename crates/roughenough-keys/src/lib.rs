@@ -3,7 +3,8 @@
 
 pub mod longterm;
 pub mod online;
-pub mod runtime;
+#[cfg(any(feature = "longterm-aws", feature = "longterm-gcp"))]
+pub(crate) mod runtime;
 pub mod seed;
 pub mod storage;
 

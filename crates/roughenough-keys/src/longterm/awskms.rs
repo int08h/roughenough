@@ -142,6 +142,7 @@ mod tests {
         AwsKms, check_response_key_id, dek_from_plaintext, extract_aws_region, strip_key_prefix,
     };
     use crate::longterm::envelope::SeedEnvelope;
+    use crate::runtime::block_on;
     use crate::seed::Seed;
     use crate::storage::{Protection, StorageError};
 
@@ -221,9 +222,9 @@ mod tests {
         assert_eq!(dek_from_plaintext(&[7u8; 32]).unwrap(), [7u8; 32]);
     }
 
-    #[tokio::test]
+    #[test]
     #[ignore = "requires AWS credentials"]
-    async fn encrypt_decrypt_seed_roundtrip() {
+    fn encrypt_decrypt_seed_roundtrip() {
         // For AwsKms testing use this key:
         let key_id = "arn:aws:kms:us-east-2:382045063468:key/84e7ff78-7f16-4716-a300-a86c6efd6837";
 
@@ -231,8 +232,7 @@ mod tests {
         let original_seed = Seed::new_random();
 
         // Encrypt the seed
-        let envelope = AwsKms::encrypt_seed(key_id, &original_seed)
-            .await
+        let envelope = block_on(AwsKms::encrypt_seed(key_id, &original_seed))
             .expect("encrypt_seed should succeed");
 
         // Verify the envelope contains the expected key ID
@@ -244,9 +244,8 @@ mod tests {
         assert!(!envelope.seed_ct.is_empty());
 
         // Decrypt the seed
-        let decrypted_seed = AwsKms::decrypt_seed(&envelope)
-            .await
-            .expect("decrypt_seed should succeed");
+        let decrypted_seed =
+            block_on(AwsKms::decrypt_seed(&envelope)).expect("decrypt_seed should succeed");
 
         // Verify the decrypted seed matches the original
         assert_eq!(decrypted_seed.expose(), original_seed.expose());

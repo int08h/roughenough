@@ -40,7 +40,7 @@ serde_json = { workspace = true }
 ssh-agent-client-rs = { workspace = true, optional = true }
 ssh-key = { workspace = true, optional = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, optional = true, features = ["rt", "macros"] }
+tokio = { workspace = true, optional = true, features = ["rt"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 zeroize = { workspace = true }

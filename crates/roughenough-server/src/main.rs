@@ -30,7 +30,7 @@ use clap::Parser;
 use mio::net::UdpSocket as MioUdpSocket;
 use roughenough_common::clocksource::ClockSource;
 use roughenough_keys::seed::{Seed, SeedBackend, try_choose_backend};
-use roughenough_keys::storage::try_load_seed_sync;
+use roughenough_keys::storage::try_load_seed;
 use roughenough_server::args::{Args, SeedBackendArg};
 use roughenough_server::keysource::KeySource;
 use roughenough_server::metrics::aggregator::{MetricsAggregator, WorkerMetrics};
@@ -172,7 +172,7 @@ fn load_seed(args: &Args) -> Box<dyn SeedBackend> {
                 }
             };
 
-            match try_load_seed_sync(encoded_value) {
+            match try_load_seed(encoded_value) {
                 Ok(seed) => seed,
                 Err(e) => {
                     error!("loading seed from '{}': {e}", path.display());

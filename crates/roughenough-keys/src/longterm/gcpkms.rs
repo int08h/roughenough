@@ -142,6 +142,7 @@ fn dek_from_plaintext(plaintext: &[u8]) -> Result<[u8; 32], StorageError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::block_on;
     use crate::seed::Seed;
 
     #[test]
@@ -187,9 +188,9 @@ mod tests {
         assert_eq!(dek_from_plaintext(&[9u8; 32]).unwrap(), [9u8; 32]);
     }
 
-    #[tokio::test]
+    #[test]
     #[ignore = "requires GCP credentials"]
-    async fn encrypt_decrypt_seed_roundtrip() {
+    fn encrypt_decrypt_seed_roundtrip() {
         // For GcpKms testing, use this key:
         let key_id = "projects/int08h-blog/locations/us-central1/keyRings/roughenough/cryptoKeys/roughenough-int08h";
 
@@ -197,8 +198,7 @@ mod tests {
         let original_seed = Seed::new_random();
 
         // Encrypt the seed
-        let envelope = GcpKms::encrypt_seed(key_id, &original_seed)
-            .await
+        let envelope = block_on(GcpKms::encrypt_seed(key_id, &original_seed))
             .expect("encrypt_seed should succeed");
 
         // Verify the envelope contains the expected key ID
@@ -210,9 +210,8 @@ mod tests {
         assert!(!envelope.seed_ct.is_empty());
 
         // Decrypt the seed
-        let decrypted_seed = GcpKms::decrypt_seed(&envelope)
-            .await
-            .expect("decrypt_seed should succeed");
+        let decrypted_seed =
+            block_on(GcpKms::decrypt_seed(&envelope)).expect("decrypt_seed should succeed");
 
         // Verify the decrypted seed matches the original
         assert_eq!(decrypted_seed.expose(), original_seed.expose());

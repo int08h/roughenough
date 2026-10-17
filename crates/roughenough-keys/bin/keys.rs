@@ -4,13 +4,9 @@ use std::fs::{File, OpenOptions};
 use std::io::{Error, ErrorKind, Read, Write};
 
 use clap::Parser;
-#[cfg(feature = "longterm-aws")]
-use roughenough_keys::longterm::awskms;
 use roughenough_keys::longterm::envelope::SeedEnvelope;
-#[cfg(feature = "longterm-gcp")]
-use roughenough_keys::longterm::gcpkms;
 use roughenough_keys::seed::Seed;
-use roughenough_keys::{runtime, storage};
+use roughenough_keys::storage;
 use roughenough_protocol::util::as_hex;
 use tracing::{debug, error};
 use zeroize::Zeroizing;
@@ -133,19 +129,19 @@ pub fn main() {
             secret,
         } => {
             let output = outfile_from_arg(output).unwrap();
-            runtime::block_on(handle_generate(output, key, secret));
+            handle_generate(output, key, secret);
         }
 
         Commands::Seal { input, output, key } => {
             let input = infile_from_arg(Some(input)).unwrap();
             let output = outfile_from_arg(output).unwrap();
-            runtime::block_on(handle_seal(input, output, key));
+            handle_seal(input, output, key);
         }
 
         Commands::Open { input, output, key } => {
             let input = infile_from_arg(Some(input)).unwrap();
             let output = outfile_from_arg(output).unwrap();
-            runtime::block_on(handle_open(input, output, key));
+            handle_open(input, output, key);
         }
 
         Commands::Store {
@@ -156,18 +152,18 @@ pub fn main() {
         } => {
             let input = infile_from_arg(Some(input)).unwrap();
             let output = outfile_from_arg(output).unwrap();
-            runtime::block_on(handle_store(input, output, secret, json));
+            handle_store(input, output, secret, json);
         }
 
         Commands::Get { input, output } => {
             let input = infile_from_arg(Some(input)).unwrap();
             let output = outfile_from_arg(output).unwrap();
-            runtime::block_on(handle_get(input, output));
+            handle_get(input, output);
         }
     }
 }
 
-async fn handle_generate(mut output: OutFile, key: Option<String>, secret: Option<String>) {
+fn handle_generate(mut output: OutFile, key: Option<String>, secret: Option<String>) {
     if !(key.is_some() || secret.is_some()) {
         error!("Either --key or --secret must be specified");
         return;
@@ -176,7 +172,7 @@ async fn handle_generate(mut output: OutFile, key: Option<String>, secret: Optio
     let resource = key.or(secret).unwrap();
     let seed = Seed::new_random();
 
-    match storage::try_store_seed(&seed, &resource).await {
+    match storage::try_store_seed(&seed, &resource) {
         Ok(envelope) => {
             let json = serde_json::to_string_pretty(&envelope).unwrap();
             output.write_all(json.as_bytes()).unwrap();
@@ -188,11 +184,11 @@ async fn handle_generate(mut output: OutFile, key: Option<String>, secret: Optio
 }
 
 /// Retrieve a long-term identity seed from a Secret manager
-async fn handle_get(mut input: InFile, mut output: OutFile) {
+fn handle_get(mut input: InFile, mut output: OutFile) {
     let mut value = String::new();
     input.read_to_string(&mut value).unwrap();
 
-    match storage::try_load_seed(&value).await {
+    match storage::try_load_seed(&value) {
         Ok(seed) => {
             let encoded = as_hex(seed.expose());
             output.write_all(encoded.as_bytes()).unwrap();
@@ -205,7 +201,7 @@ async fn handle_get(mut input: InFile, mut output: OutFile) {
 }
 
 /// Store a long-term identity seed in a Secret manager
-async fn handle_store(mut input: InFile, mut output: OutFile, secret: String, json: bool) {
+fn handle_store(mut input: InFile, mut output: OutFile, secret: String, json: bool) {
     let mut seed_bytes = Zeroizing::new(Vec::new());
     input.read_to_end(&mut seed_bytes).unwrap();
 
@@ -217,14 +213,14 @@ async fn handle_store(mut input: InFile, mut output: OutFile, secret: String, js
         }
     };
 
-    match storage::try_store_seed(&seed, &secret).await {
+    match storage::try_store_seed(&seed, &secret) {
         Ok(envelope) => {
             // Default output is the single-line prefixed form that
             // `try_load_seed` accepts this single-line form from a server seed file
             let text = if json {
                 serde_json::to_string_pretty(&envelope).unwrap()
             } else {
-                let method = match storage::Protection::from_prefix(&secret) {
+                let method = match storage::Protection::split(&secret).map(|(p, _)| p) {
                     Some(method) => method,
                     None => {
                         error!("no protection method specified in '{}'", secret);
@@ -249,7 +245,7 @@ async fn handle_store(mut input: InFile, mut output: OutFile, secret: String, js
 }
 
 /// Decrypt an envelope encrypted long-term identity seed
-async fn handle_open(mut input: InFile, mut output: OutFile, key: Option<String>) {
+fn handle_open(mut input: InFile, mut output: OutFile, key: Option<String>) {
     let mut buf = Vec::new();
     input.read_to_end(&mut buf).unwrap();
     let mut envelope: SeedEnvelope = serde_json::from_slice(&buf).unwrap();
@@ -262,49 +258,12 @@ async fn handle_open(mut input: InFile, mut output: OutFile, key: Option<String>
         envelope.key_id = key_id;
     }
 
-    // Below is ugly to deal with conditional compilation while keeping the
-    // compiler and clippy happy
-
-    #[cfg_attr(
-        not(any(feature = "longterm-gcp", feature = "longterm-aws")),
-        allow(unused_mut)
-    )]
-    let mut seed: Option<Seed> = None;
-
-    #[cfg(feature = "longterm-gcp")]
-    {
-        use crate::storage::Protection;
-        if envelope.key_id.starts_with(Protection::GcpKms.prefix()) {
-            seed = match gcpkms::GcpKms::decrypt_seed(&envelope).await {
-                Ok(seed) => Some(seed),
-                Err(e) => {
-                    error!("Failed to decrypt seed: {e}");
-                    std::process::exit(1);
-                }
-            }
+    let seed = match storage::load_envelope(&envelope) {
+        Ok(seed) => seed,
+        Err(e) => {
+            error!("Failed to decrypt seed: {e}");
+            std::process::exit(1);
         }
-    }
-
-    #[cfg(feature = "longterm-aws")]
-    {
-        use crate::storage::Protection;
-        if envelope.key_id.starts_with(Protection::AwsKms.prefix()) {
-            seed = match awskms::AwsKms::decrypt_seed(&envelope).await {
-                Ok(seed) => Some(seed),
-                Err(e) => {
-                    error!("Failed to decrypt seed: {e}");
-                    std::process::exit(1);
-                }
-            }
-        }
-    }
-
-    let Some(seed) = seed else {
-        error!(
-            "no enabled KMS backend handles key id '{}' (key ids need an aws-kms:// or gcp-kms:// prefix and the matching cargo feature)",
-            envelope.key_id
-        );
-        std::process::exit(1);
     };
 
     let encoded = as_hex(seed.expose());
@@ -313,7 +272,7 @@ async fn handle_open(mut input: InFile, mut output: OutFile, key: Option<String>
 }
 
 /// Envelope encrypt a long-term identity seed
-async fn handle_seal(mut input: InFile, mut output: OutFile, key: String) {
+fn handle_seal(mut input: InFile, mut output: OutFile, key: String) {
     let mut seed_bytes = Zeroizing::new(Vec::new());
     input.read_to_end(&mut seed_bytes).unwrap();
 
@@ -325,7 +284,7 @@ async fn handle_seal(mut input: InFile, mut output: OutFile, key: String) {
         }
     };
 
-    match storage::try_store_seed(&seed, &key).await {
+    match storage::try_store_seed(&seed, &key) {
         Ok(envelope) => {
             let json = serde_json::to_string_pretty(&envelope).unwrap();
             output.write_all(json.as_bytes()).unwrap();
