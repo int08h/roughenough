@@ -1,11 +1,13 @@
 [package]
 name = "roughenough-integration-test"
 description = "End-to-end integration tests for Roughenough server and client"
-license = "Apache-2.0 OR MIT"
+license.workspace = true
 edition.workspace = true
 version.workspace = true
-repository = "https://github.com/int08h/roughenough"
-homepage = "https://github.com/int08h/roughenough"
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+rust-version.workspace = true
 readme = "../../README.md"
 keywords = ["roughtime", "integration", "testing", "e2e"]
 categories = ["development-tools"]

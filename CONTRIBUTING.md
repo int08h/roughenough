@@ -145,6 +145,12 @@ cargo +nightly fuzz run <target> <path-to-crash-artifact>
 - Use `cargo +nightly fmt` to format code (requires nightly toolchain)
 - Run `cargo clippy` and address all warnings
 
+### Dependencies
+
+Take dependency updates even when they need a newer Rust. When the CI step "Dependencies fit the declared
+MSRV" fails, raise `rust-version` in the root `Cargo.toml` `[workspace.package]`, the MSRV line in `README.md`,
+and the `Dockerfile` base image together.
+
 ### Unsafe Code Policy
 
 **Roughenough maintains a minimal-unsafe policy.** Use `#![forbid(unsafe_code)]`.

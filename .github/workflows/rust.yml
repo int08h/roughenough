@@ -35,6 +35,23 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
+      - name: Dependencies fit the declared MSRV
+        run: |
+          cargo metadata --format-version 1 --locked --all-features | python3 -I -c '
+          import json, sys
+          v = lambda s: tuple(int(x) for x in s.split("."))
+          meta = json.load(sys.stdin)
+          ws = set(meta["workspace_members"])
+          declared = {p["rust_version"] for p in meta["packages"] if p["id"] in ws}
+          if len(declared) != 1:
+              sys.exit(f"workspace members disagree on rust-version: {declared}")
+          msrv = declared.pop()
+          over = sorted((p["rust_version"], p["name"]) for p in meta["packages"]
+                        if p["rust_version"] and v(p["rust_version"]) > v(msrv))
+          for rv, name in over:
+              print(f"{name} requires Rust {rv}; the workspace declares {msrv}")
+          sys.exit(1 if over else 0)'
+
   rustfmt:
     name: Rustfmt (Code Formatting)
     runs-on: ubuntu-latest

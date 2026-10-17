@@ -205,6 +205,8 @@
 ### Changed
 
 - Server: metrics timestamps follow `--fixed-offset`
+- Build: all crates declare `rust-version = "1.94.1"` (MSRV), the minimum
+  the AWS SDK crates require
 
 ## [2.2.0] - 2026-10-11
 

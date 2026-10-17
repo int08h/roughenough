@@ -1,11 +1,13 @@
 [package]
 name = "roughenough-reporting-server"
 description = "Web server for collecting and storing Roughtime malfeasance reports"
-license = "Apache-2.0 OR MIT"
+license.workspace = true
 version.workspace = true
 edition.workspace = true
-repository = "https://github.com/int08h/roughenough"
-homepage = "https://github.com/int08h/roughenough"
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+rust-version.workspace = true
 readme = "../../README.md"
 keywords = ["roughtime", "malfeasance", "reporting", "server", "web"]
 categories = ["network-programming", "web-programming"]

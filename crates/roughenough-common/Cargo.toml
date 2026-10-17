@@ -1,11 +1,13 @@
 [package]
 name = "roughenough-common"
 description = "Shared cryptography and encoding utilities for Roughenough"
-license = "Apache-2.0 OR MIT"
+license.workspace = true
 edition.workspace = true
 version.workspace = true
-repository = "https://github.com/int08h/roughenough"
-homepage = "https://github.com/int08h/roughenough"
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+rust-version.workspace = true
 readme = "../../README.md"
 keywords = ["roughtime", "cryptography", "encoding", "utilities", "ed25519"]
 categories = ["cryptography"]

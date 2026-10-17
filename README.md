@@ -20,7 +20,7 @@ verifiable time synchronization.
 
 ### System Requirements
 
-- MSRV 1.88, Rust 2024 edition 
+- MSRV 1.94.1 (set by the AWS SDK crates), Rust 2024 edition
 - Linux, MacOS, or other Unix-like operating system
 - Optional: cloud provider credentials for backend key storage
 
