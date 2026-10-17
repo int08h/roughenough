@@ -24,8 +24,7 @@ fn get_paths(bencher: Bencher, batch_size: usize) {
 #[divan::bench(args = [1, 3, 8, 31, 33, 63, 64], min_time = 0.250)]
 fn push_and_compute_root(bencher: Bencher, n: usize) {
     let leaves: Vec<[u8; 8]> = (0..n).map(|i| i.to_le_bytes()).collect();
-    let mut tree = MerkleTree::new();
-    tree.reserve(n);
+    let mut tree = MerkleTree::with_capacity(n);
     bencher.bench_local(|| {
         tree.clear();
         for leaf in &leaves {

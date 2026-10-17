@@ -47,44 +47,27 @@ impl MerkleTree {
     /// Create a new empty Merkle Tree. Output is the most-significant 32-bytes (256-bits),
     /// e.g. `SHA-512[0:32]`
     pub fn new() -> MerkleTree {
-        MerkleTree {
-            levels: vec![vec![]],
+        Self::with_capacity(1)
+    }
+
+    /// Tree whose levels never reallocate for up to `num_leaves` leaves
+    pub fn with_capacity(num_leaves: usize) -> Self {
+        let mut cap = num_leaves.max(1).next_power_of_two();
+        let max_levels = cap.trailing_zeros() as usize + 1;
+        let mut levels = Vec::with_capacity(max_levels);
+        loop {
+            levels.push(Vec::with_capacity(cap));
+            if cap == 1 {
+                break;
+            }
+            cap /= 2;
         }
+        Self { levels }
     }
 
     pub fn push_leaf(&mut self, data: &[u8]) {
-        let hash = self.hash_leaf(data);
+        let hash = hash_leaf(data);
         self.levels[0].push(hash);
-    }
-
-    /// Pre-allocate capacity for the given number of leaves, rounding up
-    /// to the next power of two.
-    pub fn reserve(&mut self, num_leaves: usize) {
-        if num_leaves == 0 {
-            return;
-        }
-
-        let mut capacity = num_leaves.next_power_of_two();
-        let max_levels = capacity.trailing_zeros() as usize + 1;
-
-        // Pre-allocate levels
-        self.levels
-            .reserve(max_levels.saturating_sub(self.levels.len()));
-
-        // Pre-allocate capacity for each level
-        for level in 0..max_levels {
-            if level >= self.levels.len() {
-                self.levels.push(Vec::new());
-            }
-
-            let current_len = self.levels[level].len();
-            let additional_capacity = capacity.saturating_sub(current_len);
-            if additional_capacity > 0 {
-                self.levels[level].reserve(additional_capacity);
-            }
-
-            capacity = capacity.div_ceil(2); // Next level has half the nodes (rounded up)
-        }
     }
 
     pub fn get_paths(&self, index: usize) -> MerklePath {
@@ -126,11 +109,9 @@ impl MerkleTree {
             // RFC 5.3 leaves odd-sized levels unspecified; this implementation
             // pairs the last node with an all-zero hash
             for pair in prev.chunks(2) {
-                next.push(hash_parts(&[
-                    NODE_TWEAK,
-                    &pair[0],
-                    pair.get(1).unwrap_or(&ZERO),
-                ]));
+                let right = pair.get(1).unwrap_or(&ZERO);
+                let hash = hash_node(&pair[0], right);
+                next.push(hash);
             }
             level += 1;
         }
@@ -146,10 +127,6 @@ impl MerkleTree {
     pub fn is_empty(&self) -> bool {
         self.levels[0].is_empty()
     }
-
-    fn hash_leaf(&self, leaf: &[u8]) -> Hash {
-        hash_parts(&[LEAF_TWEAK, leaf])
-    }
 }
 
 /// Reconstruct the root hash from a leaf's data, its index, and its Merkle path.
@@ -158,15 +135,15 @@ impl MerkleTree {
 /// are consumed. RFC 5.3.1: "if any of the remaining bits of INDX is non-zero,
 /// the algorithm fails."
 pub fn root_from_paths(mut index: usize, init_data: &[u8], paths: &MerklePath) -> Option<Hash> {
-    let mut hash = hash_parts(&[LEAF_TWEAK, init_data]);
+    let mut hash = hash_leaf(init_data);
 
     for path in paths.elements() {
         hash = if index & 1 == 0 {
             // Left
-            hash_parts(&[NODE_TWEAK, &hash, path])
+            hash_node(&hash, path)
         } else {
             // Right
-            hash_parts(&[NODE_TWEAK, path, &hash])
+            hash_node(path, &hash)
         };
         index >>= 1;
     }
@@ -176,6 +153,14 @@ pub fn root_from_paths(mut index: usize, init_data: &[u8], paths: &MerklePath) -
     }
 
     Some(hash)
+}
+
+fn hash_leaf(leaf: &[u8]) -> Hash {
+    hash_parts(&[LEAF_TWEAK, leaf])
+}
+
+fn hash_node(left: &[u8], right: &[u8]) -> Hash {
+    hash_parts(&[NODE_TWEAK, left, right])
 }
 
 /// First 32 bytes of SHA-512 over the concatenated parts (RFC 5.3).
@@ -191,9 +176,7 @@ fn hash_parts(parts: &[&[u8]]) -> Hash {
 
 #[cfg(test)]
 mod test {
-    use data_encoding::HEXLOWER;
-
-    use crate::{MerklePath, MerkleTree, root_from_paths};
+    use crate::{MerklePath, MerkleTree, hash_leaf, root_from_paths};
 
     fn test_paths_with_num(num: usize) {
         let mut tree = MerkleTree::new();
@@ -231,7 +214,10 @@ mod test {
     }
 
     fn hex(s: &str) -> Vec<u8> {
-        HEXLOWER.decode(s.as_bytes()).unwrap()
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
     }
 
     fn path_elements(path: &MerklePath) -> Vec<Vec<u8>> {
@@ -327,7 +313,7 @@ mod test {
         let root = tree.compute_root();
 
         // The root should be the hash of the leaf
-        let expected = tree.hash_leaf(&test_data);
+        let expected = hash_leaf(&test_data);
         assert_eq!(
             root, expected,
             "Root of single-leaf tree should be the leaf hash"
@@ -410,10 +396,19 @@ mod test {
     }
 
     #[test]
-    fn reserve_prevents_reallocation_during_first_batch() {
+    fn path_depth_is_log2_for_power_of_two() {
+        let mut tree = tree_of_single_bytes(8);
+        tree.compute_root();
+        for i in 0..8 {
+            let paths = tree.get_paths(i);
+            assert_eq!(paths.depth(), 3, "wrong depth for index {i}");
+        }
+    }
+
+    #[test]
+    fn with_capacity_prevents_reallocation_during_first_batch() {
         for n in 1..=64usize {
-            let mut tree = MerkleTree::new();
-            tree.reserve(n);
+            let mut tree = MerkleTree::with_capacity(n);
 
             for i in 0..n {
                 tree.push_leaf(&[i as u8]);
@@ -436,11 +431,8 @@ mod test {
     }
 
     #[test]
-    fn reserve_capacity() {
-        let mut tree = MerkleTree::new();
-
-        // Reserve for 64 leaves
-        tree.reserve(64);
+    fn with_capacity_level_zero_holds_all_leaves() {
+        let mut tree = MerkleTree::with_capacity(64);
 
         // Check that the first level has capacity for 64 leaves
         assert!(

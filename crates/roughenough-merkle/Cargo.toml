@@ -16,7 +16,6 @@ roughenough-protocol = { workspace = true }
 
 [dev-dependencies]
 divan = { workspace = true }
-data-encoding = { workspace = true }
 
 [[bench]]
 name = "get_paths"

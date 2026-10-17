@@ -55,9 +55,7 @@ impl ResponseHandler {
     pub fn new(batch_size: u8, key_source: KeySource) -> Self {
         let batch_size = batch_size as usize;
         let online_key = key_source.make_online_key();
-        let mut merkle_tree = MerkleTree::new();
-
-        merkle_tree.reserve(batch_size);
+        let merkle_tree = MerkleTree::with_capacity(batch_size);
 
         Self {
             batch_size,

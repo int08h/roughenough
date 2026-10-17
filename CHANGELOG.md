@@ -13,6 +13,7 @@
 - Server library: `Worker::new(worker_id, responder, metrics_channel,
   metrics_interval)` takes its batch size and clock from the responder;
   `Worker::set_test_panic_flag` was removed
+- Merkle: `MerkleTree::reserve` was replaced by `MerkleTree::with_capacity`
 - Keys: cargo features `longterm-aws-kms` and
   `longterm-aws-secret-manager` are replaced by `longterm-aws`;
   `longterm-gcp-kms` and `longterm-gcp-secret-manager` are replaced by

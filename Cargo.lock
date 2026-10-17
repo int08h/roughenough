@@ -2937,7 +2937,6 @@ name = "roughenough-merkle"
 version = "2.2.0"
 dependencies = [
  "aws-lc-rs",
- "data-encoding",
  "divan",
  "roughenough-protocol",
 ]
