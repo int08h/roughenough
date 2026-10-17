@@ -64,8 +64,6 @@ use crate::transport::{ClientTransport, UdpTransport};
 use crate::validation::{ValidationError, check_vers_contains_ver};
 use crate::{ResponseValidator, validation};
 
-// Bounds the drain so a peer replaying stale signed responses cannot hold a query open
-// for more than a few read timeouts.
 const MAX_DISCARDED_DATAGRAMS: usize = 8;
 
 /// Get the time from a single Roughtime server, optionally authenticating the response with the
@@ -333,8 +331,6 @@ impl Client {
             }
         };
 
-        // After the drain, not inside it: an authenticated response is the server's signed
-        // statement, not a stale datagram, and must not count as a discard
         check_vers_contains_ver(&response)?;
 
         Ok(Measurement::new(

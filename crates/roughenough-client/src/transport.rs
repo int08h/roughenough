@@ -9,8 +9,6 @@ use tracing::{debug, trace};
 use crate::ClientError;
 
 /// Abstraction for network transport mechanisms used by clients.
-/// Allows clients to work with different protocols (UDP, TCP, etc.) through a common interface.
-/// A transport talks to exactly one server, fixed when it is created.
 pub trait ClientTransport {
     /// Sends `data` to the server.
     fn send(&self, data: &[u8]) -> Result<(), ClientError>;
@@ -26,9 +24,7 @@ pub struct UdpTransport {
 }
 
 impl UdpTransport {
-    /// Creates a UDP socket connected to `server`. Connecting makes the kernel drop datagrams
-    /// from any other source, and surfaces ICMP port unreachable as an error on `recv` rather
-    /// than a timeout.
+    /// Creates a UDP socket connected to `server`.
     pub fn new(server: SocketAddr, timeout: Duration) -> std::io::Result<Self> {
         let bind_addr = match server {
             SocketAddr::V4(_) => SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),

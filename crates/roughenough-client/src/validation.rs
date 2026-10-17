@@ -81,9 +81,9 @@ pub struct CausalityViolation {
 }
 
 impl CausalityViolation {
-    /// Every pair of `measurements` (in the order performed) that violates causality. For
-    /// each pair `(i, j)` where `i` was received before `j`, checks that
-    /// `MIDP_i - RADI_i <= MIDP_j + RADI_j`. Returns an empty list if all pairs are consistent.
+    /// Find every pair of `measurements` that violates causality. For each pair `(i, j)`,
+    /// where `i` was received before `j`, checks that `MIDP_i - RADI_i <= MIDP_j + RADI_j`.
+    /// Returns an empty list if all pairs are consistent.
     pub fn find(measurements: &[Measurement]) -> Vec<CausalityViolation> {
         let bounds: Vec<(u64, u64)> = measurements
             .iter()
@@ -165,11 +165,7 @@ impl ResponseValidator {
     /// (MIDP-RADI, MIDP+RADI).
     ///
     /// `request_bytes` is the framed request as sent, and `response_bytes` the response packet
-    /// exactly as received (including the "ROUGHTIM" framing). The response is parsed here
-    /// rather than supplied by the caller, so the returned [`Response`]'s fields are the ones
-    /// covered by the checked signatures. Signatures are verified over the received bytes,
-    /// which a re-serialization would not reproduce if the server included tags unknown to
-    /// this implementation.
+    /// exactly as received (including the "ROUGHTIM" framing).
     pub fn validate(
         &self,
         request_bytes: &[u8],
