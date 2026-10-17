@@ -60,7 +60,7 @@ use roughenough_protocol::tags::{Nonce, ProtocolVersion, PublicKey, SrvCommitmen
 
 use crate::measurement::Measurement;
 use crate::transport::{ClientTransport, UdpTransport};
-use crate::validation::ValidationError;
+use crate::validation::{ValidationError, check_vers_contains_ver};
 use crate::{ResponseValidator, validation};
 
 // Bounds the drain so a peer replaying stale signed responses cannot hold a query open
@@ -321,6 +321,10 @@ impl Client {
             }
         };
 
+        // After the drain, not inside it: an authenticated response is the server's signed
+        // statement, not a stale datagram, and must not count as a discard
+        check_vers_contains_ver(&response)?;
+
         Ok(Measurement::new(
             self.server,
             self.hostname.clone(),
@@ -347,7 +351,9 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transport::testing::{client_with_stale_datagrams, test_addr};
+    use crate::transport::testing::{
+        ResponderTransport, client_with_stale_datagrams, signed_response_key, test_addr,
+    };
 
     fn test_key() -> PublicKey {
         PublicKey::from([0x42u8; 32])
@@ -457,5 +463,27 @@ mod tests {
             Err(ClientError::ValidationFailed(ValidationError::FailedProof(_))) => {}
             other => panic!("expected FailedProof, got {other:?}"),
         }
+    }
+
+    fn client_answered_with(ver: ProtocolVersion, vers: &[ProtocolVersion]) -> Client {
+        Client::builder(test_addr())
+            .public_key(signed_response_key())
+            .transport(Box::new(ResponderTransport::new(ver, vers)))
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn query_rejects_vers_without_ver() {
+        let client = client_answered_with(ProtocolVersion::RFC, &[ProtocolVersion::DRAFT]);
+
+        match client.query() {
+            Err(ClientError::ValidationFailed(ValidationError::VerNotInVers { .. })) => {}
+            other => panic!("expected VerNotInVers, got {other:?}"),
+        }
+
+        let client = client_answered_with(ProtocolVersion::RFC, &[ProtocolVersion::RFC]);
+        let result = client.query();
+        assert!(result.is_ok(), "expected Ok, got {result:?}");
     }
 }

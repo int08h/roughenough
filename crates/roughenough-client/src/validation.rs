@@ -33,6 +33,12 @@ pub enum ValidationError {
 
     #[error("Response version {0:?} was not offered in the request")]
     UnofferedVersion(ProtocolVersion),
+
+    #[error("Response VERS {vers:?} does not contain its VER {ver:?} (RFC 5.2.5)")]
+    VerNotInVers {
+        ver: ProtocolVersion,
+        vers: Vec<ProtocolVersion>,
+    },
 }
 
 /// `(MIDP - RADI, MIDP + RADI)`, saturating: both values are wire-derived.
@@ -218,6 +224,23 @@ fn check_version(request: &Request, response: &Response) -> Result<(), Validatio
     }
 }
 
+/// RFC 5.2.5 obliges the server, not the client; the client enforces it on its own queries
+/// only. Not part of [`ResponseValidator::validate`], so stored reports that contain such a
+/// response still validate.
+pub fn check_vers_contains_ver(response: &Response) -> Result<(), ValidationError> {
+    let ver = *response.srep().ver();
+    let vers = response.srep().vers().versions();
+
+    if vers.contains(&ver) {
+        Ok(())
+    } else {
+        Err(ValidationError::VerNotInVers {
+            ver,
+            vers: vers.to_vec(),
+        })
+    }
+}
+
 fn check_dele_signature(
     pub_key: &PublicKey,
     response_bytes: &[u8],
@@ -304,9 +327,10 @@ mod tests {
     use roughenough_protocol::tags::{ProtocolVersion, PublicKey};
     use roughenough_protocol::wire::FromFrame;
 
+    use crate::transport::testing::signed_response;
     use crate::validation::{
         ResponseValidator, ValidationError, check_dele_signature, check_merkle_proof,
-        check_midpoint, check_srep_signature, received_value,
+        check_midpoint, check_srep_signature, check_vers_contains_ver, received_value,
     };
 
     const RFC10049_REQUEST: &[u8] =
@@ -328,6 +352,16 @@ mod tests {
 
     fn validator_for(pub_key_b64: &[u8]) -> ResponseValidator {
         ResponseValidator::new(Some(pub_key(pub_key_b64)))
+    }
+
+    fn test_request_bytes() -> Vec<u8> {
+        use roughenough_protocol::ToFrame;
+        use roughenough_protocol::request::Request;
+        use roughenough_protocol::tags::Nonce;
+
+        Request::new(&Nonce::from([0x42u8; 32]))
+            .as_frame_bytes()
+            .unwrap()
     }
 
     #[test]
@@ -580,84 +614,59 @@ mod tests {
         }
     }
 
-    use roughenough_protocol::util::test_utils::{build_msg, insert_tag};
-
     #[test]
     fn greased_response_with_valid_signatures_validates() {
         // RFC 7 / 9.2: a response may carry undefined tags (including inside
         // SREP and DELE) with signatures computed over the bytes as sent. The
         // client MUST ignore the undefined tags and the response validates.
-        use aws_lc_rs::signature::{Ed25519KeyPair, KeyPair};
-        use roughenough_merkle::MerkleTree;
-        use roughenough_protocol::request::Request;
-        use roughenough_protocol::tags::{
-            Delegation, MerkleRoot, Nonce, ProtocolVersion, SignedResponse, SupportedVersions,
-        };
-        use roughenough_protocol::{ToFrame, ToWire};
-
-        let longterm = Ed25519KeyPair::generate().unwrap();
-        let online = Ed25519KeyPair::generate().unwrap();
-
-        let nonce = Nonce::from([0x42u8; 32]);
-        let request = Request::new(&nonce);
-        let request_bytes = request.as_frame_bytes().unwrap();
-
-        // Single-request batch: ROOT is the leaf hash of the request packet
-        let mut tree = MerkleTree::new();
-        tree.push_leaf(&request_bytes);
-        let root = tree.compute_root();
-
-        // DELE with an undefined tag spliced in, signed over those exact bytes
-        let mut dele = Delegation::default();
-        dele.set_pubk(PublicKey::try_from(online.public_key().as_ref()).unwrap());
-        dele.set_mint(0);
-        dele.set_maxt(u64::MAX);
-        let dele_bytes = insert_tag(&dele.as_bytes().unwrap(), *b"GREZ", &[0xcc; 4]);
-
-        let mut to_sign = ProtocolVersion::RFC.dele_prefix().to_vec();
-        to_sign.extend_from_slice(&dele_bytes);
-        let dele_sig = longterm.sign(&to_sign);
-
-        let cert_bytes = build_msg(&[
-            (*b"SIG\x00", dele_sig.as_ref().to_vec()),
-            (*b"DELE", dele_bytes),
-        ]);
-
-        // SREP with an undefined tag spliced in, signed over those exact bytes
-        let mut srep = SignedResponse::default();
-        srep.set_ver(ProtocolVersion::RFC);
-        srep.set_radi(5);
-        srep.set_midp(1000);
-        srep.set_vers(&SupportedVersions::new(&[ProtocolVersion::RFC]));
-        srep.set_root(&MerkleRoot::from(root));
-        let srep_bytes = insert_tag(&srep.as_bytes().unwrap(), *b"GREZ", &[0xdd; 8]);
-
-        let mut to_sign = ProtocolVersion::RFC.srep_prefix().to_vec();
-        to_sign.extend_from_slice(&srep_bytes);
-        let srep_sig = online.sign(&to_sign);
-
-        // Top-level message with one more undefined tag
-        let msg = build_msg(&[
-            (*b"SIG\x00", srep_sig.as_ref().to_vec()),
-            (*b"NONC", nonce.as_ref().to_vec()),
-            (*b"TYPE", 1u32.to_le_bytes().to_vec()),
-            (*b"PATH", vec![]),
-            (*b"SREP", srep_bytes),
-            (*b"CERT", cert_bytes),
-            (*b"INDX", 0u32.to_le_bytes().to_vec()),
-            (*b"GREZ", vec![0xee; 4]),
-        ]);
-
-        let mut response_bytes = Vec::new();
-        response_bytes.extend_from_slice(b"ROUGHTIM");
-        response_bytes.extend_from_slice(&(msg.len() as u32).to_le_bytes());
-        response_bytes.extend_from_slice(&msg);
-
-        let pub_key = PublicKey::try_from(longterm.public_key().as_ref()).unwrap();
+        let request_bytes = test_request_bytes();
+        let (pub_key, response_bytes) = signed_response(
+            &request_bytes,
+            ProtocolVersion::RFC,
+            &[ProtocolVersion::RFC],
+            true,
+        );
         let validator = ResponseValidator::new(Some(pub_key));
 
         let response = validator.validate(&request_bytes, &response_bytes).unwrap();
         assert_eq!(response.srep().midp(), 1000);
+    }
+
+    #[test]
+    fn vers_without_ver_is_rejected() {
+        let request_bytes = test_request_bytes();
+        let (pub_key, response_bytes) = signed_response(
+            &request_bytes,
+            ProtocolVersion::RFC,
+            &[ProtocolVersion::DRAFT],
+            false,
+        );
+
+        // The reporting path validates with `validate` alone, so it still accepts the response
+        let validator = ResponseValidator::new(Some(pub_key));
+        let response = validator.validate(&request_bytes, &response_bytes).unwrap();
+
+        match check_vers_contains_ver(&response) {
+            Err(ValidationError::VerNotInVers { ver, vers }) => {
+                assert_eq!(ver, ProtocolVersion::RFC);
+                assert_eq!(vers, vec![ProtocolVersion::DRAFT]);
+            }
+            other => panic!("expected VerNotInVers, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn vers_with_ver_passes() {
+        let request_bytes = test_request_bytes();
+        let (_, response_bytes) = signed_response(
+            &request_bytes,
+            ProtocolVersion::RFC,
+            &[ProtocolVersion::RFC, ProtocolVersion::DRAFT],
+            false,
+        );
+        let response = Response::from_frame_bytes(&response_bytes).unwrap();
+
+        check_vers_contains_ver(&response).unwrap();
     }
 
     #[test]

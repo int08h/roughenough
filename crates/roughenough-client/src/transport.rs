@@ -146,10 +146,15 @@ pub(crate) mod testing {
     use std::collections::VecDeque;
     use std::net::SocketAddr;
 
+    use aws_lc_rs::signature::{Ed25519KeyPair, KeyPair};
     use roughenough_common::clocksource::ClockSource;
+    use roughenough_merkle::MerkleTree;
     use roughenough_protocol::request::Request;
-    use roughenough_protocol::tags::ProtocolVersion;
-    use roughenough_protocol::{FromFrame, ToFrame};
+    use roughenough_protocol::tags::{
+        Delegation, MerkleRoot, ProtocolVersion, PublicKey, SignedResponse, SupportedVersions,
+    };
+    use roughenough_protocol::util::test_utils::{build_msg, insert_tag};
+    use roughenough_protocol::{FromFrame, ToFrame, ToWire};
     use roughenough_server::test_utils::TestContext;
 
     use super::ClientTransport;
@@ -157,6 +162,129 @@ pub(crate) mod testing {
 
     pub(crate) fn test_addr() -> SocketAddr {
         "127.0.0.1:2003".parse().unwrap()
+    }
+
+    // Fixed seeds keep the long-term key stable across calls, so a client can be built with it
+    // before any response exists.
+    fn long_term_key() -> Ed25519KeyPair {
+        Ed25519KeyPair::from_seed_unchecked(&[0x11; 32]).unwrap()
+    }
+
+    fn online_key() -> Ed25519KeyPair {
+        Ed25519KeyPair::from_seed_unchecked(&[0x22; 32]).unwrap()
+    }
+
+    /// The long-term public key that signs every [`signed_response`]
+    pub(crate) fn signed_response_key() -> PublicKey {
+        let longterm = long_term_key();
+        PublicKey::try_from(longterm.public_key().as_ref()).unwrap()
+    }
+
+    /// A framed response to `request_bytes` carrying `ver` and `vers`, built by hand rather than
+    /// by a server so it can say things our server never would. With `greased`, undefined tags
+    /// are spliced into DELE, SREP, and the top-level message, and signatures cover the bytes as
+    /// sent. Returns the long-term public key and the framed response.
+    pub(crate) fn signed_response(
+        request_bytes: &[u8],
+        ver: ProtocolVersion,
+        vers: &[ProtocolVersion],
+        greased: bool,
+    ) -> (PublicKey, Vec<u8>) {
+        let longterm = long_term_key();
+        let online = online_key();
+        let request = Request::from_frame_bytes(request_bytes).unwrap();
+        let grease = |bytes: Vec<u8>, value: &[u8]| {
+            if greased {
+                insert_tag(&bytes, *b"GREZ", value)
+            } else {
+                bytes
+            }
+        };
+
+        // Single-request batch: ROOT is the leaf hash of the request packet
+        let mut tree = MerkleTree::new();
+        tree.push_leaf(request_bytes);
+        let root = tree.compute_root();
+
+        let mut dele = Delegation::default();
+        dele.set_pubk(PublicKey::try_from(online.public_key().as_ref()).unwrap());
+        dele.set_mint(0);
+        dele.set_maxt(u64::MAX);
+        let dele_bytes = grease(dele.as_bytes().unwrap(), &[0xcc; 4]);
+
+        let mut to_sign = ver.dele_prefix().to_vec();
+        to_sign.extend_from_slice(&dele_bytes);
+        let dele_sig = longterm.sign(&to_sign);
+
+        let cert_bytes = build_msg(&[
+            (*b"SIG\x00", dele_sig.as_ref().to_vec()),
+            (*b"DELE", dele_bytes),
+        ]);
+
+        let mut srep = SignedResponse::default();
+        srep.set_ver(ver);
+        srep.set_radi(5);
+        srep.set_midp(1000);
+        srep.set_vers(&SupportedVersions::new(vers));
+        srep.set_root(&MerkleRoot::from(root));
+        let srep_bytes = grease(srep.as_bytes().unwrap(), &[0xdd; 8]);
+
+        let mut to_sign = ver.srep_prefix().to_vec();
+        to_sign.extend_from_slice(&srep_bytes);
+        let srep_sig = online.sign(&to_sign);
+
+        let mut fields = vec![
+            (*b"SIG\x00", srep_sig.as_ref().to_vec()),
+            (*b"NONC", request.nonc().as_ref().to_vec()),
+            (*b"TYPE", 1u32.to_le_bytes().to_vec()),
+            (*b"PATH", vec![]),
+            (*b"SREP", srep_bytes),
+            (*b"CERT", cert_bytes),
+            (*b"INDX", 0u32.to_le_bytes().to_vec()),
+        ];
+        if greased {
+            fields.push((*b"GREZ", vec![0xee; 4]));
+        }
+        let msg = build_msg(&fields);
+
+        let mut response_bytes = Vec::new();
+        response_bytes.extend_from_slice(b"ROUGHTIM");
+        response_bytes.extend_from_slice(&(msg.len() as u32).to_le_bytes());
+        response_bytes.extend_from_slice(&msg);
+
+        (signed_response_key(), response_bytes)
+    }
+
+    /// Answers each request with a [`signed_response`] carrying the `ver` and `vers` given at
+    /// construction. Build the client with [`signed_response_key`].
+    pub(crate) struct ResponderTransport {
+        ver: ProtocolVersion,
+        vers: Vec<ProtocolVersion>,
+        last_request: RefCell<Vec<u8>>,
+    }
+
+    impl ResponderTransport {
+        pub(crate) fn new(ver: ProtocolVersion, vers: &[ProtocolVersion]) -> Self {
+            Self {
+                ver,
+                vers: vers.to_vec(),
+                last_request: RefCell::new(Vec::new()),
+            }
+        }
+    }
+
+    impl ClientTransport for ResponderTransport {
+        fn send(&self, data: &[u8]) -> Result<(), ClientError> {
+            *self.last_request.borrow_mut() = data.to_vec();
+            Ok(())
+        }
+
+        fn recv(&self, buf: &mut [u8]) -> Result<usize, ClientError> {
+            let (_, response) =
+                signed_response(&self.last_request.borrow(), self.ver, &self.vers, false);
+            buf[..response.len()].copy_from_slice(&response);
+            Ok(response.len())
+        }
     }
 
     pub(crate) struct InProcessTransport {

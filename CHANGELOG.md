@@ -81,6 +81,10 @@
   found; it exits 1 instead
 - Client: causality violation output follows `--zulu`, `--epoch`, and `-f`
 - Client API: the `roughenough_client::args` module is removed
+- Client: a response whose VERS does not contain its VER is rejected
+  with the new `ValidationError::VerNotInVers` (RFC 5.2.5).
+  `ResponseValidator::validate` does not perform this check; call
+  `check_vers_contains_ver` to apply it elsewhere
 
 ### Fixed
 

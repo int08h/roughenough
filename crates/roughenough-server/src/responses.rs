@@ -364,6 +364,31 @@ mod tests {
     }
 
     #[test]
+    fn response_vers_contains_negotiated_ver() {
+        // RFC 5.2.5: VERS MUST contain VER. Our client rejects a response that breaks this.
+        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+
+        for version in ProtocolVersion::ADVERTISED {
+            let mut responder = new_response_handler();
+            let request = Request::new_with_versions(&Nonce::from([7; 32]), &[version]);
+            responder.add_request(&request.as_bytes().unwrap(), request, version, addr);
+
+            let mut responses = Vec::new();
+            responder.process_responses(|_addr, bytes| responses.push(bytes.to_vec()));
+            assert_eq!(responses.len(), 1);
+
+            let response = Response::from_frame_bytes(&responses[0]).unwrap();
+            let srep = response.srep();
+            assert_eq!(*srep.ver(), version);
+            assert!(
+                srep.vers().versions().contains(srep.ver()),
+                "VERS {:?} omits VER {version:?}",
+                srep.vers()
+            );
+        }
+    }
+
+    #[test]
     fn consecutive_batches_do_not_bleed_state_through_reused_templates() {
         let mut responder = new_response_handler();
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
