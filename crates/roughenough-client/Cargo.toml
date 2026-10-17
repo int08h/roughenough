@@ -42,8 +42,6 @@ ureq = { workspace = true, features = ["json"], optional = true }
 
 [dev-dependencies]
 roughenough-protocol = { workspace = true, features = ["test-utils"] }
-# used by tests/report_chain_tests.rs
-roughenough-reporting-server = { path = "../roughenough-reporting-server" }
 roughenough-server = { workspace = true, features = ["test-utils"] }
 # self-dependency: enables test-utils when building the binary's unit tests and
 # this crate's own tests/ targets, which see the library without cfg(test)

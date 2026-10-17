@@ -46,6 +46,10 @@
 - Client API: malformed responses surface as
   `ClientError::ValidationFailed(InvalidMessage)` instead of
   `ClientError::BadResponse`
+- Client API: `ReportingError` has new variants for report verification
+  failures
+- Reporting server: `validate_report` and its `validation` module are
+  removed; use `MalfeasanceReport::verify()`
 
 ### Fixed
 
@@ -82,6 +86,7 @@
 - Protocol: all fixed-size tags gain `as_array()`
 - Common: `crypto::verify_with_context` verifies an Ed25519 signature over
   a context prefix and message
+- Client: `MalfeasanceReport::verify()` validates a received report
 
 ## [2.2.0] - 2026-10-11
 

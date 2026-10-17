@@ -255,11 +255,10 @@ async fn test_nonexistent_report() {
 
 #[tokio::test]
 async fn test_report_validation_directly() {
-    use roughenough_reporting_server::validation::validate_report;
-
     let report = create_test_malfeasance_report();
-    // Should validate successfully
-    validate_report(&report).expect("Valid report should pass validation");
+    report
+        .verify()
+        .expect("Valid report should pass validation");
 }
 
 #[tokio::test]

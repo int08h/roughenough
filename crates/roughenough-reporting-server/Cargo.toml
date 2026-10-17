@@ -19,9 +19,7 @@ path = "src/main.rs"
 [dependencies]
 roughenough-client = { path = "../roughenough-client" }
 roughenough-common = { path = "../roughenough-common" }
-roughenough-protocol = { path = "../roughenough-protocol" }
 async-trait = { workspace = true }
-aws-lc-rs = { workspace = true }
 axum = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 jiff = { workspace = true, features = ["serde"] }
@@ -36,6 +34,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 [dev-dependencies]
 roughenough-client = { path = "../roughenough-client", features = ["test-utils"] }
 roughenough-common = { path = "../roughenough-common" }
+roughenough-protocol = { path = "../roughenough-protocol" }
 roughenough-server = { path = "../roughenough-server", features = ["test-utils"] }
 roughenough-keys = { path = "../roughenough-keys" }
 roughenough-merkle = { path = "../roughenough-merkle" }

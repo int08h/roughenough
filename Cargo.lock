@@ -2871,7 +2871,6 @@ dependencies = [
  "roughenough-common",
  "roughenough-merkle",
  "roughenough-protocol",
- "roughenough-reporting-server",
  "roughenough-server",
  "serde",
  "serde_json",

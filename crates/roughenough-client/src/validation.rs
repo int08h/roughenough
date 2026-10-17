@@ -36,8 +36,7 @@ pub enum ValidationError {
 }
 
 /// `(MIDP - RADI, MIDP + RADI)`, saturating: both values are wire-derived.
-#[doc(hidden)]
-pub fn interval(midp: u64, radi: u32) -> (u64, u64) {
+pub(crate) fn interval(midp: u64, radi: u32) -> (u64, u64) {
     (
         midp.saturating_sub(radi as u64),
         midp.saturating_add(radi as u64),
@@ -46,8 +45,7 @@ pub fn interval(midp: u64, radi: u32) -> (u64, u64) {
 
 /// Index pairs `(i, j)`, `i < j`, where the earliest time of `i` is after the latest time of
 /// `j`. `bounds` holds each measurement's [`interval`], in the order performed.
-#[doc(hidden)]
-pub fn violating_pairs(bounds: &[(u64, u64)]) -> Vec<(usize, usize)> {
+pub(crate) fn violating_pairs(bounds: &[(u64, u64)]) -> Vec<(usize, usize)> {
     let mut pairs = Vec::new();
 
     for (i, &(lower_i, _)) in bounds.iter().enumerate() {

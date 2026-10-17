@@ -7,7 +7,6 @@
 #![forbid(unsafe_code)]
 
 pub mod storage;
-pub mod validation;
 
 // Re-export types needed by tests and main
 use std::net::SocketAddr;
@@ -20,7 +19,6 @@ use roughenough_client::MalfeasanceReport;
 use serde::{Deserialize, Serialize};
 
 pub use crate::storage::{InMemoryStorage, ReportStorage, StorageError, StoredReport};
-pub use crate::validation::validate_report;
 
 pub const MAX_REPORT_BODY_BYTES: usize = 256 * 1024;
 
@@ -39,8 +37,9 @@ pub async fn handle_report(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(report): Json<MalfeasanceReport>,
 ) -> Result<(StatusCode, Json<CreationResponse>), (StatusCode, String)> {
-    // Validate
-    validate_report(&report).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    report
+        .verify()
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 
     // Store. A full store rejects the submission (503) instead of evicting,
     // so a report flood cannot displace stored evidence; per-source rate
