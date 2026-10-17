@@ -111,6 +111,9 @@
   accepted as an alias for `ssh-agent`. Server library: `SeedBackendArg`
   is removed; `Args::seed_backend` is a
   `roughenough_keys::seed::BackendKind`
+- Keys: `OnlineKey::new` and `OnlineKey::sign` are no longer public;
+  create online keys with `LongTermIdentity::make_online_key`. The
+  `online::linuxkrs::krs_backend` module path is removed
 
 ### Security
 

@@ -4,6 +4,7 @@ use roughenough_common::clocksource::ClockSource;
 use roughenough_protocol::ToWire;
 use roughenough_protocol::tags::{Certificate, Delegation, ProtocolVersion, PublicKey, Signature};
 
+use crate::online::aws_lc_ed25519::KeyPair;
 use crate::online::onlinekey::OnlineKey;
 use crate::seed::SeedBackend;
 
@@ -38,9 +39,12 @@ impl LongTermIdentity {
     /// * `validity_length` - Length of time the generated [`OnlineKey`] will be valid.
     ///
     pub fn make_online_key(&mut self, clock: &ClockSource, validity_length: Duration) -> OnlineKey {
-        let now = clock.epoch_seconds();
-        let mut olk = OnlineKey::new(clock.clone());
-        let dele = Delegation::new(olk.public_key(), now, validity_length);
+        let key_pair = KeyPair::generate();
+        let dele = Delegation::new(
+            key_pair.public_key(),
+            clock.epoch_seconds(),
+            validity_length,
+        );
 
         let dele_prefix = ProtocolVersion::RFC.dele_prefix();
         let mut to_sign = dele_prefix.to_vec();
@@ -52,8 +56,7 @@ impl LongTermIdentity {
             .expect("should not fail; can't continue if it does");
         let sig = Signature::from(dele_sig);
         let cert = Certificate::new(sig, dele);
-        olk.set_cert(cert);
 
-        olk
+        OnlineKey::new(key_pair, cert, clock.clone())
     }
 }

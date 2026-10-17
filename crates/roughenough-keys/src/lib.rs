@@ -1,4 +1,4 @@
-// The two FFI wrapper functions in online::aws_lc_ed25519 opt in explicitly.
+// The two FFI wrapper methods in online::aws_lc_ed25519 opt in explicitly.
 #![deny(unsafe_code)]
 
 pub mod longterm;
@@ -19,7 +19,7 @@ mod tests {
     use roughenough_protocol::wire::ToWire;
 
     use crate::longterm::identity::LongTermIdentity;
-    use crate::online::onlinekey::OnlineSigner;
+    use crate::online::aws_lc_ed25519::KeyPair;
     use crate::seed::MemoryBackend;
 
     #[cfg(test)]
@@ -33,11 +33,11 @@ mod tests {
     #[test]
     fn signer_verifier_roundtrip() {
         let message = b"hello world";
-        let signer = OnlineSigner::from_random();
-        let signature = signer.sign(message);
+        let key_pair = KeyPair::generate();
+        let signature = key_pair.sign(message);
 
         assert!(verify_with_context(
-            signer.public_key().as_ref(),
+            key_pair.public_key().as_ref(),
             &[],
             message,
             signature.as_ref()
