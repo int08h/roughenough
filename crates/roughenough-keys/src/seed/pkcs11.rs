@@ -194,7 +194,7 @@ mod test {
     use roughenough_protocol::util::as_hex;
 
     use super::*;
-    use crate::online::test_util::enable_logging;
+    use crate::test_util::enable_logging;
 
     const DEFAULT_SLOT_INDEX: usize = 0;
     const DEFAULT_PIN: &str = "123456";

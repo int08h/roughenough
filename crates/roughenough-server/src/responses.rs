@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use roughenough_keys::online::onlinekey::OnlineKey;
+use roughenough_keys::online::OnlineKey;
 use roughenough_merkle::{MerklePath, MerkleTree};
 use roughenough_protocol::cursor::ParseCursor;
 use roughenough_protocol::request::Request;

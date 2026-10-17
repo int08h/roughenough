@@ -7,12 +7,20 @@ use roughenough_protocol::tags::PublicKey;
 use zeroize::Zeroize;
 
 #[cfg(all(target_os = "linux", feature = "online-linux-krs"))]
-pub use crate::online::linuxkrs::*;
-pub use crate::online::memory::*;
+mod linuxkrs;
+mod memory;
 #[cfg(feature = "online-pkcs11")]
-pub use crate::online::pkcs11::*;
+mod pkcs11;
 #[cfg(feature = "online-ssh-agent")]
-pub use crate::online::sshagent::*;
+mod sshagent;
+
+#[cfg(all(target_os = "linux", feature = "online-linux-krs"))]
+pub use linuxkrs::LinuxKrsBackend;
+pub use memory::MemoryBackend;
+#[cfg(feature = "online-pkcs11")]
+pub use pkcs11::{PKCS11_LIBRARY_ENV, PKCS11_PIN_ENV, PKCS11_SLOT_ENV, Pkcs11Backend};
+#[cfg(feature = "online-ssh-agent")]
+pub use sshagent::SshAgentBackend;
 
 /// Seed backends keep the seed/long-term key available for on-line use while protecting it from
 /// unauthorized access. A backend receives its seed when it is constructed and never hands it
@@ -169,9 +177,8 @@ pub enum BackendError {
 
 #[cfg(test)]
 mod tests {
-    use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
-
     use super::*;
+    use crate::test_util::assert_backend_signs;
 
     #[test]
     fn invalid_seed_length_is_an_error() {
@@ -210,13 +217,7 @@ mod tests {
     #[test]
     fn open_memory_signs() {
         let mut backend = open(BackendKind::Memory, Some(Seed::new_random())).unwrap();
-
-        let data = b"hello world";
-        let signature = backend.sign(data).unwrap();
-
-        let public_key = backend.public_key();
-        let verifier = UnparsedPublicKey::new(&ED25519, public_key.as_array());
-        verifier.verify(data, &signature).unwrap();
+        assert_backend_signs(backend.as_mut());
     }
 
     #[cfg(not(feature = "online-pkcs11"))]

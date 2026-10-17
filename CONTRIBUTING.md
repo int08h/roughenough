@@ -154,7 +154,7 @@ and `integration` crates all carry `#![forbid(unsafe_code)]`.
 **Exceptions:**
 - The `keys` crate has two unsafe uses:
   - `src/online/aws_lc_ed25519.rs`: FFI calls into AWS-LC for Ed25519 key derivation and signing.
-  - `src/online/sshagent.rs`: `unsafe impl Send for SshAgentBackend`; the ssh-agent client's 
+  - `src/seed/sshagent.rs`: `unsafe impl Send for SshAgentBackend`; the ssh-agent client's 
     boxed transport is a `UnixStream` (or pipe on Windows), both of which are `Send`.
 - The `server` crate has one unsafe usage: 
   - The Linux-only `mmsg` module in `src/network.rs`, which wraps the `libc::sendmmsg` syscall for batched

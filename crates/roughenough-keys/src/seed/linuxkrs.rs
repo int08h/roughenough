@@ -42,7 +42,7 @@ use roughenough_protocol::tags::PublicKey;
 use tracing::{debug, error};
 use zeroize::Zeroizing;
 
-use super::aws_lc_ed25519::KeyPair;
+use crate::online::aws_lc_ed25519::KeyPair;
 use crate::seed::{BackendError, Seed, SeedBackend};
 
 const KEY_NAME: &str = "roughenough-seed";
@@ -229,8 +229,8 @@ mod tests {
     use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
 
     use super::*;
-    use crate::online::test_util::enable_logging;
     use crate::seed::SeedBackend;
+    use crate::test_util::{assert_backend_signs, enable_logging};
 
     #[test]
     fn new_with_seed_succeeds() {
@@ -277,17 +277,8 @@ mod tests {
 
     #[test]
     fn sign_verify_roundtrip() {
-        // Given a LinuxKrsBackend
         let mut backend = LinuxKrsBackend::new(Seed::new_random()).unwrap();
-
-        // When the backend signs something
-        let data = b"hello world";
-        let signature = backend.sign(data).unwrap();
-
-        // Then that signature validates with aws-lc-rs
-        let public_key = backend.public_key();
-        let verifier = UnparsedPublicKey::new(&ED25519, public_key.as_array());
-        verifier.verify(data, &signature).unwrap();
+        assert_backend_signs(&mut backend);
     }
 
     #[test]

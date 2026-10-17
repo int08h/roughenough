@@ -4,8 +4,8 @@ use roughenough_common::clocksource::ClockSource;
 use roughenough_protocol::ToWire;
 use roughenough_protocol::tags::{Certificate, Delegation, ProtocolVersion, PublicKey, Signature};
 
+use crate::online::OnlineKey;
 use crate::online::aws_lc_ed25519::KeyPair;
-use crate::online::onlinekey::OnlineKey;
 use crate::seed::SeedBackend;
 
 /// The server's long-term Ed25519 identity.

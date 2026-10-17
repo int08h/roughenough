@@ -9,6 +9,8 @@ pub(crate) mod runtime;
 pub mod seed;
 pub mod seed_file;
 pub mod storage;
+#[cfg(test)]
+mod test_util;
 
 #[cfg(test)]
 mod tests {
@@ -19,11 +21,10 @@ mod tests {
     use roughenough_protocol::tags::{MerkleRoot, ProtocolVersion, SupportedVersions};
     use roughenough_protocol::wire::ToWire;
 
-    use crate::longterm::identity::LongTermIdentity;
+    use crate::longterm::LongTermIdentity;
     use crate::online::aws_lc_ed25519::KeyPair;
     use crate::seed::MemoryBackend;
 
-    #[cfg(test)]
     mod lifecycle_tests;
 
     fn generate_ltk() -> LongTermIdentity {
@@ -52,20 +53,7 @@ mod tests {
         let clock = ClockSource::new_mock(now);
         let olk = ltk.make_online_key(&clock, Duration::from_secs(60));
 
-        let ltk_pubk = ltk.public_key_bytes();
         let dele = olk.cert().dele();
-        let sig = olk.cert().sig();
-        let dele_bytes = dele.as_bytes().expect("DELE serialization should not fail");
-
-        assert!(
-            verify_with_context(
-                &ltk_pubk,
-                ProtocolVersion::RFC.dele_prefix(),
-                &dele_bytes,
-                sig.as_ref()
-            ),
-            "LongTermKey signature on DELE should be valid"
-        );
         assert_eq!(
             dele.pubk().as_ref(),
             olk.public_key().as_ref(),

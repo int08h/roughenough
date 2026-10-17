@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use roughenough_common::clocksource::ClockSource;
 use roughenough_keys::longterm::LongTermIdentity;
-use roughenough_keys::online::onlinekey::OnlineKey;
+use roughenough_keys::online::OnlineKey;
 use roughenough_keys::seed::SeedBackend;
 use roughenough_protocol::tags::PublicKey;
 

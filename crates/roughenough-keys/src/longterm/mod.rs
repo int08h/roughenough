@@ -12,6 +12,6 @@ pub mod gcpkms;
 pub mod gcpsecret;
 
 pub mod envelope;
-pub mod identity;
+mod identity;
 
-pub use identity::*;
+pub use identity::LongTermIdentity;

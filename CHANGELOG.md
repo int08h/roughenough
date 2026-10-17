@@ -121,6 +121,11 @@
   Inputs are seed files (hex or base64 text, optionally `seed://`); raw
   32-byte binary input is no longer accepted. Failures exit non-zero,
   and log output goes to stderr
+- Keys: backends are exported only from `roughenough_keys::seed`
+  (`online::memory`, `online::linuxkrs`, `online::sshagent`, and
+  `online::pkcs11` are removed). `OnlineKey` is exported only as
+  `roughenough_keys::online::OnlineKey`, and `LongTermIdentity` only as
+  `roughenough_keys::longterm::LongTermIdentity`
 
 ### Security
 
