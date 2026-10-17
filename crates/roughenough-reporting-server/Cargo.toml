@@ -2,8 +2,8 @@
 name = "roughenough-reporting-server"
 description = "Web server for collecting and storing Roughtime malfeasance reports"
 license = "Apache-2.0 OR MIT"
-version = "2.2.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 repository = "https://github.com/int08h/roughenough"
 homepage = "https://github.com/int08h/roughenough"
 readme = "../../README.md"
@@ -17,26 +17,21 @@ name = "roughenough_reporting_server"
 path = "src/main.rs"
 
 [dependencies]
-roughenough-client = { path = "../roughenough-client" }
-roughenough-common = { path = "../roughenough-common" }
-async-trait = { workspace = true }
+roughenough-client = { workspace = true }
+roughenough-common = { workspace = true }
 axum = { workspace = true }
-clap = { workspace = true, features = ["derive"] }
+clap = { workspace = true, features = ["derive", "env"] }
 jiff = { workspace = true, features = ["serde"] }
 data-encoding = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "time"] }
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [dev-dependencies]
-roughenough-client = { path = "../roughenough-client", features = ["test-utils"] }
-roughenough-common = { path = "../roughenough-common" }
-roughenough-protocol = { path = "../roughenough-protocol" }
-roughenough-server = { path = "../roughenough-server", features = ["test-utils"] }
-roughenough-keys = { path = "../roughenough-keys" }
-roughenough-merkle = { path = "../roughenough-merkle" }
-aws-lc-rs = { workspace = true }
+roughenough-client = { workspace = true, features = ["test-utils"] }
+roughenough-protocol = { workspace = true }
+roughenough-server = { workspace = true, features = ["test-utils"] }
 reqwest = { workspace = true, features = ["json"] }
+serde_json = { workspace = true }

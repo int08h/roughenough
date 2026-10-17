@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use async_trait::async_trait;
 use data_encoding::HEXLOWER;
 use roughenough_client::MalfeasanceReport;
 use roughenough_common::crypto::random_bytes;
@@ -29,27 +28,11 @@ pub struct StoredReport {
 
 #[derive(thiserror::Error, Debug)]
 pub enum StorageError {
-    #[error("Storage operation failed: {0}")]
-    Internal(String),
-
     #[error("report storage is full")]
     Full,
 
     #[error("too many reports from this source; retry later")]
     RateLimited,
-}
-
-#[async_trait]
-pub trait ReportStorage: Send + Sync {
-    async fn store(
-        &self,
-        report: MalfeasanceReport,
-        source_ip: String,
-    ) -> Result<String, StorageError>;
-
-    async fn get(&self, id: &str) -> Result<Option<StoredReport>, StorageError>;
-
-    async fn list(&self, limit: usize) -> Result<Vec<StoredReport>, StorageError>;
 }
 
 /// Per-source submission counts within the current fixed window.
@@ -104,17 +87,8 @@ impl InMemoryStorage {
 
         Ok(())
     }
-}
 
-impl Default for InMemoryStorage {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl ReportStorage for InMemoryStorage {
-    async fn store(
+    pub fn store(
         &self,
         report: MalfeasanceReport,
         source_ip: String,
@@ -139,16 +113,14 @@ impl ReportStorage for InMemoryStorage {
         Ok(id)
     }
 
-    async fn get(&self, id: &str) -> Result<Option<StoredReport>, StorageError> {
-        Ok(self.reports.lock().unwrap().get(id).cloned())
+    pub fn get(&self, id: &str) -> Option<StoredReport> {
+        self.reports.lock().unwrap().get(id).cloned()
     }
+}
 
-    async fn list(&self, limit: usize) -> Result<Vec<StoredReport>, StorageError> {
-        let reports = self.reports.lock().unwrap();
-        let mut items: Vec<_> = reports.values().cloned().collect();
-        items.sort_by_key(|a| a.timestamp);
-        items.truncate(limit);
-        Ok(items)
+impl Default for InMemoryStorage {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -160,73 +132,43 @@ mod tests {
         serde_json::from_str(r#"{"responses": []}"#).unwrap()
     }
 
-    #[tokio::test]
-    async fn full_storage_rejects_new_reports() {
+    #[test]
+    fn full_storage_rejects_new_reports() {
         let storage = InMemoryStorage::with_limits(2, 100, Duration::from_secs(60));
 
-        storage
-            .store(empty_report(), "1.1.1.1".into())
-            .await
-            .unwrap();
-        storage
-            .store(empty_report(), "1.1.1.1".into())
-            .await
-            .unwrap();
+        storage.store(empty_report(), "1.1.1.1".into()).unwrap();
+        storage.store(empty_report(), "1.1.1.1".into()).unwrap();
 
-        let err = storage
-            .store(empty_report(), "1.1.1.1".into())
-            .await
-            .unwrap_err();
+        let err = storage.store(empty_report(), "1.1.1.1".into()).unwrap_err();
         assert!(matches!(err, StorageError::Full));
     }
 
-    #[tokio::test]
-    async fn rate_limit_applies_per_source() {
+    #[test]
+    fn rate_limit_applies_per_source() {
         let storage = InMemoryStorage::with_limits(100, 2, Duration::from_secs(3600));
 
-        storage
-            .store(empty_report(), "1.1.1.1".into())
-            .await
-            .unwrap();
-        storage
-            .store(empty_report(), "1.1.1.1".into())
-            .await
-            .unwrap();
+        storage.store(empty_report(), "1.1.1.1".into()).unwrap();
+        storage.store(empty_report(), "1.1.1.1".into()).unwrap();
 
         // The burst source is limited
-        let err = storage
-            .store(empty_report(), "1.1.1.1".into())
-            .await
-            .unwrap_err();
+        let err = storage.store(empty_report(), "1.1.1.1".into()).unwrap_err();
         assert!(matches!(err, StorageError::RateLimited));
 
         // An unrelated source is unaffected
-        storage
-            .store(empty_report(), "2.2.2.2".into())
-            .await
-            .unwrap();
+        storage.store(empty_report(), "2.2.2.2".into()).unwrap();
     }
 
-    #[tokio::test]
-    async fn rate_limit_window_resets() {
+    #[test]
+    fn rate_limit_window_resets() {
         // Window must be long enough that test-runner scheduling delays
         // cannot expire it between the two back-to-back stores
         let storage = InMemoryStorage::with_limits(100, 1, Duration::from_millis(500));
 
-        storage
-            .store(empty_report(), "1.1.1.1".into())
-            .await
-            .unwrap();
-        let err = storage
-            .store(empty_report(), "1.1.1.1".into())
-            .await
-            .unwrap_err();
+        storage.store(empty_report(), "1.1.1.1".into()).unwrap();
+        let err = storage.store(empty_report(), "1.1.1.1".into()).unwrap_err();
         assert!(matches!(err, StorageError::RateLimited));
 
-        tokio::time::sleep(Duration::from_millis(600)).await;
-        storage
-            .store(empty_report(), "1.1.1.1".into())
-            .await
-            .unwrap();
+        std::thread::sleep(Duration::from_millis(600));
+        storage.store(empty_report(), "1.1.1.1".into()).unwrap();
     }
 }

@@ -2955,8 +2955,6 @@ dependencies = [
 name = "roughenough-reporting-server"
 version = "2.2.0"
 dependencies = [
- "async-trait",
- "aws-lc-rs",
  "axum",
  "clap",
  "data-encoding",
@@ -2964,8 +2962,6 @@ dependencies = [
  "reqwest",
  "roughenough-client",
  "roughenough-common",
- "roughenough-keys",
- "roughenough-merkle",
  "roughenough-protocol",
  "roughenough-server",
  "serde",
